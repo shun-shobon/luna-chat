@@ -1,21 +1,12 @@
-import type { ConversationContext, RuntimeMessage } from "../context/types";
+import type { RuntimeMessage } from "../context/types";
 
 import { CodexAppServerClient } from "./codex-app-server-client";
-import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCallParams";
-import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
 import { buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
   forceReply: boolean;
   currentMessage: RuntimeMessage;
   contextFetchLimit: number;
-  tools: {
-    fetchDiscordHistory: (input: {
-      beforeMessageId?: string;
-      limit: number;
-    }) => Promise<ConversationContext>;
-    sendDiscordReply: (input: { text: string }) => Promise<void>;
-  };
 };
 
 export type AiOutput = {
@@ -40,31 +31,11 @@ export class CodexAppServerAiService implements AiService {
   constructor(private readonly options: CodexAppServerAiServiceOptions) {}
 
   async generateReply(input: AiInput): Promise<AiOutput> {
-    let didReply = false;
     let activeThreadId: string | undefined;
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
       command: this.options.command,
       cwd: this.options.cwd,
-      executeToolCall: async (params) => {
-        const toolCallInput: ExecuteToolCallInput = {
-          didReply: () => {
-            didReply = true;
-          },
-          input,
-          params,
-        };
-        if (this.options.debugLog) {
-          toolCallInput.debugLog = this.options.debugLog;
-        }
-        if (activeThreadId) {
-          toolCallInput.threadId = activeThreadId;
-        }
-
-        const result = await executeToolCall(toolCallInput);
-
-        return result;
-      },
       model: this.options.model,
       sandbox: this.options.sandbox,
       timeoutMs: this.options.timeoutMs,
@@ -74,6 +45,7 @@ export class CodexAppServerAiService implements AiService {
       await client.initialize();
       const promptBundle = buildPromptBundle(input);
       const threadId = await client.startThread({
+        config: buildMcpConfig(),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -88,6 +60,18 @@ export class CodexAppServerAiService implements AiService {
       this.options.debugLog?.("ai.turn.assistant_output", {
         assistantText: turnResult.assistantText,
         threadId,
+      });
+      for (const toolCall of turnResult.mcpToolCalls) {
+        this.options.debugLog?.("ai.turn.mcp_tool_call", {
+          arguments: toolCall.arguments,
+          server: toolCall.server,
+          status: toolCall.status,
+          threadId,
+          tool: toolCall.tool,
+        });
+      }
+      const didReply = turnResult.mcpToolCalls.some((toolCall) => {
+        return toolCall.status === "completed" && toolCall.tool === "send_discord_reply";
       });
       this.options.debugLog?.("ai.turn.completed", {
         didReply,
@@ -117,118 +101,13 @@ export class CodexAppServerAiService implements AiService {
   }
 }
 
-type ExecuteToolCallInput = {
-  debugLog?: (message: string, details?: Record<string, unknown>) => void;
-  params: DynamicToolCallParams;
-  input: AiInput;
-  didReply: () => void;
-  threadId?: string;
-};
-
-async function executeToolCall(input: ExecuteToolCallInput): Promise<DynamicToolCallResponse> {
-  input.debugLog?.("ai.tool.call.started", {
-    threadId: input.threadId,
-    tool: input.params.tool,
-  });
-  if (input.params.tool === "fetch_discord_history") {
-    const args = parseFetchDiscordHistoryArgs(
-      input.params.arguments,
-      input.input.contextFetchLimit,
-    );
-    const historyInput = {
-      limit: args.limit,
-    } as { beforeMessageId?: string; limit: number };
-    if (args.beforeMessageId) {
-      historyInput.beforeMessageId = args.beforeMessageId;
-    }
-
-    const context = await input.input.tools.fetchDiscordHistory(historyInput);
-    input.debugLog?.("ai.tool.call.fetch_discord_history.completed", {
-      beforeMessageId: args.beforeMessageId,
-      fetchedMessages: context.recentMessages.length,
-      limit: args.limit,
-      threadId: input.threadId,
-    });
-
-    return toTextToolResponse({
-      channelId: context.channelId,
-      messages: context.recentMessages,
-      requestedByToolUse: true,
-    });
-  }
-
-  if (input.params.tool === "send_discord_reply") {
-    const args = parseSendDiscordReplyArgs(input.params.arguments);
-    input.debugLog?.("ai.tool.call.send_discord_reply", {
-      text: args.text,
-      threadId: input.threadId,
-    });
-    await input.input.tools.sendDiscordReply({
-      text: args.text,
-    });
-    input.didReply();
-
-    return toTextToolResponse({
-      ok: true,
-    });
-  }
-
-  throw new Error(`Unsupported tool: ${input.params.tool}`);
-}
-
-function parseFetchDiscordHistoryArgs(
-  rawArguments: DynamicToolCallParams["arguments"],
-  defaultLimit: number,
-): {
-  beforeMessageId?: string;
-  limit: number;
-} {
-  if (!rawArguments || typeof rawArguments !== "object") {
-    return { limit: defaultLimit };
-  }
-
-  const rawObject = rawArguments as Record<string, unknown>;
-  const beforeMessageId =
-    typeof rawObject["beforeMessageId"] === "string" ? rawObject["beforeMessageId"] : undefined;
-  const limit =
-    typeof rawObject["limit"] === "number" && rawObject["limit"] > 0
-      ? Math.floor(rawObject["limit"])
-      : defaultLimit;
-
-  const result = {
-    limit,
-  } as { beforeMessageId?: string; limit: number };
-  if (beforeMessageId) {
-    result.beforeMessageId = beforeMessageId;
-  }
-
-  return result;
-}
-
-function parseSendDiscordReplyArgs(rawArguments: DynamicToolCallParams["arguments"]): {
-  text: string;
-} {
-  if (!rawArguments || typeof rawArguments !== "object") {
-    throw new Error("send_discord_reply arguments must be an object.");
-  }
-
-  const rawObject = rawArguments as Record<string, unknown>;
-  const text = rawObject["text"];
-  if (typeof text !== "string" || text.trim().length === 0) {
-    throw new Error("send_discord_reply requires non-empty `text`.");
-  }
-
-  return { text };
-}
-
-function toTextToolResponse(payload: unknown): DynamicToolCallResponse {
+function buildMcpConfig(): Record<string, unknown> {
   return {
-    contentItems: [
-      {
-        text: JSON.stringify(payload),
-        type: "inputText",
+    mcp_servers: {
+      discord: {
+        args: ["exec", "tsx", "src/mcp/discord-mcp-server.ts"],
+        command: "pnpm",
       },
-    ],
-    success: true,
+    },
   };
 }

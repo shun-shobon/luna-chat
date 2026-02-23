@@ -11,16 +11,17 @@
 - `!ping` 依存を廃止し、チャンネル制限 + メンション必須返信フローへ移行済み。
 - 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
 - Discord の履歴は AI 呼び出し時に都度取得する実装へ移行済み。
-- 過去履歴取得は `item/tool/call` で `fetch_discord_history` を呼び出す方式へ移行済み。
-- 返信送信は `item/tool/call` で `send_discord_reply` を呼び出す方式へ移行済み。
+- 過去履歴取得は MCP tool `fetch_discord_history` を呼び出す方式へ移行済み。
+- 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み。
 - `CODEX_WORKSPACE_DIR` / `APOLOGY_TEMPLATE_PATH` の起動時検証を実装済み。
 - 謝罪定型文は Codex ワークスペース内ドキュメントから読み出す実装へ移行済み。
 - 改善提案の自動適用フローは保留中（現状は返信/履歴取得ツールに集中）。
 - 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
-- server-initiated request（approval / requestUserInput / tool/call）へのクライアント応答を実装済み。
+- server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
+- MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。

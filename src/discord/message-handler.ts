@@ -1,5 +1,5 @@
 import type { AiService } from "../ai/ai-service";
-import type { ConversationContext, RuntimeMessage } from "../context/types";
+import type { RuntimeMessage } from "../context/types";
 import { evaluateReplyPolicy } from "../policy/reply-policy";
 
 export type MessageLike = {
@@ -40,11 +40,6 @@ export type HandleMessageInput = {
   aiService: AiService;
   apologyMessage: string;
   logger: LoggerLike;
-  fetchConversationContext: (input: {
-    beforeMessageId?: string;
-    requestedByToolUse: boolean;
-    limit: number;
-  }) => Promise<ConversationContext>;
 };
 
 export async function handleMessageCreate(input: HandleMessageInput): Promise<void> {
@@ -77,26 +72,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
       contextFetchLimit: input.contextFetchLimit,
       currentMessage,
       forceReply: policyDecision.forceReply,
-      tools: {
-        fetchDiscordHistory: async ({ beforeMessageId, limit }) => {
-          const fetchInput = {
-            limit,
-            requestedByToolUse: true,
-          } as {
-            beforeMessageId?: string;
-            requestedByToolUse: boolean;
-            limit: number;
-          };
-          if (beforeMessageId) {
-            fetchInput.beforeMessageId = beforeMessageId;
-          }
-
-          return input.fetchConversationContext(fetchInput);
-        },
-        sendDiscordReply: async ({ text }) => {
-          await message.reply(text);
-        },
-      },
     });
 
     if (policyDecision.forceReply && !aiResult.didReply) {

@@ -40,15 +40,5 @@ function createInput(): AiInput {
       mentionedBot: false,
     },
     forceReply: false,
-    tools: {
-      fetchDiscordHistory: async () => {
-        return {
-          channelId: "channel-id",
-          recentMessages: [],
-          requestedByToolUse: true,
-        };
-      },
-      sendDiscordReply: async () => {},
-    },
   };
 }
