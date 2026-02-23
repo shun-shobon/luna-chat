@@ -4,29 +4,28 @@ import { Client, GatewayIntentBits } from "discord.js";
 
 import { CodexAppServerAiService, type CodexAppServerAiServiceOptions } from "./ai/ai-service";
 import { readApologyTemplate } from "./ai/apology-template";
+import type { ReasoningEffort } from "./ai/codex-generated/ReasoningEffort";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
 import { logger } from "./logger";
 
-const contextFetchLimit = 30;
-const codexAppServerCommand = "codex app-server --listen stdio://";
-const codexAppServerModel = "gpt-5.3-codex";
-const codexAppServerApprovalPolicy = "never";
-const codexAppServerSandbox = "workspace-write";
-const codexAppServerTimeoutMs = 60_000;
-const threadConfig = {
-  model_reasoning_effort: "medium",
-};
+const CONTEXT_FETCH_LIMIT = 30;
+const CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
+const CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
+const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
+const CODEX_APP_SERVER_SANDBOX = "workspace-write";
+const CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
+const CODEX_APP_SERVER_REASONING_EFFORT: ReasoningEffort = "medium";
 
 const runtimeConfig = loadConfigOrExit();
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
-  approvalPolicy: codexAppServerApprovalPolicy,
-  command: codexAppServerCommand,
+  approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
+  command: CODEX_APP_SERVER_COMMAND,
   cwd: runtimeConfig.codexWorkspaceDir,
-  model: codexAppServerModel,
-  sandbox: codexAppServerSandbox,
-  threadConfig,
-  timeoutMs: codexAppServerTimeoutMs,
+  model: CODEX_APP_SERVER_MODEL,
+  reasoningEffort: CODEX_APP_SERVER_REASONING_EFFORT,
+  sandbox: CODEX_APP_SERVER_SANDBOX,
+  timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS,
 };
 const aiService = new CodexAppServerAiService(aiServiceOptions);
 const apologyMessage = readApologyTemplate();
@@ -54,7 +53,7 @@ client.on("messageCreate", async (message) => {
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     apologyMessage,
     botUserId,
-    contextFetchLimit,
+    contextFetchLimit: CONTEXT_FETCH_LIMIT,
     logger,
     message,
   }).catch((error: unknown) => {
