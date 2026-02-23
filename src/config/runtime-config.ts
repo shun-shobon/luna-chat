@@ -36,7 +36,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     codexWorkspaceDir,
   );
   const codexAppServerCwd = parseCodexAppServerCwd(env["CODEX_APP_SERVER_CWD"]);
-  const codexAppServerModel = env["CODEX_APP_SERVER_MODEL"]?.trim() ?? "gpt-5.1-codex";
+  const codexAppServerModel = env["CODEX_APP_SERVER_MODEL"]?.trim() ?? "gpt-5.3-codex";
   const codexAppServerApprovalPolicy = parseCodexAppServerApprovalPolicy(
     env["CODEX_APP_SERVER_APPROVAL_POLICY"],
   );
