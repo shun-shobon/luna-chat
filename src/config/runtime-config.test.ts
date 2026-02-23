@@ -1,12 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadRuntimeConfig, RuntimeConfigError } from "./runtime-config";
 
 describe("loadRuntimeConfig", () => {
-  it("DISCORD_BOT_TOKEN と ALLOWED_CHANNEL_IDS を読み込む", () => {
+  let workspaceDir = "";
+  let apologyTemplatePath = "";
+
+  beforeEach(() => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "luna-chat-"));
+    const templateDirectory = join(workspaceDir, "templates");
+    mkdirSync(templateDirectory, { recursive: true });
+    apologyTemplatePath = join(templateDirectory, "apology.md");
+    writeFileSync(apologyTemplatePath, "ごめんね。少し待ってね。", "utf8");
+  });
+
+  afterEach(() => {
+    rmSync(workspaceDir, { force: true, recursive: true });
+  });
+
+  it("必須設定を読み込む", () => {
     const config = loadRuntimeConfig({
       ALLOWED_CHANNEL_IDS: "111, 222,333",
+      APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
       CODEX_APP_SERVER_COMMAND: "codex-app-server",
+      CODEX_WORKSPACE_DIR: workspaceDir,
       CONTEXT_FETCH_LIMIT: "50",
       DISCORD_BOT_TOKEN: "token",
     });
@@ -15,12 +36,16 @@ describe("loadRuntimeConfig", () => {
     expect(Array.from(config.allowedChannelIds)).toEqual(["111", "222", "333"]);
     expect(config.contextFetchLimit).toBe(50);
     expect(config.codexAppServerCommand).toBe("codex-app-server");
+    expect(config.codexWorkspaceDir).toBe(workspaceDir);
+    expect(config.apologyTemplatePath).toBe(apologyTemplatePath);
   });
 
   it("ALLOWED_CHANNEL_IDS が空なら失敗する", () => {
     expect(() =>
       loadRuntimeConfig({
         ALLOWED_CHANNEL_IDS: " ,  ",
+        APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
+        CODEX_WORKSPACE_DIR: workspaceDir,
         DISCORD_BOT_TOKEN: "token",
       }),
     ).toThrowError(RuntimeConfigError);
@@ -30,6 +55,8 @@ describe("loadRuntimeConfig", () => {
     expect(() =>
       loadRuntimeConfig({
         ALLOWED_CHANNEL_IDS: "111",
+        APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
+        CODEX_WORKSPACE_DIR: workspaceDir,
       }),
     ).toThrowError(RuntimeConfigError);
   });
@@ -38,9 +65,26 @@ describe("loadRuntimeConfig", () => {
     expect(() =>
       loadRuntimeConfig({
         ALLOWED_CHANNEL_IDS: "111",
+        APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
+        CODEX_WORKSPACE_DIR: workspaceDir,
         CONTEXT_FETCH_LIMIT: "0",
         DISCORD_BOT_TOKEN: "token",
       }),
     ).toThrowError(RuntimeConfigError);
+  });
+
+  it("APOLOGY_TEMPLATE_PATH がワークスペース外なら失敗する", () => {
+    const outsidePath = join(tmpdir(), "outside-apology.md");
+    writeFileSync(outsidePath, "outside", "utf8");
+
+    expect(() =>
+      loadRuntimeConfig({
+        ALLOWED_CHANNEL_IDS: "111",
+        APOLOGY_TEMPLATE_PATH: outsidePath,
+        CODEX_WORKSPACE_DIR: workspaceDir,
+        DISCORD_BOT_TOKEN: "token",
+      }),
+    ).toThrowError(RuntimeConfigError);
+    rmSync(outsidePath, { force: true });
   });
 });
