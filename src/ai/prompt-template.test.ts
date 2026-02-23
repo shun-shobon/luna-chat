@@ -9,8 +9,8 @@ describe("buildPromptBundle", () => {
 
     expect(promptBundle.instructions).toContain("Discord Bot『ルナ』");
     expect(promptBundle.developerRolePrompt).toContain("メンション時は必ず返信する");
+    expect(promptBundle.developerRolePrompt).toContain("send_discord_reply");
     expect(promptBundle.developerRolePrompt).not.toContain("fetch_discord_history");
-    expect(promptBundle.developerRolePrompt).not.toContain("send_discord_reply");
     expect(promptBundle.userRolePrompt).toContain("currentMessage:");
     expect(promptBundle.userRolePrompt).toContain("テスト本文");
   });

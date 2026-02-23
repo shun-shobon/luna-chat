@@ -17,6 +17,7 @@
 - Discord MCP の zod スキーマには `describe` で各パラメータ説明を付与済み。
 - Discord MCP の tool `description` / zod `describe` は日本語へ統一済み。
 - ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
+- ただし「返信時は必ず `send_discord_reply` を使う」指示のみ developer role prompt に残す方針へ更新済み。
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
 - `codex-workspace` は固定パス（`<project>/codex-workspace`）として扱う。
 - 謝罪定型文は固定文言を返す実装へ移行済み（外部ファイル設定なし）。
