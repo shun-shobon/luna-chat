@@ -37,7 +37,6 @@ export type HandleMessageInput = {
   allowedChannelIds: ReadonlySet<string>;
   contextFetchLimit: number;
   aiService: AiService;
-  operationRulesDoc: string;
   apologyMessage: string;
   logger: LoggerLike;
   fetchConversationContext: (input: {
@@ -71,7 +70,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
       contextFetchLimit: input.contextFetchLimit,
       currentMessage,
       forceReply: policyDecision.forceReply,
-      operationRulesDoc: input.operationRulesDoc,
       tools: {
         fetchDiscordHistory: async ({ beforeMessageId, limit }) => {
           const fetchInput = {

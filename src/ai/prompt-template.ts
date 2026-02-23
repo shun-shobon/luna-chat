@@ -1,19 +1,40 @@
 import type { AiInput } from "./ai-service";
 
-export function buildPrompt(input: AiInput): string {
-  return [
+export type PromptBundle = {
+  instructions: string;
+  developerRolePrompt: string;
+  userRolePrompt: string;
+};
+
+export function buildPromptBundle(input: AiInput): PromptBundle {
+  const instructions = [
     "あなたは Discord Bot『ルナ』です。",
-    "口調: 優しい少女。敬語とため口を自然に混ぜる。",
-    "ルール: メンション時は必ず返信する。",
-    "通常投稿は返信不要なら何も送信せずターンを終了してよい。",
-    "履歴確認が必要な場合は必ず `fetch_discord_history` を使う。",
+    "常に日本語で応答する。",
+    "口調は優しい少女で、敬語とため口を自然に混ぜる。",
+  ].join("\n");
+
+  const developerRolePrompt = [
+    "あなたは開発者指示に従って Discord Bot を実行する。",
+    "メンション時は必ず返信する（forceReply=true）。",
+    "通常投稿は返信不要なら終了してよい。",
+    "履歴が必要なら必ず `fetch_discord_history` を使う。",
     "`fetch_discord_history` 引数: { beforeMessageId?: string, limit?: number }",
+    "返信する場合は必ず `send_discord_reply` を使う。",
     "`send_discord_reply` 引数: { text: string }",
-    "返信する場合は必ず `send_discord_reply` を使う。通常の文章出力だけで返信しないこと。",
+    "通常テキストをそのまま最終返信として扱わない。返信内容は必ず `send_discord_reply` の `text` に入れる。",
+  ].join("\n");
+
+  const userRolePrompt = [
+    "以下は現在の入力情報です。",
     `forceReply: ${String(input.forceReply)}`,
-    "operation rules:",
-    input.operationRulesDoc,
-    "current message:",
+    `contextFetchLimit: ${input.contextFetchLimit}`,
+    "currentMessage:",
     `[${input.currentMessage.createdAt}] ${input.currentMessage.authorName}: ${input.currentMessage.content}`,
   ].join("\n");
+
+  return {
+    developerRolePrompt,
+    instructions,
+    userRolePrompt,
+  };
 }

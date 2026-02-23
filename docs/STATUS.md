@@ -20,6 +20,8 @@
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
 - server-initiated request（approval / requestUserInput / tool/call）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
+- プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
+- `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
 - 本体コードと Codex ワークスペース（自己改善対象）を分離する方針が確定した。
@@ -44,6 +46,7 @@
 3. 履歴取得遅延の観測ログを運用で確認する。
 4. 実環境で返信頻度のチューニングを行う。
 5. Bot トークンを設定したローカル常駐運用で実地検証する。
+6. prompt 3分割後の返信品質を運用観測で調整する。
 
 ## 5. ブロッカー
 

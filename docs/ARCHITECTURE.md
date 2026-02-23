@@ -56,18 +56,15 @@
 
 ### AiInput
 
-- `personaName: "ルナ"`
-- `styleHint: "優しい少女 / 敬語とため口を混在"`
+- `forceReply: boolean`
 - `currentMessage: RuntimeMessage`
-- `context: ConversationContext`
-- `operationRulesDoc: string`
+- `contextFetchLimit: number`
+- `tools.fetchDiscordHistory(input): Promise<ConversationContext>`
+- `tools.sendDiscordReply(input): Promise<void>`
 
 ### AiOutput
 
-- `shouldReply: boolean`
-- `replyText: string`
-- `needsMoreHistory: boolean`
-- `improvementProposal?: string`
+- `didReply: boolean`
 
 ## 5. 主要シーケンス
 
@@ -76,15 +73,15 @@
 1. Discord でメッセージ受信
 2. 許可チャンネル判定（許可以外は終了）
 3. メンション有無判定
-4. Discord から直近履歴を取得
-5. AI へ入力
-6. `shouldReply` が `true` なら返信
+4. AI へ入力（現在メッセージ + `forceReply` + ツール）
+5. AI が必要時に `fetch_discord_history` を tool call
+6. AI が返信時に `send_discord_reply` を tool call
 
 ### 5.2 メンション受信
 
 1. メンション検出
-2. `shouldReply` 判定を上書きして返信必須
-3. 返信失敗時は謝罪定型文を返す
+2. `forceReply=true` で AI 呼び出し
+3. AI 返信失敗時は謝罪定型文を返す
 
 ### 5.3 履歴追加取得（tool use）
 
@@ -130,4 +127,5 @@
 1. 会話ログは永続化しない。
 2. 文脈は毎回 Discord から取得する。
 3. 返信頻度や興味判定は AI 判断に寄せる。
-4. 自己改善はドキュメント限定で実施する。
+4. 履歴取得と返信送信は tool use 経由で実施する。
+5. 自己改善はドキュメント限定で実施する。

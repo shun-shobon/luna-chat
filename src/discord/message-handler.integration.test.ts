@@ -35,7 +35,6 @@ describe("handleMessageCreate integration", () => {
       fetchConversationContext,
       logger: createLogger(),
       message,
-      operationRulesDoc: "rules",
     });
 
     expect(fetchConversationContext).toHaveBeenCalledTimes(1);
@@ -65,7 +64,6 @@ describe("handleMessageCreate integration", () => {
       },
       logger: createLogger(),
       message,
-      operationRulesDoc: "rules",
     });
 
     expect(reply).toHaveBeenCalledWith("ごめんね");
@@ -94,7 +92,6 @@ describe("handleMessageCreate integration", () => {
       fetchConversationContext,
       logger: createLogger(),
       message,
-      operationRulesDoc: "rules",
     });
 
     expect(fetchConversationContext).not.toHaveBeenCalled();
