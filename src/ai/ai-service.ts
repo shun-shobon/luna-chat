@@ -1,6 +1,8 @@
 import type { ConversationContext, RuntimeMessage } from "../context/types";
 
 import { CodexAppServerClient } from "./codex-app-server-client";
+import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCallParams";
+import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
 import { buildPrompt } from "./prompt-template";
 
 const REPLY_TRIGGER_PATTERN = /[?？]|ルナ|るな|luna|こんにちは|こんばんは|おはよう/u;
@@ -8,16 +10,19 @@ const REPLY_TRIGGER_PATTERN = /[?？]|ルナ|るな|luna|こんにちは|こん�
 export type AiInput = {
   forceReply: boolean;
   currentMessage: RuntimeMessage;
-  context: ConversationContext;
   operationRulesDoc: string;
+  contextFetchLimit: number;
+  tools: {
+    fetchDiscordHistory: (input: {
+      beforeMessageId?: string;
+      limit: number;
+    }) => Promise<ConversationContext>;
+    sendDiscordReply: (input: { text: string }) => Promise<void>;
+  };
 };
 
 export type AiOutput = {
-  shouldReply: boolean;
-  replyText: string;
-  needsMoreHistory: boolean;
-  requestedBeforeMessageId?: string;
-  improvementProposal?: string;
+  didReply: boolean;
 };
 
 export interface AiService {
@@ -41,10 +46,22 @@ export class CodexAppServerAiService implements AiService {
       return fallbackStubReply(input);
     }
 
+    let didReply = false;
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
       command: this.options.command,
       cwd: this.options.cwd,
+      executeToolCall: async (params) => {
+        const result = await executeToolCall({
+          didReply: () => {
+            didReply = true;
+          },
+          input,
+          params,
+        });
+
+        return result;
+      },
       model: this.options.model,
       sandbox: this.options.sandbox,
       timeoutMs: this.options.timeoutMs,
@@ -61,94 +78,125 @@ export class CodexAppServerAiService implements AiService {
         throw new Error(errorMessage);
       }
 
-      return parseAssistantOutput(turnResult.assistantText, input);
+      return {
+        didReply,
+      };
     } finally {
       client.close();
     }
   }
 }
 
-function fallbackStubReply(input: AiInput): AiOutput {
-  if (input.forceReply) {
-    return {
-      shouldReply: true,
-      replyText: "呼んだ？ ここにいるよ。",
-      needsMoreHistory: false,
-    };
+async function executeToolCall(input: {
+  params: DynamicToolCallParams;
+  input: AiInput;
+  didReply: () => void;
+}): Promise<DynamicToolCallResponse> {
+  if (input.params.tool === "fetch_discord_history") {
+    const args = parseFetchDiscordHistoryArgs(
+      input.params.arguments,
+      input.input.contextFetchLimit,
+    );
+    const historyInput = {
+      limit: args.limit,
+    } as { beforeMessageId?: string; limit: number };
+    if (args.beforeMessageId) {
+      historyInput.beforeMessageId = args.beforeMessageId;
+    }
+
+    const context = await input.input.tools.fetchDiscordHistory(historyInput);
+
+    return toTextToolResponse({
+      channelId: context.channelId,
+      messages: context.recentMessages,
+      requestedByToolUse: true,
+    });
   }
 
-  const shouldReply = REPLY_TRIGGER_PATTERN.test(input.currentMessage.content);
+  if (input.params.tool === "send_discord_reply") {
+    const args = parseSendDiscordReplyArgs(input.params.arguments);
+    await input.input.tools.sendDiscordReply({
+      text: args.text,
+    });
+    input.didReply();
+
+    return toTextToolResponse({
+      ok: true,
+    });
+  }
+
+  throw new Error(`Unsupported tool: ${input.params.tool}`);
+}
+
+function fallbackStubReply(input: AiInput): AiOutput {
+  const shouldReply = input.forceReply || REPLY_TRIGGER_PATTERN.test(input.currentMessage.content);
   if (!shouldReply) {
     return {
-      shouldReply: false,
-      replyText: "",
-      needsMoreHistory: false,
+      didReply: false,
     };
   }
 
+  void input.tools.sendDiscordReply({
+    text: "うん、どうしたの？",
+  });
   return {
-    shouldReply: true,
-    replyText: "うん、どうしたの？",
-    needsMoreHistory: false,
+    didReply: true,
   };
 }
 
-function parseAssistantOutput(rawOutput: string, fallbackInput: AiInput): AiOutput {
-  const jsonText = extractJsonObject(rawOutput);
-  if (!jsonText) {
-    return fallbackStubReply(fallbackInput);
+function parseFetchDiscordHistoryArgs(
+  rawArguments: DynamicToolCallParams["arguments"],
+  defaultLimit: number,
+): {
+  beforeMessageId?: string;
+  limit: number;
+} {
+  if (!rawArguments || typeof rawArguments !== "object") {
+    return { limit: defaultLimit };
   }
 
-  let parsedJson: Partial<AiOutput>;
-  try {
-    parsedJson = JSON.parse(jsonText) as Partial<AiOutput>;
-  } catch {
-    return fallbackStubReply(fallbackInput);
+  const rawObject = rawArguments as Record<string, unknown>;
+  const beforeMessageId =
+    typeof rawObject["beforeMessageId"] === "string" ? rawObject["beforeMessageId"] : undefined;
+  const limit =
+    typeof rawObject["limit"] === "number" && rawObject["limit"] > 0
+      ? Math.floor(rawObject["limit"])
+      : defaultLimit;
+
+  const result = {
+    limit,
+  } as { beforeMessageId?: string; limit: number };
+  if (beforeMessageId) {
+    result.beforeMessageId = beforeMessageId;
   }
 
-  if (typeof parsedJson.shouldReply !== "boolean") {
-    return fallbackStubReply(fallbackInput);
-  }
-  if (typeof parsedJson.replyText !== "string") {
-    return fallbackStubReply(fallbackInput);
-  }
-  if (typeof parsedJson.needsMoreHistory !== "boolean") {
-    return fallbackStubReply(fallbackInput);
-  }
-
-  const output: AiOutput = {
-    needsMoreHistory: parsedJson.needsMoreHistory,
-    replyText: parsedJson.replyText,
-    shouldReply: parsedJson.shouldReply,
-  };
-  if (typeof parsedJson.requestedBeforeMessageId === "string") {
-    output.requestedBeforeMessageId = parsedJson.requestedBeforeMessageId;
-  }
-  if (typeof parsedJson.improvementProposal === "string") {
-    output.improvementProposal = parsedJson.improvementProposal;
-  }
-
-  return output;
+  return result;
 }
 
-function extractJsonObject(text: string): string | undefined {
-  const firstBrace = text.indexOf("{");
-  if (firstBrace < 0) {
-    return undefined;
+function parseSendDiscordReplyArgs(rawArguments: DynamicToolCallParams["arguments"]): {
+  text: string;
+} {
+  if (!rawArguments || typeof rawArguments !== "object") {
+    throw new Error("send_discord_reply arguments must be an object.");
   }
 
-  let depth = 0;
-  for (let index = firstBrace; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return text.slice(firstBrace, index + 1);
-      }
-    }
+  const rawObject = rawArguments as Record<string, unknown>;
+  const text = rawObject["text"];
+  if (typeof text !== "string" || text.trim().length === 0) {
+    throw new Error("send_discord_reply requires non-empty `text`.");
   }
 
-  return undefined;
+  return { text };
+}
+
+function toTextToolResponse(payload: unknown): DynamicToolCallResponse {
+  return {
+    contentItems: [
+      {
+        text: JSON.stringify(payload),
+        type: "inputText",
+      },
+    ],
+    success: true,
+  };
 }

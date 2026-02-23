@@ -1,7 +1,5 @@
 import type { AiService } from "../ai/ai-service";
-import { resolveAiReplyWithHistoryLoop } from "../ai/reply-orchestrator";
 import type { ConversationContext, RuntimeMessage } from "../context/types";
-import { applyImprovementProposal } from "../improvement/document-updater";
 import { evaluateReplyPolicy } from "../policy/reply-policy";
 
 export type MessageLike = {
@@ -41,7 +39,6 @@ export type HandleMessageInput = {
   aiService: AiService;
   operationRulesDoc: string;
   apologyMessage: string;
-  codexWorkspaceDir: string;
   logger: LoggerLike;
   fetchConversationContext: (input: {
     beforeMessageId?: string;
@@ -70,46 +67,36 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   const currentMessage = toRuntimeMessage(message, input.botUserId);
 
   try {
-    const initialContext = await input.fetchConversationContext({
-      limit: input.contextFetchLimit,
-      requestedByToolUse: false,
-    });
-
-    const aiDecision = await resolveAiReplyWithHistoryLoop({
-      aiService: input.aiService,
+    const aiResult = await input.aiService.generateReply({
+      contextFetchLimit: input.contextFetchLimit,
       currentMessage,
-      fetchMoreHistory: async (beforeMessageId) => {
-        return input.fetchConversationContext({
-          beforeMessageId,
-          limit: input.contextFetchLimit,
-          requestedByToolUse: true,
-        });
-      },
       forceReply: policyDecision.forceReply,
-      initialContext,
-      logger: input.logger,
       operationRulesDoc: input.operationRulesDoc,
+      tools: {
+        fetchDiscordHistory: async ({ beforeMessageId, limit }) => {
+          const fetchInput = {
+            limit,
+            requestedByToolUse: true,
+          } as {
+            beforeMessageId?: string;
+            requestedByToolUse: boolean;
+            limit: number;
+          };
+          if (beforeMessageId) {
+            fetchInput.beforeMessageId = beforeMessageId;
+          }
+
+          return input.fetchConversationContext(fetchInput);
+        },
+        sendDiscordReply: async ({ text }) => {
+          await message.reply(text);
+        },
+      },
     });
 
-    if (aiDecision.improvementProposal) {
-      try {
-        const result = applyImprovementProposal(
-          input.codexWorkspaceDir,
-          aiDecision.improvementProposal,
-        );
-        input.logger.info(`Updated improvement document: ${result.targetPath}`);
-      } catch (improvementError: unknown) {
-        input.logger.warn(
-          "Failed to apply improvement proposal. Ignored this proposal.",
-          improvementError,
-        );
-      }
+    if (policyDecision.forceReply && !aiResult.didReply) {
+      await message.reply(input.apologyMessage);
     }
-
-    if (!aiDecision.shouldReply) {
-      return;
-    }
-    await message.reply(aiDecision.replyText);
   } catch (error: unknown) {
     input.logger.error("Failed to generate AI reply:", error);
     if (!policyDecision.forceReply) {
