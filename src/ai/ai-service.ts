@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import type { RuntimeMessage } from "../context/types";
 
 import { CodexAppServerClient } from "./codex-app-server-client";
@@ -102,10 +104,11 @@ export class CodexAppServerAiService implements AiService {
 }
 
 function buildMcpConfig(): Record<string, unknown> {
+  const mcpServerScriptPath = resolve(process.cwd(), "src/mcp/discord-mcp-server.ts");
   return {
     mcp_servers: {
       discord: {
-        args: ["exec", "tsx", "src/mcp/discord-mcp-server.ts"],
+        args: ["exec", "tsx", mcpServerScriptPath],
         command: "pnpm",
       },
     },
