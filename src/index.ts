@@ -8,14 +8,21 @@ import { readApologyTemplate } from "./ai/apology-template";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
 
+const FIXED_CONTEXT_FETCH_LIMIT = 30;
+const FIXED_CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
+const FIXED_CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
+const FIXED_CODEX_APP_SERVER_APPROVAL_POLICY = "never";
+const FIXED_CODEX_APP_SERVER_SANDBOX = "workspace-write";
+const FIXED_CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
+
 const consola = createConsola({
   level: 4,
 });
 const runtimeConfig = loadConfigOrExit();
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
-  approvalPolicy: runtimeConfig.codexAppServerApprovalPolicy,
-  command: runtimeConfig.codexAppServerCommand,
-  cwd: runtimeConfig.codexAppServerCwd,
+  approvalPolicy: FIXED_CODEX_APP_SERVER_APPROVAL_POLICY,
+  command: FIXED_CODEX_APP_SERVER_COMMAND,
+  cwd: runtimeConfig.codexWorkspaceDir,
   debugLog: (message, details) => {
     if (details) {
       consola.debug(message, details);
@@ -23,12 +30,12 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
     }
     consola.debug(message);
   },
-  model: runtimeConfig.codexAppServerModel,
-  sandbox: runtimeConfig.codexAppServerSandbox,
-  timeoutMs: runtimeConfig.codexAppServerTimeoutMs,
+  model: FIXED_CODEX_APP_SERVER_MODEL,
+  sandbox: FIXED_CODEX_APP_SERVER_SANDBOX,
+  timeoutMs: FIXED_CODEX_APP_SERVER_TIMEOUT_MS,
 };
 const aiService = new CodexAppServerAiService(aiServiceOptions);
-const apologyMessage = readApologyTemplate(runtimeConfig.apologyTemplatePath);
+const apologyMessage = readApologyTemplate();
 
 const client = new Client({
   intents: [
@@ -53,7 +60,7 @@ client.on("messageCreate", async (message) => {
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     apologyMessage,
     botUserId,
-    contextFetchLimit: runtimeConfig.contextFetchLimit,
+    contextFetchLimit: FIXED_CONTEXT_FETCH_LIMIT,
     logger: consola,
     message,
   }).catch((error: unknown) => {
