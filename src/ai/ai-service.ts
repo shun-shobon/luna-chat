@@ -4,6 +4,7 @@ import type { RuntimeMessage } from "../context/types";
 import { logger } from "../logger";
 
 import { CodexAppServerClient } from "./codex-app-server-client";
+import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
 import { buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
@@ -25,8 +26,8 @@ export type CodexAppServerAiServiceOptions = {
   command: string;
   cwd: string;
   model: string;
+  reasoningEffort: ReasoningEffort;
   sandbox: string;
-  threadConfig?: Record<string, unknown>;
   timeoutMs: number;
 };
 
@@ -48,7 +49,7 @@ export class CodexAppServerAiService implements AiService {
       await client.initialize();
       const promptBundle = buildPromptBundle(input);
       const threadId = await client.startThread({
-        config: buildThreadConfig(this.options.threadConfig),
+        config: buildThreadConfig(this.options.reasoningEffort),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -104,21 +105,17 @@ export class CodexAppServerAiService implements AiService {
   }
 }
 
-function buildThreadConfig(threadConfig?: Record<string, unknown>): Record<string, unknown> {
-  const mcpServerScriptPath = resolve(process.cwd(), "src/mcp/discord-mcp-server.ts");
+function buildThreadConfig(reasoningEffort: ReasoningEffort): Record<string, unknown> {
+  const MCP_SERVER_SCRIPT_PATH = resolve(process.cwd(), "src/mcp/discord-mcp-server.ts");
   const config: Record<string, unknown> = {
+    model_reasoning_effort: reasoningEffort,
     mcp_servers: {
       discord: {
-        args: ["exec", "tsx", mcpServerScriptPath],
+        args: ["exec", "tsx", MCP_SERVER_SCRIPT_PATH],
         command: "pnpm",
       },
     },
   };
-  if (threadConfig) {
-    for (const [key, value] of Object.entries(threadConfig)) {
-      config[key] = value;
-    }
-  }
 
   return config;
 }
