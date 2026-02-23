@@ -1,5 +1,9 @@
+#!/usr/bin/env -S node --enable-source-maps
+
 import { createConsola } from "consola";
 import { Client, GatewayIntentBits } from "discord.js";
+
+import { hello } from "./hello";
 
 const consola = createConsola();
 
@@ -18,7 +22,7 @@ client.on("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (message.content.startsWith("!ping")) {
-    await message.reply("Pong!");
+    await message.reply(hello());
   }
 });
 
