@@ -26,6 +26,7 @@ export type CodexAppServerAiServiceOptions = {
   debugLog?: (message: string, details?: Record<string, unknown>) => void;
   model: string;
   sandbox: string;
+  threadConfig?: Record<string, unknown>;
   timeoutMs: number;
 };
 
@@ -47,7 +48,7 @@ export class CodexAppServerAiService implements AiService {
       await client.initialize();
       const promptBundle = buildPromptBundle(input);
       const threadId = await client.startThread({
-        config: buildMcpConfig(),
+        config: buildThreadConfig(this.options.threadConfig),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -103,9 +104,9 @@ export class CodexAppServerAiService implements AiService {
   }
 }
 
-function buildMcpConfig(): Record<string, unknown> {
+function buildThreadConfig(threadConfig?: Record<string, unknown>): Record<string, unknown> {
   const mcpServerScriptPath = resolve(process.cwd(), "src/mcp/discord-mcp-server.ts");
-  return {
+  const config: Record<string, unknown> = {
     mcp_servers: {
       discord: {
         args: ["exec", "tsx", mcpServerScriptPath],
@@ -113,4 +114,11 @@ function buildMcpConfig(): Record<string, unknown> {
       },
     },
   };
+  if (threadConfig) {
+    for (const [key, value] of Object.entries(threadConfig)) {
+      config[key] = value;
+    }
+  }
+
+  return config;
 }
