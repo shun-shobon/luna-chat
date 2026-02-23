@@ -20,9 +20,10 @@ export function buildPromptBundle(input: AiInput): PromptBundle {
     "履歴が必要なら必ず MCP tool `fetch_discord_history` を使う。",
     "`fetch_discord_history` 引数: { channelId: string, beforeMessageId?: string, limit?: number }",
     "返信する場合は必ず `send_discord_reply` を使う。",
-    "`send_discord_reply` 引数: { channelId: string, replyToMessageId: string, text: string }",
+    "`send_discord_reply` 引数: { channelId: string, text: string }",
     "通常テキストをそのまま最終返信として扱わない。返信内容は必ず `send_discord_reply` の `text` に入れる。",
-    "このターンでは user input の `channelId` と `replyToMessageId` をそのまま使うこと。",
+    "このターンでは user input の `channelId` をそのまま使うこと。",
+    "必要なら user input の `currentMessageId` を `fetch_discord_history.beforeMessageId` に使ってよい。",
   ].join("\n");
 
   const userRolePrompt = [
@@ -30,7 +31,7 @@ export function buildPromptBundle(input: AiInput): PromptBundle {
     `forceReply: ${String(input.forceReply)}`,
     `contextFetchLimit: ${input.contextFetchLimit}`,
     `channelId: ${input.currentMessage.channelId}`,
-    `replyToMessageId: ${input.currentMessage.id}`,
+    `currentMessageId: ${input.currentMessage.id}`,
     "currentMessage:",
     `[${input.currentMessage.createdAt}] ${input.currentMessage.authorName}: ${input.currentMessage.content}`,
   ].join("\n");
