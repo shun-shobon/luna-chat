@@ -18,8 +18,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
     "consola": "3.4.2",
-    "discord.js": "14.25.1"
+    "discord.js": "14.25.1",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "24.0.0",

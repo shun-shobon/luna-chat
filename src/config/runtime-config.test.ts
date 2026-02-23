@@ -37,7 +37,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.codexAppServerCommand).toBe("codex app-server --listen stdio://");
     expect(config.codexWorkspaceDir).toBe(workspaceDir);
     expect(config.apologyTemplatePath).toBe(apologyTemplatePath);
-    expect(config.codexAppServerModel).toBe("gpt-5.1-codex");
+    expect(config.codexAppServerModel).toBe("gpt-5.3-codex");
     expect(config.codexAppServerApprovalPolicy).toBe("never");
     expect(config.codexAppServerSandbox).toBe("workspace-write");
     expect(config.codexAppServerTimeoutMs).toBe(60_000);

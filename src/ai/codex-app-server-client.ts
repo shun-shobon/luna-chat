@@ -3,8 +3,6 @@ import * as readline from "node:readline";
 
 import type { AskForApproval } from "./codex-generated/v2/AskForApproval";
 import type { CommandExecutionRequestApprovalResponse } from "./codex-generated/v2/CommandExecutionRequestApprovalResponse";
-import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCallParams";
-import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
 import type { ErrorNotification } from "./codex-generated/v2/ErrorNotification";
 import type { FileChangeRequestApprovalResponse } from "./codex-generated/v2/FileChangeRequestApprovalResponse";
 import type { ItemCompletedNotification } from "./codex-generated/v2/ItemCompletedNotification";
@@ -50,6 +48,13 @@ type PendingRequest = {
 export type TurnResult = {
   assistantText: string;
   errorMessage?: string;
+  mcpToolCalls: Array<{
+    arguments: unknown;
+    result: unknown;
+    server: string;
+    status: "completed" | "failed" | "inProgress";
+    tool: string;
+  }>;
   status: "completed" | "failed" | "interrupted";
 };
 
@@ -60,7 +65,6 @@ export type CodexAppServerClientOptions = {
   approvalPolicy: string;
   sandbox: string;
   timeoutMs: number;
-  executeToolCall: (params: DynamicToolCallParams) => Promise<DynamicToolCallResponse>;
 };
 
 const CLIENT_INFO = {
@@ -106,7 +110,11 @@ export class CodexAppServerClient {
     this.notify("initialized", {});
   }
 
-  async startThread(input: { instructions: string; developerRolePrompt: string }): Promise<string> {
+  async startThread(input: {
+    instructions: string;
+    developerRolePrompt: string;
+    config?: Record<string, unknown>;
+  }): Promise<string> {
     const threadStartParams: ThreadStartParams = {
       approvalPolicy: this.options.approvalPolicy as AskForApproval,
       baseInstructions: input.instructions,
@@ -117,6 +125,9 @@ export class CodexAppServerClient {
       persistExtendedHistory: false,
       sandbox: this.options.sandbox as SandboxMode,
     };
+    if (input.config) {
+      threadStartParams.config = input.config as Exclude<ThreadStartParams["config"], undefined>;
+    }
     const result = (await this.request("thread/start", threadStartParams)) as ThreadStartResponse;
     const threadId = result.thread?.id;
     if (!threadId) {
@@ -260,27 +271,6 @@ export class CodexAppServerClient {
       return;
     }
 
-    if (request.method === "item/tool/call") {
-      const params = request.params as DynamicToolCallParams;
-      try {
-        const result = await this.options.executeToolCall(params);
-        this.writeLine({
-          id: request.id,
-          result,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "tool call execution failed";
-        this.writeLine({
-          error: {
-            code: -32000,
-            message,
-          },
-          id: request.id,
-        });
-      }
-      return;
-    }
-
     if (request.method === "item/tool/requestUserInput") {
       const questions = extractQuestions(request.params);
       const response: ToolRequestUserInputResponse = {
@@ -322,12 +312,20 @@ type TurnTracker = {
   deltaText: string;
   errorMessage?: string;
   latestAgentMessageText?: string;
+  mcpToolCalls: Array<{
+    arguments: unknown;
+    result: unknown;
+    server: string;
+    status: "completed" | "failed" | "inProgress";
+    tool: string;
+  }>;
   completedStatus?: "completed" | "failed" | "interrupted";
 };
 
 function createTurnTracker(): TurnTracker {
   return {
     deltaText: "",
+    mcpToolCalls: [],
   };
 }
 
@@ -347,6 +345,21 @@ function handleTurnNotification(
     const params = notification.params as ItemCompletedNotification;
     if (params.item.type === "agentMessage") {
       tracker.latestAgentMessageText = params.item.text;
+      return;
+    }
+    if (
+      params.item.type === "mcpToolCall" &&
+      (params.item.status === "completed" ||
+        params.item.status === "failed" ||
+        params.item.status === "inProgress")
+    ) {
+      tracker.mcpToolCalls.push({
+        arguments: params.item.arguments,
+        result: params.item.result,
+        server: params.item.server,
+        status: params.item.status,
+        tool: params.item.tool,
+      });
     }
     return;
   }
@@ -388,6 +401,7 @@ async function waitForTurnCompletion(
       const assistantText = tracker.latestAgentMessageText ?? tracker.deltaText.trim();
       const turnResult: TurnResult = {
         assistantText,
+        mcpToolCalls: tracker.mcpToolCalls,
         status: tracker.completedStatus,
       };
       if (tracker.errorMessage) {
@@ -404,6 +418,7 @@ async function waitForTurnCompletion(
   return {
     assistantText: tracker.latestAgentMessageText ?? tracker.deltaText.trim(),
     errorMessage: `turn timed out after ${timeoutMs}ms`,
+    mcpToolCalls: tracker.mcpToolCalls,
     status: "failed",
   };
 }

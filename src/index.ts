@@ -6,7 +6,6 @@ import { Client, GatewayIntentBits } from "discord.js";
 import { CodexAppServerAiService, type CodexAppServerAiServiceOptions } from "./ai/ai-service";
 import { readApologyTemplate } from "./ai/apology-template";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
-import { fetchConversationContext } from "./context/discord-context";
 import { handleMessageCreate } from "./discord/message-handler";
 
 const consola = createConsola({
@@ -55,21 +54,6 @@ client.on("messageCreate", async (message) => {
     apologyMessage,
     botUserId,
     contextFetchLimit: runtimeConfig.contextFetchLimit,
-    fetchConversationContext: async ({ beforeMessageId, limit, requestedByToolUse }) => {
-      const baseFetchInput = {
-        botUserId,
-        channel: message.channel,
-        limit,
-        requestedByToolUse,
-      };
-      if (beforeMessageId) {
-        return fetchConversationContext({
-          ...baseFetchInput,
-          beforeMessageId,
-        });
-      }
-      return fetchConversationContext(baseFetchInput);
-    },
     logger: consola,
     message,
   }).catch((error: unknown) => {
