@@ -8,11 +8,9 @@ import { Client, GatewayIntentBits } from "discord.js";
 
 import { CodexAppServerAiService } from "./ai/ai-service";
 import { readApologyTemplate } from "./ai/apology-template";
-import { resolveAiReplyWithHistoryLoop } from "./ai/reply-orchestrator";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
-import { fetchConversationContext, toRuntimeMessage } from "./context/discord-context";
-import { applyImprovementProposal } from "./improvement/document-updater";
-import { evaluateReplyPolicy } from "./policy/reply-policy";
+import { fetchConversationContext } from "./context/discord-context";
+import { handleMessageCreate } from "./discord/message-handler";
 
 const consola = createConsola();
 const runtimeConfig = loadConfigOrExit();
@@ -33,75 +31,39 @@ client.on("clientReady", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!client.user) return;
-  const botUser = client.user;
-
-  const policyDecision = evaluateReplyPolicy({
-    allowedChannelIds: runtimeConfig.allowedChannelIds,
-    channelId: message.channelId,
-    isDm: !message.inGuild(),
-    isThread: message.channel.isThread(),
-    mentionedBot: message.mentions.has(botUser.id),
-  });
-  if (!policyDecision.shouldHandle) return;
-
-  const currentMessage = toRuntimeMessage(message, botUser.id);
-
-  try {
-    const initialContext = await fetchConversationContext({
-      botUserId: botUser.id,
-      channel: message.channel,
-      limit: runtimeConfig.contextFetchLimit,
-      requestedByToolUse: false,
-    });
-
-    const aiDecision = await resolveAiReplyWithHistoryLoop({
-      aiService,
-      currentMessage,
-      fetchMoreHistory: async (beforeMessageId) => {
-        return fetchConversationContext({
-          beforeMessageId,
-          botUserId: botUser.id,
-          channel: message.channel,
-          limit: runtimeConfig.contextFetchLimit,
-          requestedByToolUse: true,
-        });
-      },
-      forceReply: policyDecision.forceReply,
-      initialContext,
-      logger: consola,
-      operationRulesDoc,
-    });
-
-    if (aiDecision.improvementProposal) {
-      try {
-        const result = applyImprovementProposal(
-          runtimeConfig.codexWorkspaceDir,
-          aiDecision.improvementProposal,
-        );
-        consola.info(`Updated improvement document: ${result.targetPath}`);
-      } catch (improvementError: unknown) {
-        consola.warn(
-          "Failed to apply improvement proposal. Ignored this proposal.",
-          improvementError,
-        );
-      }
-    }
-
-    if (!aiDecision.shouldReply) return;
-
-    await message.reply(aiDecision.replyText).catch((error: unknown) => {
-      consola.error("Failed to reply:", error);
-    });
-  } catch (error: unknown) {
-    consola.error("Failed to generate AI reply:", error);
-    if (!policyDecision.forceReply) return;
-
-    await message.reply(apologyMessage).catch((replyError: unknown) => {
-      consola.error("Failed to send fallback apology message:", replyError);
-    });
+  if (!client.user) {
+    return;
   }
+  const botUserId = client.user.id;
+
+  await handleMessageCreate({
+    aiService,
+    allowedChannelIds: runtimeConfig.allowedChannelIds,
+    apologyMessage,
+    botUserId,
+    codexWorkspaceDir: runtimeConfig.codexWorkspaceDir,
+    contextFetchLimit: runtimeConfig.contextFetchLimit,
+    fetchConversationContext: async ({ beforeMessageId, limit, requestedByToolUse }) => {
+      const baseFetchInput = {
+        botUserId,
+        channel: message.channel,
+        limit,
+        requestedByToolUse,
+      };
+      if (beforeMessageId) {
+        return fetchConversationContext({
+          ...baseFetchInput,
+          beforeMessageId,
+        });
+      }
+      return fetchConversationContext(baseFetchInput);
+    },
+    logger: consola,
+    message,
+    operationRulesDoc,
+  }).catch((error: unknown) => {
+    consola.error("Unexpected handler failure:", error);
+  });
 });
 
 await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
