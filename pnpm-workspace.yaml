@@ -1,5 +1,12 @@
 minimumReleaseAge: 1440
+
+onlyBuiltDependencies:
+  - esbuild
+
 saveExact: true
+
 strictDepBuilds: true
+
 trustPolicy: no-downgrade
+
 trustPolicyIgnoreAfter: 10080

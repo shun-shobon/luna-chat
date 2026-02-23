@@ -3,9 +3,13 @@
 import { createConsola } from "consola";
 import { Client, GatewayIntentBits } from "discord.js";
 
-import { hello } from "./hello";
+import { StubAiService } from "./ai/ai-service";
+import { loadRuntimeConfig } from "./config/runtime-config";
+import { evaluateReplyPolicy } from "./policy/reply-policy";
 
 const consola = createConsola();
+const runtimeConfig = loadConfigOrExit();
+const aiService = new StubAiService();
 
 const client = new Client({
   intents: [
@@ -21,11 +25,37 @@ client.on("clientReady", () => {
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-  if (message.content.startsWith("!ping")) {
-    await message.reply(hello());
-  }
+  if (!client.user) return;
+
+  const policyDecision = evaluateReplyPolicy({
+    allowedChannelIds: runtimeConfig.allowedChannelIds,
+    channelId: message.channelId,
+    isDm: !message.inGuild(),
+    isThread: message.channel.isThread(),
+    mentionedBot: message.mentions.has(client.user.id),
+  });
+  if (!policyDecision.shouldHandle) return;
+
+  const aiDecision = await aiService.decideReply({
+    forceReply: policyDecision.forceReply,
+    messageContent: message.content,
+  });
+  if (!aiDecision.shouldReply) return;
+
+  await message.reply(aiDecision.replyText).catch((error: unknown) => {
+    consola.error("Failed to reply:", error);
+  });
 });
 
-await client.login(process.env["DISCORD_BOT_TOKEN"]).catch((error) => {
+await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
   consola.error("Failed to login:", error);
 });
+
+function loadConfigOrExit() {
+  try {
+    return loadRuntimeConfig();
+  } catch (error: unknown) {
+    consola.error("Invalid configuration:", error);
+    process.exit(1);
+  }
+}
