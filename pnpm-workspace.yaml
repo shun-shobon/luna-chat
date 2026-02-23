@@ -1,0 +1,5 @@
+minimumReleaseAge: 1440
+saveExact: true
+strictDepBuilds: true
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 10080

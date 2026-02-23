@@ -1,0 +1,25 @@
+{
+  "name": "luna-chat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "luna-chat",
+  "license": "MIT",
+  "author": "NISHIZAWA Shuntaro <me@s2n.tech>",
+  "type": "module",
+  "scripts": {
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --type-aware --type-check",
+    "lint:fix": "oxlint --type-aware --type-check --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "24.0.0",
+    "@tsconfig/strictest": "2.0.8",
+    "oxfmt": "0.34.0",
+    "oxlint": "1.49.0",
+    "oxlint-tsgolint": "0.14.2",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.30.1"
+}
