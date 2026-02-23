@@ -1,5 +1,3 @@
-import { resolve } from "node:path";
-
 import type { RuntimeMessage } from "../context/types";
 import { logger } from "../logger";
 
@@ -25,6 +23,7 @@ export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
   command: string;
   cwd: string;
+  discordMcpServerUrl: string;
   model: string;
   reasoningEffort: ReasoningEffort;
   sandbox: string;
@@ -49,7 +48,7 @@ export class CodexAppServerAiService implements AiService {
       await client.initialize();
       const promptBundle = buildPromptBundle(input);
       const threadId = await client.startThread({
-        config: buildThreadConfig(this.options.reasoningEffort),
+        config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -105,14 +104,15 @@ export class CodexAppServerAiService implements AiService {
   }
 }
 
-function buildThreadConfig(reasoningEffort: ReasoningEffort): Record<string, unknown> {
-  const MCP_SERVER_SCRIPT_PATH = resolve(process.cwd(), "src/mcp/discord-mcp-server.ts");
+export function buildThreadConfig(
+  reasoningEffort: ReasoningEffort,
+  discordMcpServerUrl: string,
+): Record<string, unknown> {
   const config: Record<string, unknown> = {
     model_reasoning_effort: reasoningEffort,
     mcp_servers: {
       discord: {
-        args: ["exec", "tsx", MCP_SERVER_SCRIPT_PATH],
-        command: "pnpm",
+        url: discordMcpServerUrl,
       },
     },
   };

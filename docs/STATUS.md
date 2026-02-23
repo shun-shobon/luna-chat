@@ -26,6 +26,8 @@
 - reasoning effort は `index.ts` 側で固定し、`thread/start` の `config.model_reasoning_effort` に反映する。
 - `thread/start` は `ephemeral=true` と `personality=\"friendly\"` を固定で指定する。
 - MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
+- Discord MCP サーバーは `hono` + `@hono/mcp` の HTTP(Streamable) 実装へ移行済み（`/mcp`）。
+- アプリ起動時に Discord MCP サーバーを同時起動し、`thread/start` の `config.mcp_servers.discord.url` に実URLを注入する。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。
