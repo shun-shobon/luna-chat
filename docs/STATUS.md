@@ -20,6 +20,7 @@
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
 - server-initiated request（approval / requestUserInput / tool/call）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
+- app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。

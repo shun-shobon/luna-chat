@@ -5,8 +5,6 @@ import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCall
 import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
 import { buildPromptBundle } from "./prompt-template";
 
-const REPLY_TRIGGER_PATTERN = /[?？]|ルナ|るな|luna|こんにちは|こんばんは|おはよう/u;
-
 export type AiInput = {
   forceReply: boolean;
   currentMessage: RuntimeMessage;
@@ -30,7 +28,7 @@ export interface AiService {
 
 export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
-  command?: string;
+  command: string;
   cwd: string;
   model: string;
   sandbox: string;
@@ -41,10 +39,6 @@ export class CodexAppServerAiService implements AiService {
   constructor(private readonly options: CodexAppServerAiServiceOptions) {}
 
   async generateReply(input: AiInput): Promise<AiOutput> {
-    if (!this.options.command) {
-      return fallbackStubReply(input);
-    }
-
     let didReply = false;
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
@@ -128,22 +122,6 @@ async function executeToolCall(input: {
   }
 
   throw new Error(`Unsupported tool: ${input.params.tool}`);
-}
-
-function fallbackStubReply(input: AiInput): AiOutput {
-  const shouldReply = input.forceReply || REPLY_TRIGGER_PATTERN.test(input.currentMessage.content);
-  if (!shouldReply) {
-    return {
-      didReply: false,
-    };
-  }
-
-  void input.tools.sendDiscordReply({
-    text: "うん、どうしたの？",
-  });
-  return {
-    didReply: true,
-  };
 }
 
 function parseFetchDiscordHistoryArgs(

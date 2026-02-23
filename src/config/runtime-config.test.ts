@@ -26,7 +26,6 @@ describe("loadRuntimeConfig", () => {
     const config = loadRuntimeConfig({
       ALLOWED_CHANNEL_IDS: "111, 222,333",
       APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
-      CODEX_APP_SERVER_COMMAND: "codex-app-server",
       CODEX_WORKSPACE_DIR: workspaceDir,
       CONTEXT_FETCH_LIMIT: "50",
       DISCORD_BOT_TOKEN: "token",
@@ -35,7 +34,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.discordBotToken).toBe("token");
     expect(Array.from(config.allowedChannelIds)).toEqual(["111", "222", "333"]);
     expect(config.contextFetchLimit).toBe(50);
-    expect(config.codexAppServerCommand).toBe("codex-app-server");
+    expect(config.codexAppServerCommand).toBe("codex app-server --listen stdio://");
     expect(config.codexWorkspaceDir).toBe(workspaceDir);
     expect(config.apologyTemplatePath).toBe(apologyTemplatePath);
     expect(config.codexAppServerModel).toBe("gpt-5.1-codex");
