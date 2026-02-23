@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "build": "tsdown",
-    "dev": "node --watch --experimental-transform-types src/index.ts",
+    "dev": "tsx --watch src/index.ts",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "lint": "oxlint --type-aware --type-check",
@@ -28,6 +28,7 @@
     "oxlint": "1.49.0",
     "oxlint-tsgolint": "0.14.2",
     "tsdown": "0.20.3",
+    "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "4.0.18"
   },
