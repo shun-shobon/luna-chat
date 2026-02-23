@@ -14,6 +14,7 @@
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --type-aware --type-check --fix",
     "start": "./dist/index.mjs",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,7 +28,8 @@
     "oxlint": "1.49.0",
     "oxlint-tsgolint": "0.14.2",
     "tsdown": "0.20.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
   },
   "packageManager": "pnpm@10.30.1"
 }
