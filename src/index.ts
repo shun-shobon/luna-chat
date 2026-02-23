@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { createConsola } from "consola";
 import { Client, GatewayIntentBits } from "discord.js";
 
-import { CodexAppServerAiService } from "./ai/ai-service";
+import { CodexAppServerAiService, type CodexAppServerAiServiceOptions } from "./ai/ai-service";
 import { readApologyTemplate } from "./ai/apology-template";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { fetchConversationContext } from "./context/discord-context";
@@ -14,7 +14,17 @@ import { handleMessageCreate } from "./discord/message-handler";
 
 const consola = createConsola();
 const runtimeConfig = loadConfigOrExit();
-const aiService = new CodexAppServerAiService(runtimeConfig.codexAppServerCommand);
+const aiServiceOptions: CodexAppServerAiServiceOptions = {
+  approvalPolicy: runtimeConfig.codexAppServerApprovalPolicy,
+  cwd: runtimeConfig.codexAppServerCwd,
+  model: runtimeConfig.codexAppServerModel,
+  sandbox: runtimeConfig.codexAppServerSandbox,
+  timeoutMs: runtimeConfig.codexAppServerTimeoutMs,
+};
+if (runtimeConfig.codexAppServerCommand) {
+  aiServiceOptions.command = runtimeConfig.codexAppServerCommand;
+}
+const aiService = new CodexAppServerAiService(aiServiceOptions);
 const operationRulesDoc = loadOperationRulesDoc();
 const apologyMessage = readApologyTemplate(runtimeConfig.apologyTemplatePath);
 

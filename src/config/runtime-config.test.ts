@@ -38,6 +38,11 @@ describe("loadRuntimeConfig", () => {
     expect(config.codexAppServerCommand).toBe("codex-app-server");
     expect(config.codexWorkspaceDir).toBe(workspaceDir);
     expect(config.apologyTemplatePath).toBe(apologyTemplatePath);
+    expect(config.codexAppServerModel).toBe("gpt-5.1-codex");
+    expect(config.codexAppServerApprovalPolicy).toBe("never");
+    expect(config.codexAppServerSandbox).toBe("workspace-write");
+    expect(config.codexAppServerTimeoutMs).toBe(60_000);
+    expect(config.codexAppServerCwd).toBe(process.cwd());
   });
 
   it("ALLOWED_CHANNEL_IDS が空なら失敗する", () => {
@@ -68,6 +73,30 @@ describe("loadRuntimeConfig", () => {
         APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
         CODEX_WORKSPACE_DIR: workspaceDir,
         CONTEXT_FETCH_LIMIT: "0",
+        DISCORD_BOT_TOKEN: "token",
+      }),
+    ).toThrowError(RuntimeConfigError);
+  });
+
+  it("CODEX_APP_SERVER_TIMEOUT_MS が不正なら失敗する", () => {
+    expect(() =>
+      loadRuntimeConfig({
+        ALLOWED_CHANNEL_IDS: "111",
+        APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
+        CODEX_APP_SERVER_TIMEOUT_MS: "0",
+        CODEX_WORKSPACE_DIR: workspaceDir,
+        DISCORD_BOT_TOKEN: "token",
+      }),
+    ).toThrowError(RuntimeConfigError);
+  });
+
+  it("CODEX_APP_SERVER_SANDBOX が不正なら失敗する", () => {
+    expect(() =>
+      loadRuntimeConfig({
+        ALLOWED_CHANNEL_IDS: "111",
+        APOLOGY_TEMPLATE_PATH: apologyTemplatePath,
+        CODEX_APP_SERVER_SANDBOX: "workspaceWrite",
+        CODEX_WORKSPACE_DIR: workspaceDir,
         DISCORD_BOT_TOKEN: "token",
       }),
     ).toThrowError(RuntimeConfigError);
