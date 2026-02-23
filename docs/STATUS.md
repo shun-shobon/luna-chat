@@ -28,6 +28,7 @@
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。
+- ロガーは `src/logger.ts` の共通 `consola` を直接参照する構成に統一した。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
 - 本体コードと Codex ワークスペース（自己改善対象）を分離する方針が確定した。

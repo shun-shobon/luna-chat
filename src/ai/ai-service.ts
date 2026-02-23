@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import type { RuntimeMessage } from "../context/types";
+import { logger } from "../logger";
 
 import { CodexAppServerClient } from "./codex-app-server-client";
 import { buildPromptBundle } from "./prompt-template";
@@ -23,7 +24,6 @@ export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
   command: string;
   cwd: string;
-  debugLog?: (message: string, details?: Record<string, unknown>) => void;
   model: string;
   sandbox: string;
   threadConfig?: Record<string, unknown>;
@@ -53,19 +53,19 @@ export class CodexAppServerAiService implements AiService {
         instructions: promptBundle.instructions,
       });
       activeThreadId = threadId;
-      this.options.debugLog?.("ai.turn.started", {
+      logger.debug("ai.turn.started", {
         channelId: input.currentMessage.channelId,
         forceReply: input.forceReply,
         messageId: input.currentMessage.id,
         threadId,
       });
       const turnResult = await client.runTurn(threadId, promptBundle.userRolePrompt);
-      this.options.debugLog?.("ai.turn.assistant_output", {
+      logger.debug("ai.turn.assistant_output", {
         assistantText: turnResult.assistantText,
         threadId,
       });
       for (const toolCall of turnResult.mcpToolCalls) {
-        this.options.debugLog?.("ai.turn.mcp_tool_call", {
+        logger.debug("ai.turn.mcp_tool_call", {
           arguments: toolCall.arguments,
           server: toolCall.server,
           status: toolCall.status,
@@ -76,7 +76,7 @@ export class CodexAppServerAiService implements AiService {
       const didReply = turnResult.mcpToolCalls.some((toolCall) => {
         return toolCall.status === "completed" && toolCall.tool === "send_discord_reply";
       });
-      this.options.debugLog?.("ai.turn.completed", {
+      logger.debug("ai.turn.completed", {
         didReply,
         errorMessage: turnResult.errorMessage,
         status: turnResult.status,
@@ -92,7 +92,7 @@ export class CodexAppServerAiService implements AiService {
         didReply,
       };
     } catch (error: unknown) {
-      this.options.debugLog?.("ai.turn.failed", {
+      logger.debug("ai.turn.failed", {
         errorMessage: error instanceof Error ? error.message : String(error),
         messageId: input.currentMessage.id,
         threadId: activeThreadId,
