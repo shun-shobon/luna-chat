@@ -105,10 +105,9 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
   server.registerTool(
     "fetch_discord_history",
     {
-      description:
-        "Fetch Discord channel messages. Use this when you need older conversation context.",
+      description: "Discordチャンネルの履歴メッセージを取得する。",
       inputSchema: fetchHistoryInputSchema,
-      title: "Fetch Discord History",
+      title: "Discord履歴取得",
     },
     async ({ beforeMessageId, channelId, limit }) => {
       const boundedLimit = Math.min(limit ?? DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT);
@@ -137,10 +136,9 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
   server.registerTool(
     "send_discord_reply",
     {
-      description:
-        "Send a reply message to Discord. Always provide the original target message id.",
+      description: "Discordチャンネルへメッセージを送信する。",
       inputSchema: sendReplyInputSchema,
-      title: "Send Discord Reply",
+      title: "Discord送信",
     },
     async ({ channelId, text }) => {
       const trimmedText = text.trim();
