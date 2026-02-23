@@ -2,6 +2,14 @@
 
 Codex CLI app-serverとDiscord.jsを使ったDiscord Chat Botを作成します。
 
+## ドキュメント導線
+
+- `docs/SPEC.md`: 要件定義（ルナ人格、メンション必須返信、通常投稿はAI判断、履歴はDiscordから都度取得、自己改善はドキュメント限定）
+- `docs/PLAN.md`: マイルストーン、リスクレジスタ、DoD
+- `docs/ARCHITECTURE.md`: モジュール構成、データモデル、主要シーケンス、設定項目
+- `docs/RUNBOOK.md`: 常時遵守ルール、実行手順、失敗時対応、変更管理
+- `docs/STATUS.md`: 現在の真実、確定方針、直近タスク、再開コンテキスト
+
 ## 開発スクリプト
 
 - `pnpm run start`: ビルドされたスクリプトを実行する。
