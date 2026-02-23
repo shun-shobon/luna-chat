@@ -23,6 +23,7 @@
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
 - app-server 実行 CWD は固定で `codex-workspace` を使用する。
+- reasoning effort は `thread/start` の `config.model_reasoning_effort` で `medium` を使用する。
 - MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。

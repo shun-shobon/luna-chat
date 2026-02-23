@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-const FIXED_CODEX_WORKSPACE_DIR_NAME = "codex-workspace";
+const codexWorkspaceDirName = "codex-workspace";
 
 export type RuntimeConfig = {
   discordBotToken: string;
@@ -23,10 +23,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   }
 
   const allowedChannelIds = parseAllowedChannelIds(env["ALLOWED_CHANNEL_IDS"]);
-  const codexWorkspaceDir = resolve(process.cwd(), FIXED_CODEX_WORKSPACE_DIR_NAME);
+  const codexWorkspaceDir = resolve(process.cwd(), codexWorkspaceDirName);
   assertDirectoryExistsAndWritable(
     codexWorkspaceDir,
-    `${FIXED_CODEX_WORKSPACE_DIR_NAME} must exist and be writable.`,
+    `${codexWorkspaceDirName} must exist and be writable.`,
   );
 
   return {

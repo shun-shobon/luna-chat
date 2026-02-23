@@ -8,20 +8,23 @@ import { readApologyTemplate } from "./ai/apology-template";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
 
-const FIXED_CONTEXT_FETCH_LIMIT = 30;
-const FIXED_CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
-const FIXED_CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
-const FIXED_CODEX_APP_SERVER_APPROVAL_POLICY = "never";
-const FIXED_CODEX_APP_SERVER_SANDBOX = "workspace-write";
-const FIXED_CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
+const contextFetchLimit = 30;
+const codexAppServerCommand = "codex app-server --listen stdio://";
+const codexAppServerModel = "gpt-5.3-codex";
+const codexAppServerApprovalPolicy = "never";
+const codexAppServerSandbox = "workspace-write";
+const codexAppServerTimeoutMs = 60_000;
+const threadConfig = {
+  model_reasoning_effort: "medium",
+};
 
 const consola = createConsola({
   level: 4,
 });
 const runtimeConfig = loadConfigOrExit();
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
-  approvalPolicy: FIXED_CODEX_APP_SERVER_APPROVAL_POLICY,
-  command: FIXED_CODEX_APP_SERVER_COMMAND,
+  approvalPolicy: codexAppServerApprovalPolicy,
+  command: codexAppServerCommand,
   cwd: runtimeConfig.codexWorkspaceDir,
   debugLog: (message, details) => {
     if (details) {
@@ -30,9 +33,10 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
     }
     consola.debug(message);
   },
-  model: FIXED_CODEX_APP_SERVER_MODEL,
-  sandbox: FIXED_CODEX_APP_SERVER_SANDBOX,
-  timeoutMs: FIXED_CODEX_APP_SERVER_TIMEOUT_MS,
+  model: codexAppServerModel,
+  sandbox: codexAppServerSandbox,
+  threadConfig,
+  timeoutMs: codexAppServerTimeoutMs,
 };
 const aiService = new CodexAppServerAiService(aiServiceOptions);
 const apologyMessage = readApologyTemplate();
@@ -60,7 +64,7 @@ client.on("messageCreate", async (message) => {
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     apologyMessage,
     botUserId,
-    contextFetchLimit: FIXED_CONTEXT_FETCH_LIMIT,
+    contextFetchLimit,
     logger: consola,
     message,
   }).catch((error: unknown) => {
