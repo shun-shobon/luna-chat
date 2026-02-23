@@ -17,6 +17,7 @@ export function buildPromptBundle(input: AiInput): PromptBundle {
     "あなたは開発者指示に従って Discord Bot を実行する。",
     "メンション時は必ず返信する（forceReply=true）。",
     "通常投稿は返信不要なら終了してよい。",
+    "返信する場合は必ず MCP tool `send_discord_reply` を使う。",
   ].join("\n");
 
   const userRolePrompt = [
