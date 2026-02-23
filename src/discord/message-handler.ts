@@ -26,6 +26,7 @@ export type MessageLike = {
 };
 
 export type LoggerLike = {
+  debug?: (...arguments_: unknown[]) => void;
   info: (...arguments_: unknown[]) => void;
   warn: (...arguments_: unknown[]) => void;
   error: (...arguments_: unknown[]) => void;
@@ -64,6 +65,12 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   }
 
   const currentMessage = toRuntimeMessage(message, input.botUserId);
+  input.logger.debug?.("discord.message.received_for_ai_turn", {
+    channelId: currentMessage.channelId,
+    forceReply: policyDecision.forceReply,
+    mentionedBot: currentMessage.mentionedBot,
+    messageId: currentMessage.id,
+  });
 
   try {
     const aiResult = await input.aiService.generateReply({
@@ -93,6 +100,9 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     });
 
     if (policyDecision.forceReply && !aiResult.didReply) {
+      input.logger.debug?.("discord.message.force_reply_fallback", {
+        messageId: currentMessage.id,
+      });
       await message.reply(input.apologyMessage);
     }
   } catch (error: unknown) {

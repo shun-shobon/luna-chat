@@ -30,6 +30,7 @@ export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
   command: string;
   cwd: string;
+  debugLog?: (message: string, details?: Record<string, unknown>) => void;
   model: string;
   sandbox: string;
   timeoutMs: number;
@@ -40,18 +41,27 @@ export class CodexAppServerAiService implements AiService {
 
   async generateReply(input: AiInput): Promise<AiOutput> {
     let didReply = false;
+    let activeThreadId: string | undefined;
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
       command: this.options.command,
       cwd: this.options.cwd,
       executeToolCall: async (params) => {
-        const result = await executeToolCall({
+        const toolCallInput: ExecuteToolCallInput = {
           didReply: () => {
             didReply = true;
           },
           input,
           params,
-        });
+        };
+        if (this.options.debugLog) {
+          toolCallInput.debugLog = this.options.debugLog;
+        }
+        if (activeThreadId) {
+          toolCallInput.threadId = activeThreadId;
+        }
+
+        const result = await executeToolCall(toolCallInput);
 
         return result;
       },
@@ -67,7 +77,24 @@ export class CodexAppServerAiService implements AiService {
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
+      activeThreadId = threadId;
+      this.options.debugLog?.("ai.turn.started", {
+        channelId: input.currentMessage.channelId,
+        forceReply: input.forceReply,
+        messageId: input.currentMessage.id,
+        threadId,
+      });
       const turnResult = await client.runTurn(threadId, promptBundle.userRolePrompt);
+      this.options.debugLog?.("ai.turn.assistant_output", {
+        assistantText: turnResult.assistantText,
+        threadId,
+      });
+      this.options.debugLog?.("ai.turn.completed", {
+        didReply,
+        errorMessage: turnResult.errorMessage,
+        status: turnResult.status,
+        threadId,
+      });
       if (turnResult.status !== "completed") {
         const errorMessage =
           turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
@@ -77,17 +104,32 @@ export class CodexAppServerAiService implements AiService {
       return {
         didReply,
       };
+    } catch (error: unknown) {
+      this.options.debugLog?.("ai.turn.failed", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        messageId: input.currentMessage.id,
+        threadId: activeThreadId,
+      });
+      throw error;
     } finally {
       client.close();
     }
   }
 }
 
-async function executeToolCall(input: {
+type ExecuteToolCallInput = {
+  debugLog?: (message: string, details?: Record<string, unknown>) => void;
   params: DynamicToolCallParams;
   input: AiInput;
   didReply: () => void;
-}): Promise<DynamicToolCallResponse> {
+  threadId?: string;
+};
+
+async function executeToolCall(input: ExecuteToolCallInput): Promise<DynamicToolCallResponse> {
+  input.debugLog?.("ai.tool.call.started", {
+    threadId: input.threadId,
+    tool: input.params.tool,
+  });
   if (input.params.tool === "fetch_discord_history") {
     const args = parseFetchDiscordHistoryArgs(
       input.params.arguments,
@@ -101,6 +143,12 @@ async function executeToolCall(input: {
     }
 
     const context = await input.input.tools.fetchDiscordHistory(historyInput);
+    input.debugLog?.("ai.tool.call.fetch_discord_history.completed", {
+      beforeMessageId: args.beforeMessageId,
+      fetchedMessages: context.recentMessages.length,
+      limit: args.limit,
+      threadId: input.threadId,
+    });
 
     return toTextToolResponse({
       channelId: context.channelId,
@@ -111,6 +159,10 @@ async function executeToolCall(input: {
 
   if (input.params.tool === "send_discord_reply") {
     const args = parseSendDiscordReplyArgs(input.params.arguments);
+    input.debugLog?.("ai.tool.call.send_discord_reply", {
+      text: args.text,
+      threadId: input.threadId,
+    });
     await input.input.tools.sendDiscordReply({
       text: args.text,
     });

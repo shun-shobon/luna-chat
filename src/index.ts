@@ -15,6 +15,13 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: runtimeConfig.codexAppServerApprovalPolicy,
   command: runtimeConfig.codexAppServerCommand,
   cwd: runtimeConfig.codexAppServerCwd,
+  debugLog: (message, details) => {
+    if (details) {
+      consola.debug(message, details);
+      return;
+    }
+    consola.debug(message);
+  },
   model: runtimeConfig.codexAppServerModel,
   sandbox: runtimeConfig.codexAppServerSandbox,
   timeoutMs: runtimeConfig.codexAppServerTimeoutMs,
