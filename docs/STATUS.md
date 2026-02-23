@@ -12,7 +12,9 @@
 - 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
 - Discord の履歴は AI 呼び出し時に都度取得する実装へ移行済み。
 - 過去履歴取得は MCP tool `fetch_discord_history` を呼び出す方式へ移行済み。
-- 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み。
+- 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
+- `send_discord_reply` の入力は `{ channelId, text }` に簡素化済み。
+- Discord MCP の zod スキーマには `describe` で各パラメータ説明を付与済み。
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
 - `codex-workspace` は固定パス（`<project>/codex-workspace`）として扱う。
 - 謝罪定型文は固定文言を返す実装へ移行済み（外部ファイル設定なし）。

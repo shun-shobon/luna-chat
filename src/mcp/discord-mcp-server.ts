@@ -31,15 +31,24 @@ const DISCORD_MCP_HOSTNAME = "127.0.0.1";
 export const DISCORD_MCP_PATH = "/mcp";
 
 const fetchHistoryInputSchema = z.object({
-  beforeMessageId: z.string().min(1).optional(),
-  channelId: z.string().min(1),
-  limit: z.number().int().min(1).max(MAX_HISTORY_LIMIT).optional(),
+  beforeMessageId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("このメッセージIDより前の履歴を取得する。未指定時は最新から取得する。"),
+  channelId: z.string().min(1).describe("履歴を取得するDiscordチャンネルID。"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_HISTORY_LIMIT)
+    .optional()
+    .describe(`取得件数。1〜${MAX_HISTORY_LIMIT}。未指定時は${DEFAULT_HISTORY_LIMIT}。`),
 });
 
 const sendReplyInputSchema = z.object({
-  channelId: z.string().min(1),
-  replyToMessageId: z.string().min(1),
-  text: z.string().min(1),
+  channelId: z.string().min(1).describe("送信先のDiscordチャンネルID。"),
+  text: z.string().min(1).describe("チャンネルに投稿するメッセージ本文。"),
 });
 
 export async function startDiscordMcpServer(
@@ -133,7 +142,7 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
       inputSchema: sendReplyInputSchema,
       title: "Send Discord Reply",
     },
-    async ({ channelId, replyToMessageId, text }) => {
+    async ({ channelId, text }) => {
       const trimmedText = text.trim();
       if (trimmedText.length === 0) {
         throw new Error("text must not be empty.");
@@ -145,10 +154,6 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
             parse: [],
           },
           content: trimmedText,
-          message_reference: {
-            fail_if_not_exists: false,
-            message_id: replyToMessageId,
-          },
         },
       });
 
