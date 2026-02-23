@@ -7,16 +7,18 @@ import { createConsola } from "consola";
 import { Client, GatewayIntentBits } from "discord.js";
 
 import { CodexAppServerAiService } from "./ai/ai-service";
+import { readApologyTemplate } from "./ai/apology-template";
 import { resolveAiReplyWithHistoryLoop } from "./ai/reply-orchestrator";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { fetchConversationContext, toRuntimeMessage } from "./context/discord-context";
+import { applyImprovementProposal } from "./improvement/document-updater";
 import { evaluateReplyPolicy } from "./policy/reply-policy";
 
 const consola = createConsola();
 const runtimeConfig = loadConfigOrExit();
 const aiService = new CodexAppServerAiService(runtimeConfig.codexAppServerCommand);
 const operationRulesDoc = loadOperationRulesDoc();
-const DEFAULT_APOLOGY_MESSAGE = "ごめんね、今ちょっと不調みたい。少し待ってくれる？";
+const apologyMessage = readApologyTemplate(runtimeConfig.apologyTemplatePath);
 
 const client = new Client({
   intents: [
@@ -71,6 +73,22 @@ client.on("messageCreate", async (message) => {
       logger: consola,
       operationRulesDoc,
     });
+
+    if (aiDecision.improvementProposal) {
+      try {
+        const result = applyImprovementProposal(
+          runtimeConfig.codexWorkspaceDir,
+          aiDecision.improvementProposal,
+        );
+        consola.info(`Updated improvement document: ${result.targetPath}`);
+      } catch (improvementError: unknown) {
+        consola.warn(
+          "Failed to apply improvement proposal. Ignored this proposal.",
+          improvementError,
+        );
+      }
+    }
+
     if (!aiDecision.shouldReply) return;
 
     await message.reply(aiDecision.replyText).catch((error: unknown) => {
@@ -80,7 +98,7 @@ client.on("messageCreate", async (message) => {
     consola.error("Failed to generate AI reply:", error);
     if (!policyDecision.forceReply) return;
 
-    await message.reply(DEFAULT_APOLOGY_MESSAGE).catch((replyError: unknown) => {
+    await message.reply(apologyMessage).catch((replyError: unknown) => {
       consola.error("Failed to send fallback apology message:", replyError);
     });
   }
