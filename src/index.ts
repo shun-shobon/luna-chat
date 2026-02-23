@@ -51,7 +51,6 @@ client.on("messageCreate", async (message) => {
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     apologyMessage,
     botUserId,
-    codexWorkspaceDir: runtimeConfig.codexWorkspaceDir,
     contextFetchLimit: runtimeConfig.contextFetchLimit,
     fetchConversationContext: async ({ beforeMessageId, limit, requestedByToolUse }) => {
       const baseFetchInput = {

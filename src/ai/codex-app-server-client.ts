@@ -3,6 +3,8 @@ import * as readline from "node:readline";
 
 import type { AskForApproval } from "./codex-generated/v2/AskForApproval";
 import type { CommandExecutionRequestApprovalResponse } from "./codex-generated/v2/CommandExecutionRequestApprovalResponse";
+import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCallParams";
+import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
 import type { ErrorNotification } from "./codex-generated/v2/ErrorNotification";
 import type { FileChangeRequestApprovalResponse } from "./codex-generated/v2/FileChangeRequestApprovalResponse";
 import type { ItemCompletedNotification } from "./codex-generated/v2/ItemCompletedNotification";
@@ -58,6 +60,7 @@ export type CodexAppServerClientOptions = {
   approvalPolicy: string;
   sandbox: string;
   timeoutMs: number;
+  executeToolCall: (params: DynamicToolCallParams) => Promise<DynamicToolCallResponse>;
 };
 
 const CLIENT_INFO = {
@@ -221,7 +224,7 @@ export class CodexAppServerClient {
     }
 
     if (isServerRequest(message)) {
-      this.handleServerRequest(message);
+      void this.handleServerRequestAsync(message);
       return;
     }
 
@@ -232,7 +235,7 @@ export class CodexAppServerClient {
     }
   }
 
-  private handleServerRequest(request: JsonRpcRequestMessage): void {
+  private async handleServerRequestAsync(request: JsonRpcRequestMessage): Promise<void> {
     if (request.method === "item/commandExecution/requestApproval") {
       const response: CommandExecutionRequestApprovalResponse = {
         decision: "decline",
@@ -252,6 +255,27 @@ export class CodexAppServerClient {
         id: request.id,
         result: response,
       });
+      return;
+    }
+
+    if (request.method === "item/tool/call") {
+      const params = request.params as DynamicToolCallParams;
+      try {
+        const result = await this.options.executeToolCall(params);
+        this.writeLine({
+          id: request.id,
+          result,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "tool call execution failed";
+        this.writeLine({
+          error: {
+            code: -32000,
+            message,
+          },
+          id: request.id,
+        });
+      }
       return;
     }
 

@@ -9,15 +9,16 @@
 
 - プロジェクトは MVP 定義を完了した。
 - `!ping` 依存を廃止し、チャンネル制限 + メンション必須返信フローへ移行済み。
-- 通常投稿は AI 判定層（現状は Stub 実装）を経由して返信可否を決定する。
+- 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
 - Discord の履歴は AI 呼び出し時に都度取得する実装へ移行済み。
-- AI の追加履歴要求に応じる tool use ループを実装済み。
+- 過去履歴取得は `item/tool/call` で `fetch_discord_history` を呼び出す方式へ移行済み。
+- 返信送信は `item/tool/call` で `send_discord_reply` を呼び出す方式へ移行済み。
 - `CODEX_WORKSPACE_DIR` / `APOLOGY_TEMPLATE_PATH` の起動時検証を実装済み。
 - 謝罪定型文は Codex ワークスペース内ドキュメントから読み出す実装へ移行済み。
-- 改善提案は Codex ワークスペース配下 markdown のみ更新可能に制限済み。
+- 改善提案の自動適用フローは保留中（現状は返信/履歴取得ツールに集中）。
 - 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
-- server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
+- server-initiated request（approval / requestUserInput / tool/call）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
@@ -39,7 +40,7 @@
 ## 4. 直近タスク
 
 1. 実運用の認証状態で Codex CLI app-server 接続を確認する。
-2. 会話プロンプトテンプレートを実運用向けに調整する。
+2. tool use の引数スキーマをより厳格にし、誤呼び出し時の回復文言を整備する。
 3. 履歴取得遅延の観測ログを運用で確認する。
 4. 実環境で返信頻度のチューニングを行う。
 5. Bot トークンを設定したローカル常駐運用で実地検証する。

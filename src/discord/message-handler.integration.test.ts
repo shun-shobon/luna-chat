@@ -1,8 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AiService } from "../ai/ai-service";
 import type { ConversationContext, RuntimeMessage } from "../context/types";
@@ -10,35 +6,31 @@ import type { ConversationContext, RuntimeMessage } from "../context/types";
 import { handleMessageCreate, type MessageLike } from "./message-handler";
 
 describe("handleMessageCreate integration", () => {
-  let workspaceDir = "";
-
-  beforeEach(() => {
-    workspaceDir = mkdtempSync(join(tmpdir(), "luna-message-handler-"));
-    mkdirSync(join(workspaceDir, "persona"), { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(workspaceDir, { force: true, recursive: true });
-  });
-
-  it("指定チャンネルの通常投稿で AI が shouldReply=true なら返信する", async () => {
+  it("指定チャンネルの通常投稿で tool use により履歴取得と返信が行われる", async () => {
     const reply = vi.fn(async () => undefined);
     const message = createMessage({ reply });
-    const aiService = createAiService({
-      needsMoreHistory: false,
-      replyText: "hello",
-      shouldReply: true,
-    });
     const fetchConversationContext = vi.fn(async () => {
       return createContext([createRuntimeMessage("1")]);
     });
+    const aiService: AiService = {
+      generateReply: vi.fn(async (input) => {
+        const context = await input.tools.fetchDiscordHistory({
+          limit: input.contextFetchLimit,
+        });
+        expect(context.recentMessages).toHaveLength(1);
+        await input.tools.sendDiscordReply({ text: "hello" });
+
+        return {
+          didReply: true,
+        };
+      }),
+    };
 
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "apology",
       botUserId: "bot",
-      codexWorkspaceDir: workspaceDir,
       contextFetchLimit: 20,
       fetchConversationContext,
       logger: createLogger(),
@@ -67,7 +59,6 @@ describe("handleMessageCreate integration", () => {
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "ごめんね",
       botUserId: "bot",
-      codexWorkspaceDir: workspaceDir,
       contextFetchLimit: 20,
       fetchConversationContext: async () => {
         return createContext([createRuntimeMessage("1")]);
@@ -86,18 +77,19 @@ describe("handleMessageCreate integration", () => {
       return createContext([createRuntimeMessage("1")]);
     });
     const message = createMessage({ channelId: "other", reply });
-    const aiService = createAiService({
-      needsMoreHistory: false,
-      replyText: "hello",
-      shouldReply: true,
-    });
+    const aiService: AiService = {
+      generateReply: vi.fn(async () => {
+        return {
+          didReply: false,
+        };
+      }),
+    };
 
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "apology",
       botUserId: "bot",
-      codexWorkspaceDir: workspaceDir,
       contextFetchLimit: 20,
       fetchConversationContext,
       logger: createLogger(),
@@ -138,16 +130,6 @@ function createMessage(input?: {
       },
     },
     reply: input?.reply ?? (async () => undefined),
-  };
-}
-
-function createAiService(output: {
-  shouldReply: boolean;
-  replyText: string;
-  needsMoreHistory: boolean;
-}): AiService {
-  return {
-    generateReply: vi.fn(async () => output),
   };
 }
 
