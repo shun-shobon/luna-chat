@@ -16,6 +16,9 @@
 - 謝罪定型文は Codex ワークスペース内ドキュメントから読み出す実装へ移行済み。
 - 改善提案は Codex ワークスペース配下 markdown のみ更新可能に制限済み。
 - 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
+- Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
+- server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
+- `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
 - 本体コードと Codex ワークスペース（自己改善対象）を分離する方針が確定した。
@@ -35,7 +38,7 @@
 
 ## 4. 直近タスク
 
-1. Codex CLI app-server 実運用コマンドとの接続確認を行う。
+1. 実運用の認証状態で Codex CLI app-server 接続を確認する。
 2. 会話プロンプトテンプレートを実運用向けに調整する。
 3. 履歴取得遅延の観測ログを運用で確認する。
 4. 実環境で返信頻度のチューニングを行う。

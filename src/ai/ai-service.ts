@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
-
 import type { ConversationContext, RuntimeMessage } from "../context/types";
 
+import { CodexAppServerClient } from "./codex-app-server-client";
 import { buildPrompt } from "./prompt-template";
 
 const REPLY_TRIGGER_PATTERN = /[?？]|ルナ|るな|luna|こんにちは|こんばんは|おはよう/u;
@@ -25,24 +24,47 @@ export interface AiService {
   generateReply(input: AiInput): Promise<AiOutput>;
 }
 
+export type CodexAppServerAiServiceOptions = {
+  approvalPolicy: string;
+  command?: string;
+  cwd: string;
+  model: string;
+  sandbox: string;
+  timeoutMs: number;
+};
+
 export class CodexAppServerAiService implements AiService {
-  constructor(private readonly command?: string) {}
+  constructor(private readonly options: CodexAppServerAiServiceOptions) {}
 
   async generateReply(input: AiInput): Promise<AiOutput> {
-    if (!this.command) {
+    if (!this.options.command) {
       return fallbackStubReply(input);
     }
 
-    const payload = {
-      input,
-      prompt: buildPrompt(input),
-    };
-    const responseText = await runCodexCommand(this.command, payload);
-    if (!responseText) {
-      return fallbackStubReply(input);
-    }
+    const client = new CodexAppServerClient({
+      approvalPolicy: this.options.approvalPolicy,
+      command: this.options.command,
+      cwd: this.options.cwd,
+      model: this.options.model,
+      sandbox: this.options.sandbox,
+      timeoutMs: this.options.timeoutMs,
+    });
 
-    return parseAiOutput(responseText, input);
+    try {
+      await client.initialize();
+      const threadId = await client.startThread();
+      const prompt = buildPrompt(input);
+      const turnResult = await client.runTurn(threadId, prompt);
+      if (turnResult.status !== "completed") {
+        const errorMessage =
+          turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return parseAssistantOutput(turnResult.assistantText, input);
+    } finally {
+      client.close();
+    }
   }
 }
 
@@ -71,67 +93,62 @@ function fallbackStubReply(input: AiInput): AiOutput {
   };
 }
 
-function parseAiOutput(rawOutput: string, fallbackInput: AiInput): AiOutput {
+function parseAssistantOutput(rawOutput: string, fallbackInput: AiInput): AiOutput {
+  const jsonText = extractJsonObject(rawOutput);
+  if (!jsonText) {
+    return fallbackStubReply(fallbackInput);
+  }
+
+  let parsedJson: Partial<AiOutput>;
   try {
-    const parsedJson = JSON.parse(rawOutput) as Partial<AiOutput>;
-    if (typeof parsedJson.shouldReply !== "boolean") {
-      return fallbackStubReply(fallbackInput);
-    }
-    if (typeof parsedJson.replyText !== "string") {
-      return fallbackStubReply(fallbackInput);
-    }
-    if (typeof parsedJson.needsMoreHistory !== "boolean") {
-      return fallbackStubReply(fallbackInput);
-    }
-
-    const output: AiOutput = {
-      shouldReply: parsedJson.shouldReply,
-      replyText: parsedJson.replyText,
-      needsMoreHistory: parsedJson.needsMoreHistory,
-    };
-    if (typeof parsedJson.requestedBeforeMessageId === "string") {
-      output.requestedBeforeMessageId = parsedJson.requestedBeforeMessageId;
-    }
-    if (typeof parsedJson.improvementProposal === "string") {
-      output.improvementProposal = parsedJson.improvementProposal;
-    }
-
-    return output;
+    parsedJson = JSON.parse(jsonText) as Partial<AiOutput>;
   } catch {
     return fallbackStubReply(fallbackInput);
   }
+
+  if (typeof parsedJson.shouldReply !== "boolean") {
+    return fallbackStubReply(fallbackInput);
+  }
+  if (typeof parsedJson.replyText !== "string") {
+    return fallbackStubReply(fallbackInput);
+  }
+  if (typeof parsedJson.needsMoreHistory !== "boolean") {
+    return fallbackStubReply(fallbackInput);
+  }
+
+  const output: AiOutput = {
+    needsMoreHistory: parsedJson.needsMoreHistory,
+    replyText: parsedJson.replyText,
+    shouldReply: parsedJson.shouldReply,
+  };
+  if (typeof parsedJson.requestedBeforeMessageId === "string") {
+    output.requestedBeforeMessageId = parsedJson.requestedBeforeMessageId;
+  }
+  if (typeof parsedJson.improvementProposal === "string") {
+    output.improvementProposal = parsedJson.improvementProposal;
+  }
+
+  return output;
 }
 
-async function runCodexCommand(command: string, payload: unknown): Promise<string | null> {
-  return new Promise((resolve) => {
-    const child = spawn(command, {
-      shell: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+function extractJsonObject(text: string): string | undefined {
+  const firstBrace = text.indexOf("{");
+  if (firstBrace < 0) {
+    return undefined;
+  }
 
-    let stdout = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-
-    child.on("error", () => {
-      resolve(null);
-    });
-
-    const timeoutId = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve(null);
-    }, 30_000);
-
-    child.on("close", (code) => {
-      clearTimeout(timeoutId);
-      if (code !== 0) {
-        resolve(null);
-        return;
+  let depth = 0;
+  for (let index = firstBrace; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(firstBrace, index + 1);
       }
-      resolve(stdout.trim());
-    });
+    }
+  }
 
-    child.stdin.end(JSON.stringify(payload));
-  });
+  return undefined;
 }

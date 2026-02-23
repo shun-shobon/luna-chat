@@ -7,7 +7,12 @@ export type RuntimeConfig = {
   contextFetchLimit: number;
   codexWorkspaceDir: string;
   apologyTemplatePath: string;
+  codexAppServerApprovalPolicy: string;
   codexAppServerCommand?: string;
+  codexAppServerCwd: string;
+  codexAppServerModel: string;
+  codexAppServerSandbox: string;
+  codexAppServerTimeoutMs: number;
 };
 
 export class RuntimeConfigError extends Error {
@@ -29,6 +34,13 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     codexWorkspaceDir,
   );
   const codexAppServerCommand = env["CODEX_APP_SERVER_COMMAND"]?.trim();
+  const codexAppServerCwd = parseCodexAppServerCwd(env["CODEX_APP_SERVER_CWD"]);
+  const codexAppServerModel = env["CODEX_APP_SERVER_MODEL"]?.trim() ?? "gpt-5.1-codex";
+  const codexAppServerApprovalPolicy = parseCodexAppServerApprovalPolicy(
+    env["CODEX_APP_SERVER_APPROVAL_POLICY"],
+  );
+  const codexAppServerSandbox = parseCodexAppServerSandbox(env["CODEX_APP_SERVER_SANDBOX"]);
+  const codexAppServerTimeoutMs = parseCodexAppServerTimeoutMs(env["CODEX_APP_SERVER_TIMEOUT_MS"]);
 
   const runtimeConfig: RuntimeConfig = {
     discordBotToken,
@@ -36,6 +48,11 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     contextFetchLimit: parseContextFetchLimit(env["CONTEXT_FETCH_LIMIT"]),
     codexWorkspaceDir,
     apologyTemplatePath,
+    codexAppServerApprovalPolicy,
+    codexAppServerCwd,
+    codexAppServerModel,
+    codexAppServerSandbox,
+    codexAppServerTimeoutMs,
   };
   if (codexAppServerCommand) {
     runtimeConfig.codexAppServerCommand = codexAppServerCommand;
@@ -73,6 +90,43 @@ function parseContextFetchLimit(rawContextFetchLimit: string | undefined): numbe
   return parsedLimit;
 }
 
+function parseCodexAppServerTimeoutMs(rawTimeoutMs: string | undefined): number {
+  if (!rawTimeoutMs) {
+    return 60_000;
+  }
+
+  const parsedTimeoutMs = Number.parseInt(rawTimeoutMs, 10);
+  if (Number.isNaN(parsedTimeoutMs) || parsedTimeoutMs <= 0) {
+    throw new RuntimeConfigError("CODEX_APP_SERVER_TIMEOUT_MS must be a positive integer.");
+  }
+
+  return parsedTimeoutMs;
+}
+
+function parseCodexAppServerApprovalPolicy(rawPolicy: string | undefined): string {
+  const value = rawPolicy?.trim() ?? "never";
+  const allowedValues = new Set(["untrusted", "on-failure", "on-request", "never"]);
+  if (!allowedValues.has(value)) {
+    throw new RuntimeConfigError(
+      "CODEX_APP_SERVER_APPROVAL_POLICY must be one of: untrusted, on-failure, on-request, never.",
+    );
+  }
+
+  return value;
+}
+
+function parseCodexAppServerSandbox(rawSandbox: string | undefined): string {
+  const value = rawSandbox?.trim() ?? "workspace-write";
+  const allowedValues = new Set(["read-only", "workspace-write", "danger-full-access"]);
+  if (!allowedValues.has(value)) {
+    throw new RuntimeConfigError(
+      "CODEX_APP_SERVER_SANDBOX must be one of: read-only, workspace-write, danger-full-access.",
+    );
+  }
+
+  return value;
+}
+
 function parseWorkspaceDir(rawWorkspaceDir: string | undefined): string {
   if (!rawWorkspaceDir) {
     throw new RuntimeConfigError("CODEX_WORKSPACE_DIR is required.");
@@ -85,6 +139,13 @@ function parseWorkspaceDir(rawWorkspaceDir: string | undefined): string {
   );
 
   return resolvedWorkspaceDir;
+}
+
+function parseCodexAppServerCwd(rawCwd: string | undefined): string {
+  const cwd = rawCwd?.trim() ? resolve(process.cwd(), rawCwd) : process.cwd();
+  assertDirectoryExistsAndWritable(cwd, "CODEX_APP_SERVER_CWD must be writable.");
+
+  return cwd;
 }
 
 function parseApologyTemplatePath(
