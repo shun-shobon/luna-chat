@@ -8,12 +8,14 @@ export type RuntimeConfig = {
   codexWorkspaceDir: string;
   apologyTemplatePath: string;
   codexAppServerApprovalPolicy: string;
-  codexAppServerCommand?: string;
+  codexAppServerCommand: string;
   codexAppServerCwd: string;
   codexAppServerModel: string;
   codexAppServerSandbox: string;
   codexAppServerTimeoutMs: number;
 };
+
+const DEFAULT_CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
 
 export class RuntimeConfigError extends Error {
   constructor(message: string) {
@@ -33,7 +35,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     env["APOLOGY_TEMPLATE_PATH"],
     codexWorkspaceDir,
   );
-  const codexAppServerCommand = env["CODEX_APP_SERVER_COMMAND"]?.trim();
   const codexAppServerCwd = parseCodexAppServerCwd(env["CODEX_APP_SERVER_CWD"]);
   const codexAppServerModel = env["CODEX_APP_SERVER_MODEL"]?.trim() ?? "gpt-5.1-codex";
   const codexAppServerApprovalPolicy = parseCodexAppServerApprovalPolicy(
@@ -48,15 +49,13 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     contextFetchLimit: parseContextFetchLimit(env["CONTEXT_FETCH_LIMIT"]),
     codexWorkspaceDir,
     apologyTemplatePath,
+    codexAppServerCommand: DEFAULT_CODEX_APP_SERVER_COMMAND,
     codexAppServerApprovalPolicy,
     codexAppServerCwd,
     codexAppServerModel,
     codexAppServerSandbox,
     codexAppServerTimeoutMs,
   };
-  if (codexAppServerCommand) {
-    runtimeConfig.codexAppServerCommand = codexAppServerCommand;
-  }
 
   return runtimeConfig;
 }

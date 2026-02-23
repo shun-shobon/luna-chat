@@ -13,14 +13,12 @@ const consola = createConsola();
 const runtimeConfig = loadConfigOrExit();
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: runtimeConfig.codexAppServerApprovalPolicy,
+  command: runtimeConfig.codexAppServerCommand,
   cwd: runtimeConfig.codexAppServerCwd,
   model: runtimeConfig.codexAppServerModel,
   sandbox: runtimeConfig.codexAppServerSandbox,
   timeoutMs: runtimeConfig.codexAppServerTimeoutMs,
 };
-if (runtimeConfig.codexAppServerCommand) {
-  aiServiceOptions.command = runtimeConfig.codexAppServerCommand;
-}
 const aiService = new CodexAppServerAiService(aiServiceOptions);
 const apologyMessage = readApologyTemplate(runtimeConfig.apologyTemplatePath);
 
