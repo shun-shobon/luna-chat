@@ -13,14 +13,16 @@
 - Discord の履歴は AI 呼び出し時に都度取得する実装へ移行済み。
 - 過去履歴取得は MCP tool `fetch_discord_history` を呼び出す方式へ移行済み。
 - 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み。
-- `CODEX_WORKSPACE_DIR` / `APOLOGY_TEMPLATE_PATH` の起動時検証を実装済み。
-- 謝罪定型文は Codex ワークスペース内ドキュメントから読み出す実装へ移行済み。
+- 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
+- `codex-workspace` は固定パス（`<project>/codex-workspace`）として扱う。
+- 謝罪定型文は固定文言を返す実装へ移行済み（外部ファイル設定なし）。
 - 改善提案の自動適用フローは保留中（現状は返信/履歴取得ツールに集中）。
 - 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
 - server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
+- app-server 実行 CWD は固定で `codex-workspace` を使用する。
 - MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
