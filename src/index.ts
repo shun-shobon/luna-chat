@@ -8,6 +8,7 @@ import type { ReasoningEffort } from "./ai/codex-generated/ReasoningEffort";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
 import { logger } from "./logger";
+import { startDiscordMcpServer, type DiscordMcpServerHandle } from "./mcp/discord-mcp-server";
 
 const CONTEXT_FETCH_LIMIT = 30;
 const CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
@@ -17,11 +18,21 @@ const CODEX_APP_SERVER_SANDBOX = "workspace-write";
 const CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
 const CODEX_APP_SERVER_REASONING_EFFORT: ReasoningEffort = "medium";
 
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
 const runtimeConfig = loadConfigOrExit();
+const discordMcpServer = await startDiscordMcpServerOrExit(runtimeConfig.discordBotToken);
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
   command: CODEX_APP_SERVER_COMMAND,
   cwd: runtimeConfig.codexWorkspaceDir,
+  discordMcpServerUrl: discordMcpServer.url,
   model: CODEX_APP_SERVER_MODEL,
   reasoningEffort: CODEX_APP_SERVER_REASONING_EFFORT,
   sandbox: CODEX_APP_SERVER_SANDBOX,
@@ -30,12 +41,9 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
 const aiService = new CodexAppServerAiService(aiServiceOptions);
 const apologyMessage = readApologyTemplate();
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+registerShutdownHooks({
+  client,
+  discordMcpServer,
 });
 
 client.on("clientReady", () => {
@@ -63,6 +71,8 @@ client.on("messageCreate", async (message) => {
 
 await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
   logger.error("Failed to login:", error);
+  void closeDiscordMcpServer(discordMcpServer);
+  process.exit(1);
 });
 
 function loadConfigOrExit(): RuntimeConfig {
@@ -72,4 +82,51 @@ function loadConfigOrExit(): RuntimeConfig {
     logger.error("Invalid configuration:", error);
     process.exit(1);
   }
+}
+
+async function startDiscordMcpServerOrExit(token: string): Promise<DiscordMcpServerHandle> {
+  try {
+    const mcpServer = await startDiscordMcpServer({
+      token,
+    });
+    logger.info("Discord MCP server started.", {
+      url: mcpServer.url,
+    });
+    return mcpServer;
+  } catch (error: unknown) {
+    logger.error("Failed to start Discord MCP server:", error);
+    process.exit(1);
+  }
+}
+
+async function closeDiscordMcpServer(discordMcpServer: DiscordMcpServerHandle): Promise<void> {
+  await discordMcpServer.close().catch((error: unknown) => {
+    logger.error("Failed to stop Discord MCP server:", error);
+  });
+}
+
+function registerShutdownHooks(input: {
+  client: Client;
+  discordMcpServer: DiscordMcpServerHandle;
+}): void {
+  let shuttingDown = false;
+  const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    logger.info("Shutting down.", {
+      signal,
+    });
+    await input.client.destroy();
+    await closeDiscordMcpServer(input.discordMcpServer);
+    process.exit(0);
+  };
+
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
 }

@@ -1,19 +1,34 @@
+import { StreamableHTTPTransport } from "@hono/mcp";
+import { serve, type ServerType } from "@hono/node-server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { REST, Routes } from "discord.js";
+import { Hono } from "hono";
 import { z } from "zod";
 
 type DiscordMessage = {
-  id: string;
-  content: string;
-  createdAt: string;
   authorId: string;
   authorName: string;
+  content: string;
+  createdAt: string;
+  id: string;
+};
+
+export type DiscordMcpServerHandle = {
+  close: () => Promise<void>;
+  url: string;
+};
+
+export type StartDiscordMcpServerOptions = {
+  hostname?: string;
+  port?: number;
+  token: string;
 };
 
 const TOKEN_ENV_NAME = "DISCORD_BOT_TOKEN";
 const DEFAULT_HISTORY_LIMIT = 30;
 const MAX_HISTORY_LIMIT = 100;
+const DISCORD_MCP_HOSTNAME = "127.0.0.1";
+export const DISCORD_MCP_PATH = "/mcp";
 
 const fetchHistoryInputSchema = z.object({
   beforeMessageId: z.string().min(1).optional(),
@@ -27,19 +42,52 @@ const sendReplyInputSchema = z.object({
   text: z.string().min(1),
 });
 
-await main().catch((error: unknown) => {
-  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
-});
-
-async function main(): Promise<void> {
-  const token = process.env[TOKEN_ENV_NAME]?.trim();
+export async function startDiscordMcpServer(
+  options: StartDiscordMcpServerOptions,
+): Promise<DiscordMcpServerHandle> {
+  const token = options.token.trim();
   if (!token) {
     throw new Error(`${TOKEN_ENV_NAME} is required for discord MCP server.`);
   }
 
+  const hostname = options.hostname ?? DISCORD_MCP_HOSTNAME;
+  const port = options.port ?? 0;
   const rest = new REST({ version: "10" }).setToken(token);
+  const mcpServer = createDiscordMcpToolServer(rest);
+  const transport = new StreamableHTTPTransport();
+  let connectPromise: Promise<void> | undefined;
+  const app = new Hono();
+
+  app.all(DISCORD_MCP_PATH, async (context) => {
+    if (!mcpServer.isConnected()) {
+      connectPromise ??= mcpServer.connect(transport);
+      await connectPromise;
+    }
+
+    const response = await transport.handleRequest(context);
+    return response ?? context.body(null, 204);
+  });
+
+  const started = await startServer({
+    app,
+    hostname,
+    port,
+  });
+
+  return {
+    close: async () => {
+      await stopServer(started.server);
+    },
+    url: createDiscordMcpServerUrl(hostname, started.port),
+  };
+}
+
+export function createDiscordMcpServerUrl(hostname: string, port: number): string {
+  const formattedHost = hostname.includes(":") ? `[${hostname}]` : hostname;
+  return `http://${formattedHost}:${port}${DISCORD_MCP_PATH}`;
+}
+
+function createDiscordMcpToolServer(rest: REST): McpServer {
   const server = new McpServer({
     name: "luna-discord-mcp",
     version: "0.1.0",
@@ -114,8 +162,49 @@ async function main(): Promise<void> {
     },
   );
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  return server;
+}
+
+async function startServer(input: {
+  app: Hono;
+  hostname: string;
+  port: number;
+}): Promise<{ port: number; server: ServerType }> {
+  return await new Promise((resolve, reject) => {
+    let resolved = false;
+    const server = serve(
+      {
+        fetch: input.app.fetch,
+        hostname: input.hostname,
+        port: input.port,
+      },
+      (info) => {
+        resolved = true;
+        resolve({
+          port: info.port,
+          server,
+        });
+      },
+    );
+
+    server.on("error", (error) => {
+      if (!resolved) {
+        reject(error);
+      }
+    });
+  });
+}
+
+async function stopServer(server: ServerType): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
 }
 
 function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
