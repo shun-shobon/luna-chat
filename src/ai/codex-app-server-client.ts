@@ -120,8 +120,10 @@ export class CodexAppServerClient {
       baseInstructions: input.instructions,
       cwd: this.options.cwd,
       developerInstructions: input.developerRolePrompt,
+      ephemeral: true,
       experimentalRawEvents: false,
       model: this.options.model,
+      personality: "friendly",
       persistExtendedHistory: false,
       sandbox: this.options.sandbox as SandboxMode,
     };
