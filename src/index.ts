@@ -1,8 +1,5 @@
 #!/usr/bin/env -S node --enable-source-maps
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { createConsola } from "consola";
 import { Client, GatewayIntentBits } from "discord.js";
 
@@ -25,7 +22,6 @@ if (runtimeConfig.codexAppServerCommand) {
   aiServiceOptions.command = runtimeConfig.codexAppServerCommand;
 }
 const aiService = new CodexAppServerAiService(aiServiceOptions);
-const operationRulesDoc = loadOperationRulesDoc();
 const apologyMessage = readApologyTemplate(runtimeConfig.apologyTemplatePath);
 
 const client = new Client({
@@ -69,7 +65,6 @@ client.on("messageCreate", async (message) => {
     },
     logger: consola,
     message,
-    operationRulesDoc,
   }).catch((error: unknown) => {
     consola.error("Unexpected handler failure:", error);
   });
@@ -86,9 +81,4 @@ function loadConfigOrExit(): RuntimeConfig {
     consola.error("Invalid configuration:", error);
     process.exit(1);
   }
-}
-
-function loadOperationRulesDoc(): string {
-  const runbookPath = resolve(process.cwd(), "docs/RUNBOOK.md");
-  return readFileSync(runbookPath, "utf8");
 }

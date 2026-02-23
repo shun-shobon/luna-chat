@@ -106,10 +106,12 @@ export class CodexAppServerClient {
     this.notify("initialized", {});
   }
 
-  async startThread(): Promise<string> {
+  async startThread(input: { instructions: string; developerRolePrompt: string }): Promise<string> {
     const threadStartParams: ThreadStartParams = {
       approvalPolicy: this.options.approvalPolicy as AskForApproval,
+      baseInstructions: input.instructions,
       cwd: this.options.cwd,
+      developerInstructions: input.developerRolePrompt,
       experimentalRawEvents: false,
       model: this.options.model,
       persistExtendedHistory: false,

@@ -3,14 +3,13 @@ import type { ConversationContext, RuntimeMessage } from "../context/types";
 import { CodexAppServerClient } from "./codex-app-server-client";
 import type { DynamicToolCallParams } from "./codex-generated/v2/DynamicToolCallParams";
 import type { DynamicToolCallResponse } from "./codex-generated/v2/DynamicToolCallResponse";
-import { buildPrompt } from "./prompt-template";
+import { buildPromptBundle } from "./prompt-template";
 
 const REPLY_TRIGGER_PATTERN = /[?？]|ルナ|るな|luna|こんにちは|こんばんは|おはよう/u;
 
 export type AiInput = {
   forceReply: boolean;
   currentMessage: RuntimeMessage;
-  operationRulesDoc: string;
   contextFetchLimit: number;
   tools: {
     fetchDiscordHistory: (input: {
@@ -69,9 +68,12 @@ export class CodexAppServerAiService implements AiService {
 
     try {
       await client.initialize();
-      const threadId = await client.startThread();
-      const prompt = buildPrompt(input);
-      const turnResult = await client.runTurn(threadId, prompt);
+      const promptBundle = buildPromptBundle(input);
+      const threadId = await client.startThread({
+        developerRolePrompt: promptBundle.developerRolePrompt,
+        instructions: promptBundle.instructions,
+      });
+      const turnResult = await client.runTurn(threadId, promptBundle.userRolePrompt);
       if (turnResult.status !== "completed") {
         const errorMessage =
           turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
