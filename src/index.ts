@@ -9,7 +9,9 @@ import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { fetchConversationContext } from "./context/discord-context";
 import { handleMessageCreate } from "./discord/message-handler";
 
-const consola = createConsola();
+const consola = createConsola({
+  level: 4,
+});
 const runtimeConfig = loadConfigOrExit();
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: runtimeConfig.codexAppServerApprovalPolicy,
