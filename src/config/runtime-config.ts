@@ -1,6 +1,8 @@
 export type RuntimeConfig = {
   discordBotToken: string;
   allowedChannelIds: ReadonlySet<string>;
+  contextFetchLimit: number;
+  codexAppServerCommand?: string;
 };
 
 export class RuntimeConfigError extends Error {
@@ -16,10 +18,18 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     throw new RuntimeConfigError("DISCORD_BOT_TOKEN is required.");
   }
 
-  return {
+  const codexAppServerCommand = env["CODEX_APP_SERVER_COMMAND"]?.trim();
+
+  const runtimeConfig: RuntimeConfig = {
     discordBotToken,
     allowedChannelIds: parseAllowedChannelIds(env["ALLOWED_CHANNEL_IDS"]),
+    contextFetchLimit: parseContextFetchLimit(env["CONTEXT_FETCH_LIMIT"]),
   };
+  if (codexAppServerCommand) {
+    runtimeConfig.codexAppServerCommand = codexAppServerCommand;
+  }
+
+  return runtimeConfig;
 }
 
 function parseAllowedChannelIds(rawAllowedChannelIds: string | undefined): ReadonlySet<string> {
@@ -37,4 +47,17 @@ function parseAllowedChannelIds(rawAllowedChannelIds: string | undefined): Reado
   }
 
   return new Set(allowedChannelIds);
+}
+
+function parseContextFetchLimit(rawContextFetchLimit: string | undefined): number {
+  if (!rawContextFetchLimit) {
+    return 30;
+  }
+
+  const parsedLimit = Number.parseInt(rawContextFetchLimit, 10);
+  if (Number.isNaN(parsedLimit) || parsedLimit <= 0) {
+    throw new RuntimeConfigError("CONTEXT_FETCH_LIMIT must be a positive integer.");
+  }
+
+  return parsedLimit;
 }
