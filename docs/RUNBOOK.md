@@ -39,7 +39,7 @@
 ### 3.3 運用時の基本挙動
 
 1. 受信イベントでチャンネル判定を実施する。
-2. 文脈取得は AI が必要時に `fetch_discord_history` を使って行う。
+2. 文脈取得は AI が必要時に `read_message_history` を使って行う。
 3. AI 結果に従って返信する。
 4. AI エラー時は、メンション投稿（forceReply）に限り固定謝罪文で返信する。
 
@@ -51,7 +51,7 @@ AI には最低限以下を渡す。
 2. メンション必須返信ルール
 3. 現在メッセージ（channelId/messageId/本文）
 4. `forceReply` と `contextFetchLimit`
-5. 返信時は `send_discord_reply` を使う制約
+5. 返信時は `send_message` を使う制約
 
 ## 5. 失敗時対応
 

@@ -10,14 +10,14 @@
 - プロジェクトは MVP 定義を完了した。
 - `!ping` 依存を廃止し、チャンネル制限 + メンション必須返信フローへ移行済み。
 - 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
-- Discord の履歴は初期入力に含めず、必要時に MCP tool `fetch_discord_history` で都度取得する実装へ移行済み。
-- 過去履歴取得は MCP tool `fetch_discord_history` を呼び出す方式へ移行済み。
-- 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
-- `send_discord_reply` の入力は `{ channelId, text }` に簡素化済み。
+- Discord の履歴は初期入力に含めず、必要時に MCP tool `read_message_history` で都度取得する実装へ移行済み。
+- 過去履歴取得は MCP tool `read_message_history` を呼び出す方式へ移行済み。
+- 返信送信は MCP tool `send_message` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
+- `send_message` の入力は `{ channelId, text }` に簡素化済み。
 - Discord MCP の zod スキーマには `describe` で各パラメータ説明を付与済み。
 - Discord MCP の tool `description` / zod `describe` は日本語へ統一済み。
 - ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
-- ただし「返信時は必ず `send_discord_reply` を使う」指示のみ developer role prompt に残す方針へ更新済み。
+- ただし「返信時は必ず `send_message` を使う」指示のみ developer role prompt に残す方針へ更新済み。
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
 - `ARTEMIS_HOME` は default `~/.artemis` を使用する。
 - `workspace` は `$ARTEMIS_HOME/workspace` を使用する。
