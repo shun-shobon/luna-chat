@@ -1,27 +1,23 @@
 import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 
+import type { ClientNotification } from "./codex-generated/ClientNotification";
+import type { ClientRequest } from "./codex-generated/ClientRequest";
+import type { RequestId } from "./codex-generated/RequestId";
+import type { JsonValue } from "./codex-generated/serde_json/JsonValue";
 import type { AskForApproval } from "./codex-generated/v2/AskForApproval";
 import type { CommandExecutionRequestApprovalResponse } from "./codex-generated/v2/CommandExecutionRequestApprovalResponse";
-import type { ErrorNotification } from "./codex-generated/v2/ErrorNotification";
 import type { FileChangeRequestApprovalResponse } from "./codex-generated/v2/FileChangeRequestApprovalResponse";
-import type { ItemCompletedNotification } from "./codex-generated/v2/ItemCompletedNotification";
 import type { SandboxMode } from "./codex-generated/v2/SandboxMode";
 import type { ThreadStartParams } from "./codex-generated/v2/ThreadStartParams";
-import type { ThreadStartResponse } from "./codex-generated/v2/ThreadStartResponse";
+import type { ToolRequestUserInputOption } from "./codex-generated/v2/ToolRequestUserInputOption";
+import type { ToolRequestUserInputParams } from "./codex-generated/v2/ToolRequestUserInputParams";
 import type { ToolRequestUserInputQuestion } from "./codex-generated/v2/ToolRequestUserInputQuestion";
 import type { ToolRequestUserInputResponse } from "./codex-generated/v2/ToolRequestUserInputResponse";
-import type { TurnCompletedNotification } from "./codex-generated/v2/TurnCompletedNotification";
 import type { TurnStartParams } from "./codex-generated/v2/TurnStartParams";
 
-type JsonRpcRequestMessage = {
-  id: number;
-  method: string;
-  params?: unknown;
-};
-
 type JsonRpcResponseMessage = {
-  id: number;
+  id: RequestId;
   result?: unknown;
   error?: {
     code: number;
@@ -34,16 +30,27 @@ type JsonRpcNotificationMessage = {
   params?: unknown;
 };
 
-type JsonRpcMessage =
-  | JsonRpcRequestMessage
-  | JsonRpcResponseMessage
-  | JsonRpcNotificationMessage
-  | Record<string, unknown>;
-
 type PendingRequest = {
   reject: (error: Error) => void;
   resolve: (value: unknown) => void;
 };
+
+type ParsedInboundRequest = {
+  id: RequestId;
+  method: string;
+  params: unknown;
+};
+
+type SupportedClientRequest =
+  | Extract<ClientRequest, { method: "initialize" }>
+  | Extract<ClientRequest, { method: "thread/start" }>
+  | Extract<ClientRequest, { method: "turn/start" }>
+  | Extract<ClientRequest, { method: "turn/interrupt" }>;
+type SupportedClientRequestMethod = SupportedClientRequest["method"];
+type SupportedClientRequestParams<M extends SupportedClientRequestMethod> = Extract<
+  SupportedClientRequest,
+  { method: M }
+>["params"];
 
 export type TurnResult = {
   assistantText: string;
@@ -73,10 +80,23 @@ const CLIENT_INFO = {
   version: "0.1.0",
 };
 
+const APPROVAL_POLICIES = [
+  "untrusted",
+  "on-failure",
+  "on-request",
+  "never",
+] as const satisfies readonly AskForApproval[];
+
+const SANDBOX_MODES = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+] as const satisfies readonly SandboxMode[];
+
 export class CodexAppServerClient {
   private readonly child;
   private readonly lineReader;
-  private readonly pendingRequests = new Map<number, PendingRequest>();
+  private readonly pendingRequests = new Map<RequestId, PendingRequest>();
   private readonly notificationHandlers = new Set<
     (notification: JsonRpcNotificationMessage) => void
   >();
@@ -105,9 +125,10 @@ export class CodexAppServerClient {
 
   async initialize(): Promise<void> {
     await this.request("initialize", {
+      capabilities: null,
       clientInfo: CLIENT_INFO,
     });
-    this.notify("initialized", {});
+    this.notifyInitialized();
   }
 
   async startThread(input: {
@@ -116,7 +137,7 @@ export class CodexAppServerClient {
     config?: Record<string, unknown>;
   }): Promise<string> {
     const threadStartParams: ThreadStartParams = {
-      approvalPolicy: this.options.approvalPolicy as AskForApproval,
+      approvalPolicy: parseApprovalPolicy(this.options.approvalPolicy),
       baseInstructions: input.instructions,
       cwd: this.options.cwd,
       developerInstructions: input.developerRolePrompt,
@@ -125,16 +146,15 @@ export class CodexAppServerClient {
       model: this.options.model,
       personality: "friendly",
       persistExtendedHistory: false,
-      sandbox: this.options.sandbox as SandboxMode,
+      sandbox: parseSandboxMode(this.options.sandbox),
     };
+
     if (input.config) {
-      threadStartParams.config = input.config as Exclude<ThreadStartParams["config"], undefined>;
+      threadStartParams.config = normalizeThreadStartConfig(input.config);
     }
-    const result = (await this.request("thread/start", threadStartParams)) as ThreadStartResponse;
-    const threadId = result.thread?.id;
-    if (!threadId) {
-      throw new Error("thread/start response does not include thread.id");
-    }
+
+    const result = await this.request("thread/start", threadStartParams);
+    const threadId = extractThreadId(result);
 
     return threadId;
   }
@@ -150,9 +170,10 @@ export class CodexAppServerClient {
         input: [{ text: prompt, text_elements: [], type: "text" }],
         threadId,
       };
-      await this.request("turn/start", turnStartParams);
+      const turnStartResult = await this.request("turn/start", turnStartParams);
+      const turnId = extractTurnId(turnStartResult);
 
-      return await waitForTurnCompletion(this, threadId, tracker);
+      return await waitForTurnCompletion(this, threadId, turnId, tracker);
     } finally {
       unbind();
     }
@@ -172,21 +193,21 @@ export class CodexAppServerClient {
     }, 1_000);
   }
 
-  async interruptTurn(threadId: string): Promise<void> {
-    await this.request("turn/interrupt", { threadId }).catch(() => {
+  async interruptTurn(threadId: string, turnId: string): Promise<void> {
+    const interruptRequest = this.request("turn/interrupt", { threadId, turnId }).catch(() => {
       // Ignore; interruption is best effort when timing out.
     });
+    await Promise.race([interruptRequest, wait(500)]);
   }
 
   getTimeoutMs(): number {
     return this.options.timeoutMs;
   }
 
-  private notify(method: string, params?: unknown): void {
-    const notification = { method } as JsonRpcNotificationMessage;
-    if (params) {
-      notification.params = params;
-    }
+  private notifyInitialized(): void {
+    const notification: ClientNotification = {
+      method: "initialized",
+    };
     this.writeLine(notification);
   }
 
@@ -197,36 +218,41 @@ export class CodexAppServerClient {
     };
   }
 
-  private async request(method: string, params?: unknown): Promise<unknown> {
+  private async request<M extends SupportedClientRequestMethod>(
+    method: M,
+    params: SupportedClientRequestParams<M>,
+  ): Promise<unknown> {
     const id = this.nextRequestId++;
     const request = {
       id,
       method,
-    } as JsonRpcRequestMessage;
-    if (params) {
-      request.params = params;
-    }
+      params,
+    };
     this.writeLine(request);
 
-    return new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { reject, resolve });
     });
   }
 
   private handleLine(line: string): void {
-    let message: JsonRpcMessage;
+    let message: unknown;
     try {
-      message = JSON.parse(line) as JsonRpcMessage;
+      message = JSON.parse(line);
     } catch {
       return;
     }
 
     if (isResponse(message)) {
-      const pendingRequest = this.pendingRequests.get(message.id);
+      const pendingRequestKey = resolvePendingRequestKey(this.pendingRequests, message.id);
+      if (pendingRequestKey === undefined) {
+        return;
+      }
+      const pendingRequest = this.pendingRequests.get(pendingRequestKey);
       if (!pendingRequest) {
         return;
       }
-      this.pendingRequests.delete(message.id);
+      this.pendingRequests.delete(pendingRequestKey);
 
       if (message.error) {
         pendingRequest.reject(
@@ -238,8 +264,9 @@ export class CodexAppServerClient {
       return;
     }
 
-    if (isServerRequest(message)) {
-      void this.handleServerRequestAsync(message);
+    const serverRequest = parseInboundRequest(message);
+    if (serverRequest) {
+      void this.handleServerRequestAsync(serverRequest);
       return;
     }
 
@@ -250,7 +277,7 @@ export class CodexAppServerClient {
     }
   }
 
-  private async handleServerRequestAsync(request: JsonRpcRequestMessage): Promise<void> {
+  private async handleServerRequestAsync(request: ParsedInboundRequest): Promise<void> {
     if (request.method === "item/commandExecution/requestApproval") {
       const response: CommandExecutionRequestApprovalResponse = {
         decision: "decline",
@@ -305,7 +332,7 @@ export class CodexAppServerClient {
     this.pendingRequests.clear();
   }
 
-  private writeLine(message: Record<string, unknown>): void {
+  private writeLine(message: object): void {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 }
@@ -331,61 +358,84 @@ function createTurnTracker(): TurnTracker {
   };
 }
 
+type ParsedCompletedItem =
+  | {
+      kind: "agentMessage";
+      text: string;
+    }
+  | {
+      kind: "mcpToolCall";
+      arguments: unknown;
+      result: unknown;
+      server: string;
+      status: "completed" | "failed" | "inProgress";
+      tool: string;
+    }
+  | {
+      kind: "other";
+    };
+
 function handleTurnNotification(
   notification: JsonRpcNotificationMessage,
   tracker: TurnTracker,
 ): void {
   if (notification.method === "item/agentMessage/delta") {
-    const params = notification.params as { delta?: string } | undefined;
-    if (typeof params?.delta === "string") {
+    const params = parseAgentMessageDeltaParams(notification.params);
+    if (params) {
       tracker.deltaText += params.delta;
     }
     return;
   }
 
   if (notification.method === "item/completed") {
-    const params = notification.params as ItemCompletedNotification;
-    if (params.item.type === "agentMessage") {
-      tracker.latestAgentMessageText = params.item.text;
+    const item = parseItemCompleted(notification.params);
+    if (!item) {
       return;
     }
-    if (
-      params.item.type === "mcpToolCall" &&
-      (params.item.status === "completed" ||
-        params.item.status === "failed" ||
-        params.item.status === "inProgress")
-    ) {
+
+    if (item.kind === "agentMessage") {
+      tracker.latestAgentMessageText = item.text;
+      return;
+    }
+
+    if (item.kind === "mcpToolCall") {
       tracker.mcpToolCalls.push({
-        arguments: params.item.arguments,
-        result: params.item.result,
-        server: params.item.server,
-        status: params.item.status,
-        tool: params.item.tool,
+        arguments: item.arguments,
+        result: item.result,
+        server: item.server,
+        status: item.status,
+        tool: item.tool,
       });
     }
     return;
   }
 
   if (notification.method === "error") {
-    const params = notification.params as ErrorNotification;
-    tracker.errorMessage = params.error.message;
+    const params = parseErrorParams(notification.params);
+    if (params) {
+      tracker.errorMessage = params.errorMessage;
+    }
     return;
   }
 
   if (notification.method === "turn/completed") {
-    const params = notification.params as TurnCompletedNotification;
+    const params = parseTurnCompletedParams(notification.params);
+    if (!params) {
+      return;
+    }
+
     if (
-      params.turn.status === "completed" ||
-      params.turn.status === "failed" ||
-      params.turn.status === "interrupted"
+      params.status === "completed" ||
+      params.status === "failed" ||
+      params.status === "interrupted"
     ) {
-      tracker.completedStatus = params.turn.status;
+      tracker.completedStatus = params.status;
     } else {
       tracker.completedStatus = "failed";
     }
 
-    if (!tracker.errorMessage && params.turn.error?.message) {
-      tracker.errorMessage = params.turn.error.message;
+    if (!tracker.errorMessage && params.errorMessage) {
+      tracker.errorMessage = params.errorMessage;
     }
   }
 }
@@ -393,6 +443,7 @@ function handleTurnNotification(
 async function waitForTurnCompletion(
   client: CodexAppServerClient,
   threadId: string,
+  turnId: string,
   tracker: TurnTracker,
 ): Promise<TurnResult> {
   const timeoutMs = client.getTimeoutMs();
@@ -416,7 +467,7 @@ async function waitForTurnCompletion(
     await wait(10);
   }
 
-  await client.interruptTurn(threadId);
+  await client.interruptTurn(threadId, turnId);
   return {
     assistantText: tracker.latestAgentMessageText ?? tracker.deltaText.trim(),
     errorMessage: `turn timed out after ${timeoutMs}ms`,
@@ -426,22 +477,11 @@ async function waitForTurnCompletion(
 }
 
 function extractQuestions(params: unknown): ToolRequestUserInputQuestion[] {
-  if (!params || typeof params !== "object") {
+  if (!isToolRequestUserInputParams(params)) {
     return [];
   }
 
-  const rawQuestions = (params as { questions?: unknown }).questions;
-  if (!Array.isArray(rawQuestions)) {
-    return [];
-  }
-
-  return rawQuestions.filter((question) => {
-    return (
-      question &&
-      typeof question === "object" &&
-      typeof (question as { id?: unknown }).id === "string"
-    );
-  }) as ToolRequestUserInputQuestion[];
+  return params.questions;
 }
 
 function pickDeclineOption(question: ToolRequestUserInputQuestion): string {
@@ -460,39 +500,370 @@ function pickDeclineOption(question: ToolRequestUserInputQuestion): string {
   return "";
 }
 
-function isResponse(message: JsonRpcMessage): message is JsonRpcResponseMessage {
-  if (!message || typeof message !== "object") {
+function parseApprovalPolicy(value: unknown): AskForApproval {
+  if (isApprovalPolicy(value)) {
+    return value;
+  }
+  throw new Error(`Invalid approvalPolicy: ${String(value)}`);
+}
+
+function parseSandboxMode(value: unknown): SandboxMode {
+  if (isSandboxMode(value)) {
+    return value;
+  }
+  throw new Error(`Invalid sandbox mode: ${String(value)}`);
+}
+
+function normalizeThreadStartConfig(
+  config: Record<string, unknown>,
+): NonNullable<ThreadStartParams["config"]> {
+  const normalized: NonNullable<ThreadStartParams["config"]> = {};
+
+  for (const [key, value] of Object.entries(config)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (!isJsonValue(value)) {
+      throw new Error(`Invalid thread config value for key: ${key}`);
+    }
+    normalized[key] = value;
+  }
+
+  return normalized;
+}
+
+function extractThreadId(result: unknown): string {
+  if (!isRecord(result)) {
+    throw new Error("thread/start response does not include thread.id");
+  }
+  const thread = result["thread"];
+  if (!isRecord(thread)) {
+    throw new Error("thread/start response does not include thread.id");
+  }
+
+  const threadId = thread["id"];
+  if (typeof threadId !== "string" || threadId.length === 0) {
+    throw new Error("thread/start response does not include thread.id");
+  }
+
+  return threadId;
+}
+
+function extractTurnId(result: unknown): string {
+  if (!isRecord(result)) {
+    throw new Error("turn/start response does not include turn.id");
+  }
+  const turn = result["turn"];
+  if (!isRecord(turn)) {
+    throw new Error("turn/start response does not include turn.id");
+  }
+
+  const turnId = turn["id"];
+  if (typeof turnId !== "string" || turnId.length === 0) {
+    throw new Error("turn/start response does not include turn.id");
+  }
+
+  return turnId;
+}
+
+function parseAgentMessageDeltaParams(params: unknown): { delta: string } | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+  const delta = params["delta"];
+  if (typeof delta !== "string") {
+    return undefined;
+  }
+
+  return {
+    delta,
+  };
+}
+
+function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+
+  const item = params["item"];
+  if (!isRecord(item)) {
+    return undefined;
+  }
+
+  const itemType = item["type"];
+  if (typeof itemType !== "string") {
+    return undefined;
+  }
+
+  if (itemType === "agentMessage") {
+    const text = item["text"];
+    if (typeof text !== "string") {
+      return undefined;
+    }
+
+    return {
+      kind: "agentMessage",
+      text,
+    };
+  }
+
+  if (itemType === "mcpToolCall") {
+    const server = item["server"];
+    const status = item["status"];
+    const tool = item["tool"];
+    if (typeof server !== "string" || !isMcpToolCallStatus(status) || typeof tool !== "string") {
+      return undefined;
+    }
+
+    return {
+      arguments: item["arguments"],
+      kind: "mcpToolCall",
+      result: item["result"],
+      server,
+      status,
+      tool,
+    };
+  }
+
+  return {
+    kind: "other",
+  };
+}
+
+function parseErrorParams(params: unknown): { errorMessage: string } | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+
+  const error = params["error"];
+  if (!isRecord(error)) {
+    return undefined;
+  }
+
+  const message = error["message"];
+  if (typeof message !== "string") {
+    return undefined;
+  }
+
+  return {
+    errorMessage: message,
+  };
+}
+
+function parseTurnCompletedParams(params: unknown):
+  | {
+      status: string;
+      errorMessage?: string;
+    }
+  | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+
+  const turn = params["turn"];
+  if (!isRecord(turn)) {
+    return undefined;
+  }
+
+  const status = turn["status"];
+  if (typeof status !== "string") {
+    return undefined;
+  }
+
+  const error = turn["error"];
+  let errorMessage: string | undefined;
+  if (isRecord(error)) {
+    const message = error["message"];
+    if (typeof message === "string") {
+      errorMessage = message;
+    }
+  }
+
+  if (errorMessage) {
+    return {
+      errorMessage,
+      status,
+    };
+  }
+
+  return {
+    status,
+  };
+}
+
+function isToolRequestUserInputParams(value: unknown): value is ToolRequestUserInputParams {
+  if (!isRecord(value)) {
     return false;
   }
 
+  if (
+    typeof value["threadId"] !== "string" ||
+    typeof value["turnId"] !== "string" ||
+    typeof value["itemId"] !== "string"
+  ) {
+    return false;
+  }
+
+  const questions = value["questions"];
+  return Array.isArray(questions) && questions.every(isToolRequestUserInputQuestion);
+}
+
+function isToolRequestUserInputQuestion(value: unknown): value is ToolRequestUserInputQuestion {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    typeof value["id"] !== "string" ||
+    typeof value["header"] !== "string" ||
+    typeof value["question"] !== "string" ||
+    typeof value["isOther"] !== "boolean" ||
+    typeof value["isSecret"] !== "boolean"
+  ) {
+    return false;
+  }
+
+  const options = value["options"];
   return (
-    "id" in message &&
-    typeof (message as { id?: unknown }).id === "number" &&
-    ("result" in message || "error" in message)
+    options === null || (Array.isArray(options) && options.every(isToolRequestUserInputOption))
   );
 }
 
-function isServerRequest(message: JsonRpcMessage): message is JsonRpcRequestMessage {
-  if (!message || typeof message !== "object") {
+function isToolRequestUserInputOption(value: unknown): value is ToolRequestUserInputOption {
+  if (!isRecord(value)) {
     return false;
   }
-  return (
-    "method" in message &&
-    typeof (message as { method?: unknown }).method === "string" &&
-    "id" in message &&
-    typeof (message as { id?: unknown }).id === "number"
-  );
+
+  return typeof value["description"] === "string" && typeof value["label"] === "string";
 }
 
-function isNotification(message: JsonRpcMessage): message is JsonRpcNotificationMessage {
-  if (!message || typeof message !== "object") {
+function isMcpToolCallStatus(value: unknown): value is "completed" | "failed" | "inProgress" {
+  return value === "completed" || value === "failed" || value === "inProgress";
+}
+
+function isResponse(message: unknown): message is JsonRpcResponseMessage {
+  if (!isRecord(message)) {
     return false;
   }
-  return (
-    "method" in message &&
-    typeof (message as { method?: unknown }).method === "string" &&
-    !("id" in message)
-  );
+
+  if (!isRequestId(message["id"])) {
+    return false;
+  }
+
+  if (!("result" in message) && !("error" in message)) {
+    return false;
+  }
+
+  if ("error" in message && message["error"] !== undefined && !isJsonRpcError(message["error"])) {
+    return false;
+  }
+
+  return true;
+}
+
+function parseInboundRequest(message: unknown): ParsedInboundRequest | undefined {
+  if (!isRecord(message)) {
+    return undefined;
+  }
+
+  const id = message["id"];
+  if (!isRequestId(id)) {
+    return undefined;
+  }
+
+  const method = message["method"];
+  if (typeof method !== "string") {
+    return undefined;
+  }
+
+  return {
+    id,
+    method,
+    params: message["params"],
+  };
+}
+
+function isNotification(message: unknown): message is JsonRpcNotificationMessage {
+  if (!isRecord(message)) {
+    return false;
+  }
+
+  return typeof message["method"] === "string" && !("id" in message);
+}
+
+function isRequestId(value: unknown): value is RequestId {
+  return typeof value === "number" || typeof value === "string";
+}
+
+function isJsonRpcError(value: unknown): value is { code: number; message: string } {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value["code"] === "number" && typeof value["message"] === "string";
+}
+
+function isApprovalPolicy(value: unknown): value is AskForApproval {
+  return APPROVAL_POLICIES.some((policy) => policy === value);
+}
+
+function isSandboxMode(value: unknown): value is SandboxMode {
+  return SANDBOX_MODES.some((mode) => mode === value);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((nestedValue) => {
+    return nestedValue === undefined || isJsonValue(nestedValue);
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function resolvePendingRequestKey(
+  pendingRequests: Map<RequestId, PendingRequest>,
+  id: RequestId,
+): RequestId | undefined {
+  if (pendingRequests.has(id)) {
+    return id;
+  }
+
+  if (typeof id === "string" && isIntegerString(id)) {
+    const numericId = Number(id);
+    if (pendingRequests.has(numericId)) {
+      return numericId;
+    }
+  }
+
+  if (typeof id === "number") {
+    const stringId = String(id);
+    if (pendingRequests.has(stringId)) {
+      return stringId;
+    }
+  }
+
+  return undefined;
+}
+
+function isIntegerString(value: string): boolean {
+  return /^-?[0-9]+$/.test(value);
 }
 
 async function wait(ms: number): Promise<void> {

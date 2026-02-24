@@ -51,6 +51,16 @@ const sendReplyInputSchema = z.object({
   text: z.string().min(1).describe("チャンネルに投稿するメッセージ本文。"),
 });
 
+const discordApiMessageSchema = z.object({
+  author: z.object({
+    id: z.string(),
+    username: z.string(),
+  }),
+  content: z.string(),
+  id: z.string(),
+  timestamp: z.string(),
+});
+
 export async function startDiscordMcpServer(
   options: StartDiscordMcpServerOptions,
 ): Promise<DiscordMcpServerHandle> {
@@ -117,9 +127,9 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
         query.set("before", beforeMessageId);
       }
 
-      const rawMessages = (await rest.get(Routes.channelMessages(channelId), {
+      const rawMessages = await rest.get(Routes.channelMessages(channelId), {
         query,
-      })) as unknown;
+      });
       const messages = parseDiscordMessages(rawMessages).reverse();
 
       const payload = {
@@ -217,37 +227,18 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
 
   const messages: DiscordMessage[] = [];
   for (const rawMessage of rawMessages) {
-    if (!rawMessage || typeof rawMessage !== "object") {
+    const parsed = discordApiMessageSchema.safeParse(rawMessage);
+    if (!parsed.success) {
       continue;
     }
-    const rawRecord = rawMessage as Record<string, unknown>;
-    const id = rawRecord["id"];
-    const content = rawRecord["content"];
-    const timestamp = rawRecord["timestamp"];
-    const author = rawRecord["author"];
-    if (
-      typeof id !== "string" ||
-      typeof content !== "string" ||
-      typeof timestamp !== "string" ||
-      !author ||
-      typeof author !== "object"
-    ) {
-      continue;
-    }
-
-    const authorRecord = author as Record<string, unknown>;
-    const authorId = authorRecord["id"];
-    const username = authorRecord["username"];
-    if (typeof authorId !== "string" || typeof username !== "string") {
-      continue;
-    }
+    const message = parsed.data;
 
     messages.push({
-      authorId,
-      authorName: username,
-      content,
-      createdAt: timestamp,
-      id,
+      authorId: message.author.id,
+      authorName: message.author.username,
+      content: message.content,
+      createdAt: message.timestamp,
+      id: message.id,
     });
   }
 

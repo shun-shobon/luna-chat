@@ -1,4 +1,4 @@
-import type { Collection, Message, TextBasedChannel } from "discord.js";
+import { Collection, type Message } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { fetchConversationContext } from "./discord-context";
@@ -19,17 +19,17 @@ describe("fetchConversationContext", () => {
     });
 
     const fetch = vi.fn(async () => {
-      return new Map([
+      return new Collection<string, Message>([
         ["2", secondMessage],
         ["1", firstMessage],
-      ]) as unknown as Collection<string, Message>;
+      ]);
     });
     const channel = {
       id: "channel",
       messages: {
         fetch,
       },
-    } as unknown as TextBasedChannel;
+    };
 
     const context = await fetchConversationContext({
       botUserId: "bot",
@@ -42,6 +42,28 @@ describe("fetchConversationContext", () => {
     expect(context.channelId).toBe("channel");
     expect(context.recentMessages.map((message) => message.id)).toEqual(["1", "2"]);
     expect(context.recentMessages[1]?.mentionedBot).toBe(true);
+  });
+
+  it("beforeMessageId が指定された場合は before を含めて履歴を取得する", async () => {
+    const fetch = vi.fn(async () => {
+      return new Collection<string, Message>();
+    });
+    const channel = {
+      id: "channel",
+      messages: {
+        fetch,
+      },
+    };
+
+    await fetchConversationContext({
+      beforeMessageId: "before-id",
+      botUserId: "bot",
+      channel,
+      limit: 20,
+      requestedByToolUse: true,
+    });
+
+    expect(fetch).toHaveBeenCalledWith({ before: "before-id", limit: 20 });
   });
 });
 
@@ -67,5 +89,5 @@ function createFakeMessage(input: {
     mentions: {
       has: (userId: string) => input.mentionBot && userId === "bot",
     },
-  } as unknown as Message;
+  } as Message;
 }
