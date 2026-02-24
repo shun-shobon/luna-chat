@@ -30,6 +30,7 @@ const discordMcpServer = await startDiscordMcpServerOrExit(runtimeConfig.discord
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
   command: CODEX_APP_SERVER_COMMAND,
+  codexHomeDir: runtimeConfig.codexHomeDir,
   cwd: runtimeConfig.codexWorkspaceDir,
   discordMcpServerUrl: discordMcpServer.url,
   model: CODEX_APP_SERVER_MODEL,

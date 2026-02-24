@@ -13,7 +13,7 @@
 4. 会話ログ本文は永続保存しない。
 5. 文脈が必要なときは Discord から都度取得する。
 6. AI の履歴追加取得（tool use）は無制限で許可する。
-7. 自己改善は Codex ワークスペース配下ドキュメントのみ更新可能。
+7. 自己改善は `$ARTEMIS_HOME/workspace` 配下ドキュメントのみ更新可能。
 8. Artemis 本体コードは AI 自己改善で更新しない。
 9. 秘密情報をログやドキュメントに平文出力しない。
 10. `STATUS.md` は作業ごとに AI が更新する。
@@ -24,7 +24,9 @@
 
 1. `DISCORD_BOT_TOKEN` が設定されていることを確認する。
 2. `ALLOWED_CHANNEL_IDS` が 1 件以上設定されていることを確認する。
-3. `<project>/codex-workspace` が存在し、書き込み可能であることを確認する。
+3. `ARTEMIS_HOME` 未設定時は `~/.artemis` を使用することを確認する。
+4. 起動時に `ARTEMIS_HOME` と `$ARTEMIS_HOME/workspace` が自動作成されることを確認する。
+5. Codex 起動時に `CODEX_HOME=$ARTEMIS_HOME/codex` を設定する。
 
 ### 3.2 開発時コマンド
 

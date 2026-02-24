@@ -1,11 +1,16 @@
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, constants, mkdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-const CODEX_WORKSPACE_DIR_NAME = "codex-workspace";
+const DEFAULT_ARTEMIS_HOME = "~/.artemis";
+const WORKSPACE_DIR_NAME = "workspace";
+const CODEX_HOME_DIR_NAME = "codex";
 
 export type RuntimeConfig = {
   discordBotToken: string;
   allowedChannelIds: ReadonlySet<string>;
+  artemisHomeDir: string;
+  codexHomeDir: string;
   codexWorkspaceDir: string;
 };
 
@@ -23,14 +28,18 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   }
 
   const allowedChannelIds = parseAllowedChannelIds(env["ALLOWED_CHANNEL_IDS"]);
-  const codexWorkspaceDir = resolve(process.cwd(), CODEX_WORKSPACE_DIR_NAME);
-  assertDirectoryExistsAndWritable(
-    codexWorkspaceDir,
-    `${CODEX_WORKSPACE_DIR_NAME} must exist and be writable.`,
-  );
+  const artemisHomeDir = resolveArtemisHome(env["ARTEMIS_HOME"]);
+  const codexWorkspaceDir = resolve(artemisHomeDir, WORKSPACE_DIR_NAME);
+  const codexHomeDir = resolve(artemisHomeDir, CODEX_HOME_DIR_NAME);
+
+  ensureDirectoryReady(artemisHomeDir, "ARTEMIS_HOME must be a writable directory.");
+  ensureDirectoryReady(codexWorkspaceDir, "workspace must be a writable directory.");
+  ensureDirectoryReady(codexHomeDir, "codex home must be a writable directory.");
 
   return {
     allowedChannelIds,
+    artemisHomeDir,
+    codexHomeDir,
     codexWorkspaceDir,
     discordBotToken,
   };
@@ -52,12 +61,37 @@ function parseAllowedChannelIds(rawAllowedChannelIds: string | undefined): Reado
   return new Set(allowedChannelIds);
 }
 
-function assertDirectoryExistsAndWritable(path: string, message: string): void {
-  if (!existsSync(path)) {
+function resolveArtemisHome(rawArtemisHome: string | undefined): string {
+  const configuredArtemisHome = rawArtemisHome?.trim();
+  const artemisHome =
+    configuredArtemisHome && configuredArtemisHome.length > 0
+      ? configuredArtemisHome
+      : DEFAULT_ARTEMIS_HOME;
+
+  return resolve(expandHomeDirectory(artemisHome));
+}
+
+function expandHomeDirectory(path: string): string {
+  if (path === "~") {
+    return homedir();
+  }
+  if (path.startsWith("~/")) {
+    return resolve(homedir(), path.slice(2));
+  }
+
+  return path;
+}
+
+function ensureDirectoryReady(path: string, message: string): void {
+  try {
+    mkdirSync(path, {
+      recursive: true,
+    });
+    if (!statSync(path).isDirectory()) {
+      throw new RuntimeConfigError(message);
+    }
+    accessSync(path, constants.W_OK);
+  } catch {
     throw new RuntimeConfigError(message);
   }
-  if (!statSync(path).isDirectory()) {
-    throw new RuntimeConfigError(message);
-  }
-  accessSync(path, constants.W_OK);
 }
