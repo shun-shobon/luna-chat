@@ -77,7 +77,7 @@ export class CodexAppServerAiService implements AiService {
         });
       }
       const didReply = turnResult.mcpToolCalls.some((toolCall) => {
-        return toolCall.status === "completed" && toolCall.tool === "send_discord_reply";
+        return toolCall.status === "completed" && toolCall.tool === "send_message";
       });
       logger.debug("ai.turn.completed", {
         didReply,

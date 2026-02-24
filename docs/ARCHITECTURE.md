@@ -72,8 +72,8 @@
 2. 許可チャンネル判定（許可以外は終了）
 3. メンション有無判定
 4. AI へ入力（現在メッセージ + `forceReply` + `contextFetchLimit`）
-5. AI が必要時に `fetch_discord_history` を tool call
-6. AI が返信時に `send_discord_reply` を tool call
+5. AI が必要時に `read_message_history` を tool call
+6. AI が返信時に `send_message` を tool call
 
 ### 5.2 メンション受信
 

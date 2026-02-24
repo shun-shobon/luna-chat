@@ -113,7 +113,7 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
   });
 
   server.registerTool(
-    "fetch_discord_history",
+    "read_message_history",
     {
       description: "Discordチャンネルの履歴メッセージを取得する。",
       inputSchema: fetchHistoryInputSchema,
@@ -144,7 +144,7 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
   );
 
   server.registerTool(
-    "send_discord_reply",
+    "send_message",
     {
       description: "Discordチャンネルへメッセージを送信する。",
       inputSchema: sendReplyInputSchema,
