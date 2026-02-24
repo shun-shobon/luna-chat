@@ -28,6 +28,7 @@ Codex CLI app-serverとDiscord.jsを使ったDiscord Chat Botを作成します�
 履歴は Conventional Commits 形式に従うこと。
 
 - 形式: `<type>: <summary>`
+- コミットメッセージは件名・本文ともに日本語で記載すること（Conventional Commits の `type` は英語のままで可）。
 - 3行目以降には具体的な変更内容を記載すること。
 - 1コミット1目的を徹底すること。
 - 適切な粒度でコミットを行うこと。
