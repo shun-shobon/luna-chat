@@ -75,8 +75,8 @@ export type CodexAppServerClientOptions = {
 };
 
 const CLIENT_INFO = {
-  name: "umbra",
-  title: "Umbra",
+  name: "artemis",
+  title: "Artemis",
   version: "0.1.0",
 };
 
