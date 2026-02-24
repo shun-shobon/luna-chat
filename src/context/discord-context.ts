@@ -1,9 +1,16 @@
-import type { Collection, Message, TextBasedChannel } from "discord.js";
+import type { Collection, Message } from "discord.js";
 
 import type { ConversationContext, RuntimeMessage } from "./types";
 
+type ConversationContextChannel = {
+  id: string;
+  messages: {
+    fetch: (options: { before?: string; limit: number }) => Promise<Collection<string, Message>>;
+  };
+};
+
 export type FetchConversationContextInput = {
-  channel: TextBasedChannel;
+  channel: ConversationContextChannel;
   botUserId: string;
   limit: number;
   requestedByToolUse: boolean;
@@ -13,9 +20,9 @@ export type FetchConversationContextInput = {
 export async function fetchConversationContext(
   input: FetchConversationContextInput,
 ): Promise<ConversationContext> {
-  const fetchOptions = {
+  const fetchOptions: { before?: string; limit: number } = {
     limit: input.limit,
-  } as { limit: number; before?: string };
+  };
   if (input.beforeMessageId) {
     fetchOptions.before = input.beforeMessageId;
   }
