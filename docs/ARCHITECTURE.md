@@ -74,6 +74,7 @@
 4. AI へ入力（現在メッセージ + `forceReply` + `contextFetchLimit`）
 5. AI が必要時に `read_message_history` を tool call
 6. AI が返信時に `send_message` を tool call
+7. AI が必要時に `add_reaction` を tool call
 
 ### 5.2 メンション受信
 
@@ -127,5 +128,5 @@
 1. 会話ログは永続化しない。
 2. 文脈は必要時に tool use で Discord から取得する。
 3. 返信頻度や興味判定は AI 判断に寄せる。
-4. 履歴取得と返信送信は tool use 経由で実施する。
+4. 履歴取得・返信送信・リアクション付与は tool use 経由で実施する（返信成立は `send_message`）。
 5. 自己改善はドキュメント限定で実施する。

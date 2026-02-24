@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import type { REST } from "discord.js";
+import { Routes } from "discord.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DISCORD_MCP_PATH, startDiscordMcpServer } from "./discord-mcp-server";
+import { addMessageReaction, DISCORD_MCP_PATH, startDiscordMcpServer } from "./discord-mcp-server";
 
 const startedServers: Array<{ close: () => Promise<void>; url: string }> = [];
 
@@ -32,3 +34,52 @@ describe("startDiscordMcpServer", () => {
     expect(Number(url.port)).toBeGreaterThan(0);
   });
 });
+
+describe("addMessageReaction", () => {
+  it("throws when emoji is blank", async () => {
+    await expect(
+      addMessageReaction(createRestClientStub(), {
+        channelId: "channel-id",
+        emoji: "   ",
+        messageId: "message-id",
+      }),
+    ).rejects.toThrow("emoji must not be empty.");
+  });
+
+  it("adds reaction with unicode emoji", async () => {
+    const rest = createRestClientStub();
+
+    await expect(
+      addMessageReaction(rest, {
+        channelId: "channel-id",
+        emoji: "😄",
+        messageId: "message-id",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(rest.put).toHaveBeenCalledWith(
+      Routes.channelMessageOwnReaction("channel-id", "message-id", "😄"),
+    );
+  });
+
+  it("adds reaction with custom emoji", async () => {
+    const rest = createRestClientStub();
+
+    await addMessageReaction(rest, {
+      channelId: "channel-id",
+      emoji: "party:987654321",
+      messageId: "message-id",
+    });
+
+    expect(rest.put).toHaveBeenCalledWith(
+      Routes.channelMessageOwnReaction("channel-id", "message-id", "party:987654321"),
+    );
+  });
+});
+
+function createRestClientStub() {
+  const put = vi.fn(async () => {});
+  return {
+    put,
+  } satisfies Pick<REST, "put">;
+}

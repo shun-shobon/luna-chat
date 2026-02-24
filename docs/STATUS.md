@@ -14,6 +14,8 @@
 - 過去履歴取得は MCP tool `read_message_history` を呼び出す方式へ移行済み。
 - 返信送信は MCP tool `send_message` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
 - `send_message` の入力は `{ channelId, text }` に簡素化済み。
+- リアクション付与は MCP tool `add_reaction` を呼び出す方式を追加済み。
+- メンション返信の成立条件は従来どおり `send_message` 必須とし、`add_reaction` は補助用途とする。
 - Discord MCP の zod スキーマには `describe` で各パラメータ説明を付与済み。
 - Discord MCP の tool `description` / zod `describe` は日本語へ統一済み。
 - ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
