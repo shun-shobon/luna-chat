@@ -75,8 +75,8 @@ export type CodexAppServerClientOptions = {
 };
 
 const CLIENT_INFO = {
-  name: "luna-chat",
-  title: "Luna Chat",
+  name: "umbra",
+  title: "Umbra",
   version: "0.1.0",
 };
 
