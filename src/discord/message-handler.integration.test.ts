@@ -1,13 +1,49 @@
+import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiService } from "../ai/ai-service";
 
 import { handleMessageCreate, type MessageLike } from "./message-handler";
 
+type HistoryMessageLike = {
+  author: {
+    id: string;
+    username: string;
+  };
+  channelId: string;
+  content: string;
+  createdAt: Date;
+  createdTimestamp: number;
+  id: string;
+  member: {
+    displayName: string;
+  };
+  mentions: {
+    has: () => boolean;
+  };
+};
+
 describe("handleMessageCreate integration", () => {
   it("指定チャンネルの通常投稿で AI が呼び出される", async () => {
     const reply = vi.fn(async () => undefined);
-    const message = createMessage({ reply });
+    const oldMessage = createFakeHistoryMessage({
+      createdAt: new Date("2025-12-31T23:59:00.000Z"),
+      id: "old",
+    });
+    const newMessage = createFakeHistoryMessage({
+      createdAt: new Date("2025-12-31T23:59:30.000Z"),
+      id: "new",
+    });
+    const fetchHistory = vi.fn(async () => {
+      return new Collection<string, HistoryMessageLike>([
+        ["new", newMessage],
+        ["old", oldMessage],
+      ]);
+    });
+    const message = createMessage({
+      fetchHistory,
+      reply,
+    });
     const generateReply = vi.fn(async () => {
       return {
         didReply: true,
@@ -22,12 +58,45 @@ describe("handleMessageCreate integration", () => {
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "apology",
       botUserId: "bot",
-      contextFetchLimit: 20,
       logger: createLogger(),
       message,
     });
 
     expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(fetchHistory).toHaveBeenCalledWith({ before: "message", limit: 10 });
+    expect(generateReply).toHaveBeenCalledWith({
+      channelName: "general",
+      currentMessage: {
+        authorId: "author",
+        authorName: "author",
+        channelId: "allowed",
+        content: "hello?",
+        createdAt: "2026-01-01 09:00:00 JST",
+        id: "message",
+        mentionedBot: false,
+      },
+      forceReply: false,
+      recentMessages: [
+        {
+          authorId: "author",
+          authorName: "display",
+          channelId: "channel",
+          content: "history",
+          createdAt: "2026-01-01 08:59:00 JST",
+          id: "old",
+          mentionedBot: false,
+        },
+        {
+          authorId: "author",
+          authorName: "display",
+          channelId: "channel",
+          content: "history",
+          createdAt: "2026-01-01 08:59:30 JST",
+          id: "new",
+          mentionedBot: false,
+        },
+      ],
+    });
     expect(reply).not.toHaveBeenCalled();
   });
 
@@ -48,7 +117,6 @@ describe("handleMessageCreate integration", () => {
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "ごめんね",
       botUserId: "bot",
-      contextFetchLimit: 20,
       logger: createLogger(),
       message,
     });
@@ -73,7 +141,6 @@ describe("handleMessageCreate integration", () => {
       allowedChannelIds: new Set(["allowed"]),
       apologyMessage: "apology",
       botUserId: "bot",
-      contextFetchLimit: 20,
       logger: createLogger(),
       message,
     });
@@ -81,10 +148,51 @@ describe("handleMessageCreate integration", () => {
     expect(generateReply).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
   });
+
+  it("履歴取得に失敗しても空履歴で AI を呼び出す", async () => {
+    const fetchHistory = vi.fn(async () => {
+      throw new Error("fetch failed");
+    });
+    const message = createMessage({
+      channelName: null,
+      fetchHistory,
+    });
+    const generateReply = vi.fn(async () => {
+      return {
+        didReply: false,
+      };
+    });
+    const logger = createLogger();
+    const aiService: AiService = {
+      generateReply,
+    };
+
+    await handleMessageCreate({
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      apologyMessage: "apology",
+      botUserId: "bot",
+      logger,
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelName: "unknown",
+        recentMessages: [],
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalled();
+  });
 });
 
 function createMessage(input?: {
   channelId?: string;
+  channelName?: string | null;
+  fetchHistory?: (options: {
+    before?: string;
+    limit: number;
+  }) => Promise<Collection<string, HistoryMessageLike>>;
   mentionBot?: boolean;
   reply?: MessageLike["reply"];
 }): MessageLike {
@@ -96,10 +204,19 @@ function createMessage(input?: {
     },
     channel: {
       isThread: () => false,
+      messages: {
+        fetch:
+          input?.fetchHistory ??
+          vi.fn(async () => {
+            return new Collection<string, HistoryMessageLike>();
+          }),
+      },
+      name: input?.channelName === undefined ? "general" : input.channelName,
     },
     channelId: input?.channelId ?? "allowed",
     content: "hello?",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    createdTimestamp: new Date("2026-01-01T00:00:00.000Z").getTime(),
     id: "message",
     inGuild: () => true,
     mentions: {
@@ -111,6 +228,26 @@ function createMessage(input?: {
       },
     },
     reply: input?.reply ?? (async () => undefined),
+  };
+}
+
+function createFakeHistoryMessage(input: { id: string; createdAt: Date }): HistoryMessageLike {
+  return {
+    author: {
+      id: "author",
+      username: "author",
+    },
+    channelId: "channel",
+    content: "history",
+    createdAt: input.createdAt,
+    createdTimestamp: input.createdAt.getTime(),
+    id: input.id,
+    member: {
+      displayName: "display",
+    },
+    mentions: {
+      has: () => false,
+    },
   };
 }
 

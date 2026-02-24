@@ -10,7 +10,6 @@ import { handleMessageCreate } from "./discord/message-handler";
 import { logger } from "./logger";
 import { startDiscordMcpServer, type DiscordMcpServerHandle } from "./mcp/discord-mcp-server";
 
-const CONTEXT_FETCH_LIMIT = 30;
 const CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
 const CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
 const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
@@ -61,7 +60,6 @@ client.on("messageCreate", async (message) => {
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     apologyMessage,
     botUserId,
-    contextFetchLimit: CONTEXT_FETCH_LIMIT,
     logger,
     message,
   }).catch((error: unknown) => {

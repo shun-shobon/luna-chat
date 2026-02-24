@@ -41,6 +41,8 @@ describe("fetchConversationContext", () => {
     expect(fetch).toHaveBeenCalledWith({ limit: 20 });
     expect(context.channelId).toBe("channel");
     expect(context.recentMessages.map((message) => message.id)).toEqual(["1", "2"]);
+    expect(context.recentMessages[0]?.createdAt).toBe("2026-01-01 09:00:00 JST");
+    expect(context.recentMessages[1]?.createdAt).toBe("2026-01-01 09:00:01 JST");
     expect(context.recentMessages[1]?.mentionedBot).toBe(true);
   });
 
