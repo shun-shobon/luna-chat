@@ -1,8 +1,8 @@
 {
-  "name": "umbra",
+  "name": "artemis",
   "version": "0.1.0",
   "private": true,
-  "description": "umbra",
+  "description": "artemis",
   "license": "MIT",
   "author": "NISHIZAWA Shuntaro <me@s2n.tech>",
   "type": "module",
