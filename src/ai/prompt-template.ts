@@ -20,12 +20,17 @@ export function buildPromptBundle(input: AiInput): PromptBundle {
     "返信する場合は必ず MCP tool `send_discord_reply` を使う。",
   ].join("\n");
 
+  const recentMessages = input.recentMessages.map((message) => {
+    return `[${message.createdAt}] ${message.authorName}: ${message.content}`;
+  });
+
   const userRolePrompt = [
     "以下は現在の入力情報です。",
     `forceReply: ${String(input.forceReply)}`,
-    `contextFetchLimit: ${input.contextFetchLimit}`,
     `channelId: ${input.currentMessage.channelId}`,
-    `currentMessageId: ${input.currentMessage.id}`,
+    `channelName: ${input.channelName}`,
+    "recentMessages:",
+    ...(recentMessages.length > 0 ? recentMessages : ["(none)"]),
     "currentMessage:",
     `[${input.currentMessage.createdAt}] ${input.currentMessage.authorName}: ${input.currentMessage.content}`,
   ].join("\n");

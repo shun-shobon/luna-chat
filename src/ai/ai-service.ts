@@ -7,8 +7,9 @@ import { buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
   forceReply: boolean;
+  channelName: string;
   currentMessage: RuntimeMessage;
-  contextFetchLimit: number;
+  recentMessages: RuntimeMessage[];
 };
 
 export type AiOutput = {

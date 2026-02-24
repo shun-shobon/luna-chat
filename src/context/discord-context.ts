@@ -1,5 +1,6 @@
 import type { Collection, Message } from "discord.js";
 
+import { formatDateTimeJst } from "./date-time";
 import type { ConversationContext, RuntimeMessage } from "./types";
 
 type ConversationContextChannel = {
@@ -44,7 +45,7 @@ export function toRuntimeMessage(message: Message, botUserId: string): RuntimeMe
     authorName: message.member?.displayName ?? message.author.username,
     content: message.content,
     mentionedBot: message.mentions.has(botUserId),
-    createdAt: message.createdAt.toISOString(),
+    createdAt: formatDateTimeJst(message.createdAt),
   };
 }
 
