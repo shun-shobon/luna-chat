@@ -67,6 +67,7 @@ export type TurnResult = {
 
 export type CodexAppServerClientOptions = {
   command: string;
+  codexHomeDir: string;
   cwd: string;
   model: string;
   approvalPolicy: string;
@@ -105,6 +106,11 @@ export class CodexAppServerClient {
 
   constructor(private readonly options: CodexAppServerClientOptions) {
     this.child = spawn(this.options.command, {
+      cwd: this.options.cwd,
+      env: {
+        ...process.env,
+        CODEX_HOME: this.options.codexHomeDir,
+      },
       shell: true,
       stdio: ["pipe", "pipe", "pipe"],
     });

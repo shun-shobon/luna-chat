@@ -10,14 +10,14 @@
 ## 2. システム境界
 
 - `artemis` ディレクトリ: Discord Bot 本体コード（AI 自己改変の対象外）
-- `codex-workspace` ディレクトリ: 人格設定、運用ドキュメント、定型文（AI 自己改善の対象）
+- `workspace` ディレクトリ（`$ARTEMIS_HOME/workspace`）: 人格設定、運用ドキュメント、定型文（AI 自己改善の対象）
 
 ## 3. モジュール構成（提案）
 
 - `src/config`
   - 環境変数読み込み
   - `ALLOWED_CHANNEL_IDS` 解析
-  - `codex-workspace` 固定ディレクトリ検証
+  - `ARTEMIS_HOME`（default: `~/.artemis`）を解決し、`ARTEMIS_HOME` と `workspace` の自動作成・検証
 - `src/discord`
   - Discord.js クライアント初期化
   - 受信イベント処理
@@ -91,7 +91,7 @@
 ### 5.4 自己改善
 
 1. AI が改善提案を生成
-2. 対象が Codex ワークスペース配下ドキュメントか検証
+2. 対象が `$ARTEMIS_HOME/workspace` 配下ドキュメントか検証
 3. 条件を満たす場合のみ更新
 4. `STATUS.md` に更新内容を記録
 
@@ -99,7 +99,9 @@
 
 - `DISCORD_BOT_TOKEN`: Bot トークン
 - `ALLOWED_CHANNEL_IDS`: 返信対象チャンネル ID（カンマ区切り）
-- `CODEX_WORKSPACE_DIR`: 環境変数ではなく `<project>/codex-workspace` 固定パスを利用する
+- `ARTEMIS_HOME`: Artemis 作業ルート（未設定時は `~/.artemis`）
+- `workspace`: 起動時に `$ARTEMIS_HOME/workspace` を自動作成して利用する
+- `CODEX_HOME`: Codex 起動時に `$ARTEMIS_HOME/codex` を設定する
 - `APOLOGY_TEMPLATE_PATH`: 現時点では未使用（謝罪定型文は固定文言）
 
 ## 7. エラーハンドリング

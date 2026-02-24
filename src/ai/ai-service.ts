@@ -23,6 +23,7 @@ export interface AiService {
 export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
   command: string;
+  codexHomeDir: string;
   cwd: string;
   discordMcpServerUrl: string;
   model: string;
@@ -39,6 +40,7 @@ export class CodexAppServerAiService implements AiService {
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
       command: this.options.command,
+      codexHomeDir: this.options.codexHomeDir,
       cwd: this.options.cwd,
       model: this.options.model,
       sandbox: this.options.sandbox,
