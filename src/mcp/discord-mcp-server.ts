@@ -51,6 +51,15 @@ const sendReplyInputSchema = z.object({
   text: z.string().min(1).describe("チャンネルに投稿するメッセージ本文。"),
 });
 
+const addReactionInputSchema = z.object({
+  channelId: z.string().min(1).describe("リアクション対象メッセージのチャンネルID。"),
+  messageId: z.string().min(1).describe("リアクション対象のメッセージID。"),
+  emoji: z
+    .string()
+    .min(1)
+    .describe("付与する絵文字。Unicodeまたはカスタム絵文字（name:id）を指定する。"),
+});
+
 const discordApiMessageSchema = z.object({
   author: z.object({
     id: z.string(),
@@ -175,7 +184,49 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
     },
   );
 
+  server.registerTool(
+    "add_reaction",
+    {
+      description: "Discordメッセージへリアクションを付与する。",
+      inputSchema: addReactionInputSchema,
+      title: "Discordリアクション追加",
+    },
+    async ({ channelId, emoji, messageId }) => {
+      const payload = await addMessageReaction(rest, {
+        channelId,
+        emoji,
+        messageId,
+      });
+      return {
+        content: [{ text: JSON.stringify(payload), type: "text" }],
+        structuredContent: payload,
+      };
+    },
+  );
+
   return server;
+}
+
+type MessageReactionInput = {
+  channelId: string;
+  emoji: string;
+  messageId: string;
+};
+
+export async function addMessageReaction(
+  rest: Pick<REST, "put">,
+  input: MessageReactionInput,
+): Promise<{ ok: true }> {
+  const trimmedEmoji = input.emoji.trim();
+  if (trimmedEmoji.length === 0) {
+    throw new Error("emoji must not be empty.");
+  }
+
+  await rest.put(Routes.channelMessageOwnReaction(input.channelId, input.messageId, trimmedEmoji));
+
+  return {
+    ok: true,
+  };
 }
 
 async function startServer(input: {
