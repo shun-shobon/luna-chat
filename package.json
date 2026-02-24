@@ -1,8 +1,8 @@
 {
-  "name": "luna-chat",
+  "name": "umbra",
   "version": "0.1.0",
   "private": true,
-  "description": "luna-chat",
+  "description": "umbra",
   "license": "MIT",
   "author": "NISHIZAWA Shuntaro <me@s2n.tech>",
   "type": "module",

@@ -10,7 +10,7 @@ describe("applyImprovementProposal", () => {
   let workspaceDir = "";
 
   beforeEach(() => {
-    workspaceDir = mkdtempSync(join(tmpdir(), "luna-improvement-"));
+    workspaceDir = mkdtempSync(join(tmpdir(), "umbra-improvement-"));
   });
 
   afterEach(() => {
