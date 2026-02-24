@@ -17,7 +17,7 @@
 - `src/config`
   - 環境変数読み込み
   - `ALLOWED_CHANNEL_IDS` 解析
-  - `CODEX_WORKSPACE_DIR` 解決
+  - `codex-workspace` 固定ディレクトリ検証
 - `src/discord`
   - Discord.js クライアント初期化
   - 受信イベント処理
@@ -59,8 +59,6 @@
 - `forceReply: boolean`
 - `currentMessage: RuntimeMessage`
 - `contextFetchLimit: number`
-- `tools.fetchDiscordHistory(input): Promise<ConversationContext>`
-- `tools.sendDiscordReply(input): Promise<void>`
 
 ### AiOutput
 
@@ -73,7 +71,7 @@
 1. Discord でメッセージ受信
 2. 許可チャンネル判定（許可以外は終了）
 3. メンション有無判定
-4. AI へ入力（現在メッセージ + `forceReply` + ツール）
+4. AI へ入力（現在メッセージ + `forceReply` + `contextFetchLimit`）
 5. AI が必要時に `fetch_discord_history` を tool call
 6. AI が返信時に `send_discord_reply` を tool call
 
@@ -101,13 +99,13 @@
 
 - `DISCORD_BOT_TOKEN`: Bot トークン
 - `ALLOWED_CHANNEL_IDS`: 返信対象チャンネル ID（カンマ区切り）
-- `CODEX_WORKSPACE_DIR`: 自己改善対象ドキュメントのルートディレクトリ
-- `APOLOGY_TEMPLATE_PATH`: 謝罪定型文ドキュメントのパス
+- `CODEX_WORKSPACE_DIR`: 環境変数ではなく `<project>/codex-workspace` 固定パスを利用する
+- `APOLOGY_TEMPLATE_PATH`: 現時点では未使用（謝罪定型文は固定文言）
 
 ## 7. エラーハンドリング
 
-- AI 呼び出し失敗: 謝罪定型文で返信
-- Discord 送信失敗: ログ記録して処理終了
+- AI 呼び出し失敗: `forceReply=true` 時のみ謝罪定型文で返信
+- Discord 送信失敗: ログ記録して処理終了（再送なし）
 - 設定不備: 起動時 fail-fast
 
 ## 8. テスト戦略
@@ -125,7 +123,7 @@
 ## 9. 設計上の決定
 
 1. 会話ログは永続化しない。
-2. 文脈は毎回 Discord から取得する。
+2. 文脈は必要時に tool use で Discord から取得する。
 3. 返信頻度や興味判定は AI 判断に寄せる。
 4. 履歴取得と返信送信は tool use 経由で実施する。
 5. 自己改善はドキュメント限定で実施する。

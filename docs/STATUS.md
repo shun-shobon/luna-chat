@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-02-23
+- 2026-02-24
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -10,7 +10,7 @@
 - プロジェクトは MVP 定義を完了した。
 - `!ping` 依存を廃止し、チャンネル制限 + メンション必須返信フローへ移行済み。
 - 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
-- Discord の履歴は AI 呼び出し時に都度取得する実装へ移行済み。
+- Discord の履歴は初期入力に含めず、必要時に MCP tool `fetch_discord_history` で都度取得する実装へ移行済み。
 - 過去履歴取得は MCP tool `fetch_discord_history` を呼び出す方式へ移行済み。
 - 返信送信は MCP tool `send_discord_reply` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
 - `send_discord_reply` の入力は `{ channelId, text }` に簡素化済み。
@@ -21,6 +21,8 @@
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
 - `codex-workspace` は固定パス（`<project>/codex-workspace`）として扱う。
 - 謝罪定型文は固定文言を返す実装へ移行済み（外部ファイル設定なし）。
+- AI 呼び出し失敗時は、メンション投稿（forceReply）の場合のみ固定謝罪文を返信し、通常投稿は無返信で終了する。
+- Discord 送信失敗時の再送は行わず、ログ記録して処理終了する。
 - 改善提案の自動適用フローは保留中（現状は返信/履歴取得ツールに集中）。
 - 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
 - Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
@@ -38,6 +40,7 @@
 - `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。
 - ロガーは `src/logger.ts` の共通 `consola` を直接参照する構成に統一した。
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
+- 2026-02-24 時点で `SPEC` / `ARCHITECTURE` / `RUNBOOK` を現行実装に整合する内容へ更新済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
 - 本体コードと Codex ワークスペース（自己改善対象）を分離する方針が確定した。
 
