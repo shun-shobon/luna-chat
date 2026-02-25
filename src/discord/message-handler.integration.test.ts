@@ -36,6 +36,61 @@ type HistoryMessageLike = {
 };
 
 describe("handleMessageCreate integration", () => {
+  it("自分自身の投稿は無反応", async () => {
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({
+      authorId: "bot",
+      authorIsBot: true,
+      sendTyping,
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("他Botの投稿でも自分以外なら AI が呼び出される", async () => {
+    const message = createMessage({
+      authorId: "other-bot",
+      authorIsBot: true,
+      authorUsername: "other-bot",
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          authorId: "other-bot",
+          authorIsBot: true,
+          authorName: "other-bot",
+        }),
+      }),
+    );
+  });
+
   it("指定チャンネルの通常投稿で AI が呼び出される", async () => {
     const reply = vi.fn(async () => undefined);
     const sendTyping = vi.fn(async () => undefined);
@@ -328,6 +383,9 @@ describe("handleMessageCreate integration", () => {
 
 function createMessage(input?: {
   attachments?: AttachmentLike[];
+  authorId?: string;
+  authorIsBot?: boolean;
+  authorUsername?: string;
   channelId?: string;
   channelName?: string | null;
   fetchHistory?: (options: {
@@ -355,9 +413,9 @@ function createMessage(input?: {
 
   return {
     author: {
-      bot: false,
-      id: "author",
-      username: "author",
+      bot: input?.authorIsBot ?? false,
+      id: input?.authorId ?? "author",
+      username: input?.authorUsername ?? "author",
     },
     channel,
     channelId: input?.channelId ?? "allowed",

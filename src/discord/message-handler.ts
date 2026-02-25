@@ -90,7 +90,7 @@ const TYPING_INTERVAL_MS = 8_000;
 
 export async function handleMessageCreate(input: HandleMessageInput): Promise<void> {
   const { message } = input;
-  if (message.author.bot) {
+  if (message.author.id === input.botUserId) {
     return;
   }
 
