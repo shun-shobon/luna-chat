@@ -1,11 +1,23 @@
 import type { Collection } from "discord.js";
 
 import type { AiService } from "../ai/ai-service";
+import {
+  appendAttachmentMarkersFromSources,
+  type DiscordAttachmentInput,
+  type DiscordAttachmentStore,
+} from "../attachments/discord-attachment-store";
 import { formatDateTimeJst } from "../context/date-time";
 import type { RuntimeMessage } from "../context/types";
 import { evaluateReplyPolicy } from "../policy/reply-policy";
 
+type AttachmentSource = {
+  id: string;
+  name?: string | null;
+  url: string;
+};
+
 type RuntimeMessageSource = {
+  attachments?: Collection<string, AttachmentSource>;
   id: string;
   channelId: string;
   content: string;
@@ -27,6 +39,7 @@ type FetchedMessageCollectionLike = Collection<string, RuntimeMessageSource>;
 type SendTyping = () => Promise<unknown>;
 
 export type MessageLike = {
+  attachments?: Collection<string, AttachmentSource>;
   id: string;
   channelId: string;
   content: string;
@@ -63,6 +76,7 @@ export type LoggerLike = {
 };
 
 export type HandleMessageInput = {
+  attachmentStore: DiscordAttachmentStore;
   message: MessageLike;
   botUserId: string;
   allowedChannelIds: ReadonlySet<string>;
@@ -89,7 +103,12 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     return;
   }
 
-  const currentMessage = toRuntimeMessage(message, input.botUserId);
+  const currentMessage = await toRuntimeMessage({
+    attachmentStore: input.attachmentStore,
+    botUserId: input.botUserId,
+    logger: input.logger,
+    message,
+  });
   input.logger.debug?.("discord.message.received_for_ai_turn", {
     channelId: currentMessage.channelId,
     mentionedBot: currentMessage.mentionedBot,
@@ -102,6 +121,7 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   });
   try {
     const recentMessages = await fetchRecentMessages({
+      attachmentStore: input.attachmentStore,
       botUserId: input.botUserId,
       logger: input.logger,
       message,
@@ -118,28 +138,50 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   }
 }
 
-function toRuntimeMessage(message: MessageLike, botUserId: string): RuntimeMessage {
-  return toRuntimeMessageFromSource(message, botUserId);
+async function toRuntimeMessage(input: {
+  message: MessageLike;
+  botUserId: string;
+  attachmentStore: DiscordAttachmentStore;
+  logger: LoggerLike;
+}): Promise<RuntimeMessage> {
+  return toRuntimeMessageFromSource({
+    attachmentStore: input.attachmentStore,
+    botUserId: input.botUserId,
+    logger: input.logger,
+    message: input.message,
+  });
 }
 
-function toRuntimeMessageFromSource(
-  message: RuntimeMessageSource,
-  botUserId: string,
-): RuntimeMessage {
+async function toRuntimeMessageFromSource(input: {
+  message: RuntimeMessageSource;
+  botUserId: string;
+  attachmentStore: DiscordAttachmentStore;
+  logger: LoggerLike;
+}): Promise<RuntimeMessage> {
+  const content = await appendAttachmentMarkersFromSources({
+    attachmentStore: input.attachmentStore,
+    attachments: collectAttachments(input.message.attachments),
+    channelId: input.message.channelId,
+    content: input.message.content,
+    logger: input.logger,
+    messageId: input.message.id,
+  });
+
   return {
-    id: message.id,
-    channelId: message.channelId,
-    authorId: message.author.id,
-    authorName: message.member?.displayName ?? message.author.username,
-    content: message.content,
-    mentionedBot: message.mentions.has(botUserId),
-    createdAt: formatDateTimeJst(message.createdAt),
+    id: input.message.id,
+    channelId: input.message.channelId,
+    authorId: input.message.author.id,
+    authorName: input.message.member?.displayName ?? input.message.author.username,
+    content,
+    mentionedBot: input.message.mentions.has(input.botUserId),
+    createdAt: formatDateTimeJst(input.message.createdAt),
   };
 }
 
 async function fetchRecentMessages(input: {
   message: MessageLike;
   botUserId: string;
+  attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage[]> {
   if (!input.message.channel.messages) {
@@ -152,13 +194,39 @@ async function fetchRecentMessages(input: {
       limit: INITIAL_PROMPT_HISTORY_LIMIT,
     });
 
-    return Array.from(fetchedMessages.values())
-      .sort((left, right) => left.createdTimestamp - right.createdTimestamp)
-      .map((message) => toRuntimeMessageFromSource(message, input.botUserId));
+    const sortedMessages = Array.from(fetchedMessages.values()).sort((left, right) => {
+      return left.createdTimestamp - right.createdTimestamp;
+    });
+    return Promise.all(
+      sortedMessages.map(async (message) => {
+        return toRuntimeMessageFromSource({
+          attachmentStore: input.attachmentStore,
+          botUserId: input.botUserId,
+          logger: input.logger,
+          message,
+        });
+      }),
+    );
   } catch (error: unknown) {
     input.logger.warn("Failed to fetch recent channel messages:", error);
     return [];
   }
+}
+
+function collectAttachments(
+  attachments: Collection<string, AttachmentSource> | undefined,
+): DiscordAttachmentInput[] {
+  if (!attachments) {
+    return [];
+  }
+
+  return Array.from(attachments.values()).map((attachment) => {
+    return {
+      id: attachment.id,
+      name: attachment.name ?? null,
+      url: attachment.url,
+    };
+  });
 }
 
 function resolveChannelName(channelName: string | null | undefined): string {

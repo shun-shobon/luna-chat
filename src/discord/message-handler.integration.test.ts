@@ -2,10 +2,21 @@ import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AiService } from "../ai/ai-service";
+import type {
+  DiscordAttachmentInput,
+  DiscordAttachmentStore,
+} from "../attachments/discord-attachment-store";
 
 import { handleMessageCreate, type MessageLike } from "./message-handler";
 
+type AttachmentLike = {
+  id: string;
+  name?: string | null;
+  url: string;
+};
+
 type HistoryMessageLike = {
+  attachments?: Collection<string, AttachmentLike>;
   author: {
     id: string;
     username: string;
@@ -50,8 +61,10 @@ describe("handleMessageCreate integration", () => {
     const aiService: AiService = {
       generateReply,
     };
+    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
+      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       botUserId: "bot",
@@ -109,8 +122,10 @@ describe("handleMessageCreate integration", () => {
         throw new Error("ai failed");
       }),
     };
+    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
+      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       botUserId: "bot",
@@ -130,8 +145,10 @@ describe("handleMessageCreate integration", () => {
     const aiService: AiService = {
       generateReply,
     };
+    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
+      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       botUserId: "bot",
@@ -157,8 +174,10 @@ describe("handleMessageCreate integration", () => {
     const aiService: AiService = {
       generateReply,
     };
+    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
+      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       botUserId: "bot",
@@ -188,8 +207,10 @@ describe("handleMessageCreate integration", () => {
           return undefined;
         }),
       };
+      const attachmentStore = createAttachmentStore();
 
       const handlePromise = handleMessageCreate({
+        attachmentStore,
         aiService,
         allowedChannelIds: new Set(["allowed"]),
         botUserId: "bot",
@@ -215,8 +236,10 @@ describe("handleMessageCreate integration", () => {
     const aiService: AiService = {
       generateReply,
     };
+    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
+      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       botUserId: "bot",
@@ -227,9 +250,88 @@ describe("handleMessageCreate integration", () => {
     expect(generateReply).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith("Failed to send typing indicator:", expect.any(Error));
   });
+
+  it("添付ファイルがある場合は本文末尾に1行でマーカーを追記する", async () => {
+    const message = createMessage({
+      attachments: [
+        {
+          id: "a1",
+          name: "cat.png",
+          url: "https://example.com/cat.png",
+        },
+        {
+          id: "a2",
+          name: "dog.jpg",
+          url: "https://example.com/dog.jpg",
+        },
+      ],
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService: AiService = { generateReply };
+    const attachmentStore = createAttachmentStore({
+      pathsById: {
+        a1: "/tmp/a1.png",
+        a2: "/tmp/a2.jpg",
+      },
+    });
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          content: "hello?\n<attachment:/tmp/a1.png> <attachment:/tmp/a2.jpg>",
+        }),
+      }),
+    );
+  });
+
+  it("添付保存が失敗しても本文は維持して処理を継続する", async () => {
+    const message = createMessage({
+      attachments: [
+        {
+          id: "a1",
+          name: "cat.png",
+          url: "https://example.com/cat.png",
+        },
+      ],
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const logger = createLogger();
+    const aiService: AiService = { generateReply };
+    const attachmentStore = createAttachmentStore({
+      failIds: new Set(["a1"]),
+    });
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger,
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          content: "hello?",
+        }),
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalled();
+  });
 });
 
 function createMessage(input?: {
+  attachments?: AttachmentLike[];
   channelId?: string;
   channelName?: string | null;
   fetchHistory?: (options: {
@@ -277,6 +379,7 @@ function createMessage(input?: {
       },
     },
     reply: input?.reply ?? (async () => undefined),
+    attachments: createAttachmentCollection(input?.attachments ?? []),
   };
 }
 
@@ -297,6 +400,32 @@ function createFakeHistoryMessage(input: { id: string; createdAt: Date }): Histo
     mentions: {
       has: () => false,
     },
+    attachments: createAttachmentCollection([]),
+  };
+}
+
+function createAttachmentCollection(
+  attachments: AttachmentLike[],
+): Collection<string, AttachmentLike> {
+  return new Collection<string, AttachmentLike>(
+    attachments.map((attachment) => {
+      return [attachment.id, attachment];
+    }),
+  );
+}
+
+function createAttachmentStore(input?: {
+  failIds?: ReadonlySet<string>;
+  pathsById?: Record<string, string>;
+}): DiscordAttachmentStore {
+  return {
+    saveAttachment: vi.fn(async (attachment: DiscordAttachmentInput) => {
+      if (input?.failIds?.has(attachment.id)) {
+        throw new Error("save failed");
+      }
+
+      return input?.pathsById?.[attachment.id] ?? `/tmp/${attachment.id}`;
+    }),
   };
 }
 

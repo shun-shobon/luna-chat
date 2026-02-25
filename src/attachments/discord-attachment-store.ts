@@ -1,0 +1,130 @@
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+
+const ATTACHMENTS_DIR_NAME = "discord-attachments";
+
+export type DiscordAttachmentInput = {
+  id: string;
+  name: string | null;
+  url: string;
+};
+
+export type AttachmentWarnLogger = {
+  warn: (...arguments_: unknown[]) => void;
+};
+
+export interface DiscordAttachmentStore {
+  saveAttachment(input: DiscordAttachmentInput): Promise<string>;
+}
+
+export class WorkspaceDiscordAttachmentStore implements DiscordAttachmentStore {
+  constructor(private readonly workspaceDir: string) {}
+
+  async saveAttachment(input: DiscordAttachmentInput): Promise<string> {
+    const attachmentsDir = resolve(this.workspaceDir, ATTACHMENTS_DIR_NAME);
+    await mkdir(attachmentsDir, { recursive: true });
+
+    const filePath = resolve(attachmentsDir, buildAttachmentFileName(input));
+    if (await exists(filePath)) {
+      return filePath;
+    }
+
+    const response = await fetch(input.url);
+    if (!response.ok) {
+      throw new Error(`attachment download failed: ${response.status}`);
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    await writeFile(filePath, bytes);
+    return filePath;
+  }
+}
+
+export async function appendAttachmentMarkersFromSources(input: {
+  attachmentStore: DiscordAttachmentStore;
+  attachments: readonly DiscordAttachmentInput[];
+  channelId: string;
+  content: string;
+  logger: AttachmentWarnLogger;
+  messageId: string;
+}): Promise<string> {
+  const attachmentPaths: string[] = [];
+  for (const attachment of input.attachments) {
+    try {
+      const savedPath = await input.attachmentStore.saveAttachment(attachment);
+      attachmentPaths.push(savedPath);
+    } catch (error: unknown) {
+      input.logger.warn("Failed to save Discord attachment:", {
+        attachmentId: attachment.id,
+        channelId: input.channelId,
+        error,
+        messageId: input.messageId,
+        url: attachment.url,
+      });
+    }
+  }
+
+  return appendAttachmentMarkers(input.content, attachmentPaths);
+}
+
+export function appendAttachmentMarkers(
+  content: string,
+  attachmentPaths: readonly string[],
+): string {
+  if (attachmentPaths.length === 0) {
+    return content;
+  }
+
+  const markerLine = attachmentPaths.map((path) => `<attachment:${path}>`).join(" ");
+  if (content.length === 0) {
+    return markerLine;
+  }
+
+  return `${content}\n${markerLine}`;
+}
+
+function buildAttachmentFileName(input: DiscordAttachmentInput): string {
+  const safeAttachmentId = sanitizeAttachmentId(input.id);
+  const extension = resolveAttachmentExtension(input.name, input.url);
+  return `${safeAttachmentId}${extension}`;
+}
+
+function sanitizeAttachmentId(rawAttachmentId: string): string {
+  const sanitized = rawAttachmentId.replace(/[^A-Za-z0-9_-]/g, "_");
+  if (sanitized.length > 0) {
+    return sanitized;
+  }
+
+  return "attachment";
+}
+
+function resolveAttachmentExtension(name: string | null, url: string): string {
+  const fromName = normalizeExtension(extname(name ?? ""));
+  if (fromName.length > 0) {
+    return fromName;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    return normalizeExtension(extname(parsedUrl.pathname));
+  } catch {
+    return "";
+  }
+}
+
+function normalizeExtension(extension: string): string {
+  const lowered = extension.toLowerCase();
+  if (!/^\.[a-z0-9]{1,16}$/.test(lowered)) {
+    return "";
+  }
+  return lowered;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
