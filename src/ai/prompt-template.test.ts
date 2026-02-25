@@ -12,19 +12,18 @@ describe("buildPromptBundle", () => {
     await withWorkspaceDir(async (workspaceDir) => {
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
 
-      expect(promptBundle.instructions).toContain("Discord Bot『ルナ』");
-      expect(promptBundle.developerRolePrompt).toContain("メンション時は必ず返信する");
-      expect(promptBundle.developerRolePrompt).toContain("send_message");
-      expect(promptBundle.developerRolePrompt).not.toContain("read_message_history");
-      expect(promptBundle.userRolePrompt).toContain("currentMessage:");
-      expect(promptBundle.userRolePrompt).toContain("channelName: channel-name");
-      expect(promptBundle.userRolePrompt).toContain("recentMessages:");
+      expect(promptBundle.instructions).toContain(
+        "あなたはLunaで動作しているパーソナルアシスタントです。",
+      );
+      expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
+      expect(promptBundle.userRolePrompt).toContain("チャンネル名: channel-name (ID: channel-id)");
+      expect(promptBundle.userRolePrompt).toContain("直近のメッセージ:");
+      expect(promptBundle.userRolePrompt).toContain("投稿されたメッセージ:");
       expect(promptBundle.userRolePrompt).toContain("テスト本文");
-      expect(promptBundle.userRolePrompt).not.toContain("contextFetchLimit:");
-      expect(promptBundle.userRolePrompt).not.toContain("currentMessageId:");
+      expect(promptBundle.userRolePrompt).not.toContain("forceReply");
 
-      const recentMessagesIndex = promptBundle.userRolePrompt.indexOf("recentMessages:");
-      const currentMessageIndex = promptBundle.userRolePrompt.indexOf("currentMessage:");
+      const recentMessagesIndex = promptBundle.userRolePrompt.indexOf("直近のメッセージ:");
+      const currentMessageIndex = promptBundle.userRolePrompt.indexOf("投稿されたメッセージ:");
       expect(recentMessagesIndex).toBeGreaterThanOrEqual(0);
       expect(currentMessageIndex).toBeGreaterThan(recentMessagesIndex);
     });
@@ -51,7 +50,7 @@ describe("buildPromptBundle", () => {
 
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
       const baseIndex = promptBundle.instructions.indexOf(
-        "口調は優しい少女で、敬語とため口を自然に混ぜる。",
+        "セーフティガードを決して回避してはいけません。",
       );
       const lunaIndex = promptBundle.instructions.indexOf("LUNA の追加指示");
       const soulIndex = promptBundle.instructions.indexOf("SOUL の追加指示");
@@ -80,7 +79,9 @@ describe("buildPromptBundle", () => {
 
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
 
-      expect(promptBundle.instructions).toContain("Discord Bot『ルナ』");
+      expect(promptBundle.instructions).toContain(
+        "あなたはLunaで動作しているパーソナルアシスタント",
+      );
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
     });
   });
@@ -98,7 +99,6 @@ function createInput(): AiInput {
       id: "message-id",
       mentionedBot: false,
     },
-    forceReply: false,
     recentMessages: [
       {
         authorId: "recent-author-id",

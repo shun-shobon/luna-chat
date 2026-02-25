@@ -46,11 +46,7 @@ describe("handleMessageCreate integration", () => {
       reply,
       sendTyping,
     });
-    const generateReply = vi.fn(async () => {
-      return {
-        didReply: true,
-      };
-    });
+    const generateReply = vi.fn(async () => undefined);
     const aiService: AiService = {
       generateReply,
     };
@@ -58,7 +54,6 @@ describe("handleMessageCreate integration", () => {
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
-      apologyMessage: "apology",
       botUserId: "bot",
       logger: createLogger(),
       message,
@@ -78,7 +73,6 @@ describe("handleMessageCreate integration", () => {
         id: "message",
         mentionedBot: false,
       },
-      forceReply: false,
       recentMessages: [
         {
           authorId: "author",
@@ -103,8 +97,9 @@ describe("handleMessageCreate integration", () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
-  it("メンション投稿で AI が失敗したら謝罪テンプレートを返す", async () => {
+  it("メンション投稿で AI が失敗してもフォールバック返信しない", async () => {
     const reply = vi.fn(async () => undefined);
+    const logger = createLogger();
     const message = createMessage({
       mentionBot: true,
       reply,
@@ -118,24 +113,20 @@ describe("handleMessageCreate integration", () => {
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
-      apologyMessage: "ごめんね",
       botUserId: "bot",
-      logger: createLogger(),
+      logger,
       message,
     });
 
-    expect(reply).toHaveBeenCalledWith("ごめんね");
+    expect(reply).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith("Failed to generate AI reply:", expect.any(Error));
   });
 
   it("指定外チャンネルは無反応", async () => {
     const reply = vi.fn(async () => undefined);
     const sendTyping = vi.fn(async () => undefined);
     const message = createMessage({ channelId: "other", reply, sendTyping });
-    const generateReply = vi.fn(async () => {
-      return {
-        didReply: false,
-      };
-    });
+    const generateReply = vi.fn(async () => undefined);
     const aiService: AiService = {
       generateReply,
     };
@@ -143,7 +134,6 @@ describe("handleMessageCreate integration", () => {
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
-      apologyMessage: "apology",
       botUserId: "bot",
       logger: createLogger(),
       message,
@@ -162,11 +152,7 @@ describe("handleMessageCreate integration", () => {
       channelName: null,
       fetchHistory,
     });
-    const generateReply = vi.fn(async () => {
-      return {
-        didReply: false,
-      };
-    });
+    const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
     const aiService: AiService = {
       generateReply,
@@ -175,7 +161,6 @@ describe("handleMessageCreate integration", () => {
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
-      apologyMessage: "apology",
       botUserId: "bot",
       logger,
       message,
@@ -200,16 +185,13 @@ describe("handleMessageCreate integration", () => {
           await new Promise<void>((resolve) => {
             setTimeout(resolve, 17_000);
           });
-          return {
-            didReply: false,
-          };
+          return undefined;
         }),
       };
 
       const handlePromise = handleMessageCreate({
         aiService,
         allowedChannelIds: new Set(["allowed"]),
-        apologyMessage: "apology",
         botUserId: "bot",
         logger: createLogger(),
         message,
@@ -228,11 +210,7 @@ describe("handleMessageCreate integration", () => {
       throw new Error("typing failed");
     });
     const message = createMessage({ sendTyping });
-    const generateReply = vi.fn(async () => {
-      return {
-        didReply: false,
-      };
-    });
+    const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
     const aiService: AiService = {
       generateReply,
@@ -241,7 +219,6 @@ describe("handleMessageCreate integration", () => {
     await handleMessageCreate({
       aiService,
       allowedChannelIds: new Set(["allowed"]),
-      apologyMessage: "apology",
       botUserId: "bot",
       logger,
       message,

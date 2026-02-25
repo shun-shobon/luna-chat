@@ -6,18 +6,13 @@ import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
 import { buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
-  forceReply: boolean;
   channelName: string;
   currentMessage: RuntimeMessage;
   recentMessages: RuntimeMessage[];
 };
 
-export type AiOutput = {
-  didReply: boolean;
-};
-
 export interface AiService {
-  generateReply(input: AiInput): Promise<AiOutput>;
+  generateReply(input: AiInput): Promise<void>;
 }
 
 export type CodexAppServerAiServiceOptions = {
@@ -35,7 +30,7 @@ export type CodexAppServerAiServiceOptions = {
 export class CodexAppServerAiService implements AiService {
   constructor(private readonly options: CodexAppServerAiServiceOptions) {}
 
-  async generateReply(input: AiInput): Promise<AiOutput> {
+  async generateReply(input: AiInput): Promise<void> {
     let activeThreadId: string | undefined;
     const client = new CodexAppServerClient({
       approvalPolicy: this.options.approvalPolicy,
@@ -58,7 +53,6 @@ export class CodexAppServerAiService implements AiService {
       activeThreadId = threadId;
       logger.debug("ai.turn.started", {
         channelId: input.currentMessage.channelId,
-        forceReply: input.forceReply,
         messageId: input.currentMessage.id,
         threadId,
       });
@@ -76,11 +70,7 @@ export class CodexAppServerAiService implements AiService {
           tool: toolCall.tool,
         });
       }
-      const didReply = turnResult.mcpToolCalls.some((toolCall) => {
-        return toolCall.status === "completed" && toolCall.tool === "send_message";
-      });
       logger.debug("ai.turn.completed", {
-        didReply,
         errorMessage: turnResult.errorMessage,
         status: turnResult.status,
         threadId,
@@ -90,10 +80,6 @@ export class CodexAppServerAiService implements AiService {
           turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
         throw new Error(errorMessage);
       }
-
-      return {
-        didReply,
-      };
     } catch (error: unknown) {
       logger.debug("ai.turn.failed", {
         errorMessage: error instanceof Error ? error.message : String(error),

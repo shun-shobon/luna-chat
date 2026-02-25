@@ -3,7 +3,6 @@
 import { Client, GatewayIntentBits } from "discord.js";
 
 import { CodexAppServerAiService, type CodexAppServerAiServiceOptions } from "./ai/ai-service";
-import { readApologyTemplate } from "./ai/apology-template";
 import type { ReasoningEffort } from "./ai/codex-generated/ReasoningEffort";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
@@ -39,7 +38,6 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
   timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS,
 };
 const aiService = new CodexAppServerAiService(aiServiceOptions);
-const apologyMessage = readApologyTemplate();
 
 registerShutdownHooks({
   client,
@@ -59,7 +57,6 @@ client.on("messageCreate", async (message) => {
   await handleMessageCreate({
     aiService,
     allowedChannelIds: runtimeConfig.allowedChannelIds,
-    apologyMessage,
     botUserId,
     logger,
     message,

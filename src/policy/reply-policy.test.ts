@@ -11,10 +11,9 @@ describe("evaluateReplyPolicy", () => {
       channelId: "allowed",
       isDm: true,
       isThread: false,
-      mentionedBot: true,
     });
 
-    expect(decision).toEqual({ shouldHandle: false, forceReply: false });
+    expect(decision).toEqual({ shouldHandle: false });
   });
 
   it("指定外チャンネルは処理しない", () => {
@@ -23,33 +22,19 @@ describe("evaluateReplyPolicy", () => {
       channelId: "other",
       isDm: false,
       isThread: false,
-      mentionedBot: true,
     });
 
-    expect(decision).toEqual({ shouldHandle: false, forceReply: false });
+    expect(decision).toEqual({ shouldHandle: false });
   });
 
-  it("メンションありは強制返信", () => {
+  it("指定チャンネルは処理する", () => {
     const decision = evaluateReplyPolicy({
       allowedChannelIds,
       channelId: "allowed",
       isDm: false,
       isThread: false,
-      mentionedBot: true,
     });
 
-    expect(decision).toEqual({ shouldHandle: true, forceReply: true });
-  });
-
-  it("メンションなしは AI 判定に委譲", () => {
-    const decision = evaluateReplyPolicy({
-      allowedChannelIds,
-      channelId: "allowed",
-      isDm: false,
-      isThread: false,
-      mentionedBot: false,
-    });
-
-    expect(decision).toEqual({ shouldHandle: true, forceReply: false });
+    expect(decision).toEqual({ shouldHandle: true });
   });
 });

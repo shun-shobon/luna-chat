@@ -67,7 +67,6 @@ export type HandleMessageInput = {
   botUserId: string;
   allowedChannelIds: ReadonlySet<string>;
   aiService: AiService;
-  apologyMessage: string;
   logger: LoggerLike;
 };
 
@@ -85,7 +84,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     channelId: message.channelId,
     isDm: !message.inGuild(),
     isThread: message.channel.isThread(),
-    mentionedBot: message.mentions.has(input.botUserId),
   });
   if (!policyDecision.shouldHandle) {
     return;
@@ -94,7 +92,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   const currentMessage = toRuntimeMessage(message, input.botUserId);
   input.logger.debug?.("discord.message.received_for_ai_turn", {
     channelId: currentMessage.channelId,
-    forceReply: policyDecision.forceReply,
     mentionedBot: currentMessage.mentionedBot,
     messageId: currentMessage.id,
   });
@@ -109,27 +106,13 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
       logger: input.logger,
       message,
     });
-    const aiResult = await input.aiService.generateReply({
+    await input.aiService.generateReply({
       channelName: resolveChannelName(message.channel.name),
       currentMessage,
-      forceReply: policyDecision.forceReply,
       recentMessages,
     });
-
-    if (policyDecision.forceReply && !aiResult.didReply) {
-      input.logger.debug?.("discord.message.force_reply_fallback", {
-        messageId: currentMessage.id,
-      });
-      await message.reply(input.apologyMessage);
-    }
   } catch (error: unknown) {
     input.logger.error("Failed to generate AI reply:", error);
-    if (!policyDecision.forceReply) {
-      return;
-    }
-    await message.reply(input.apologyMessage).catch((replyError: unknown) => {
-      input.logger.error("Failed to send fallback apology message:", replyError);
-    });
   } finally {
     stopTypingLoop();
   }
