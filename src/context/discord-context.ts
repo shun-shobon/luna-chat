@@ -43,6 +43,7 @@ export function toRuntimeMessage(message: Message, botUserId: string): RuntimeMe
     channelId: message.channelId,
     authorId: message.author.id,
     authorName: message.member?.displayName ?? message.author.username,
+    authorIsBot: message.author.bot,
     content: message.content,
     mentionedBot: message.mentions.has(botUserId),
     createdAt: formatDateTimeJst(message.createdAt),

@@ -31,7 +31,7 @@ describe("CodexAppServerAiService", () => {
     expect(client.steerTurn).toHaveBeenCalledWith(
       "thread-1",
       "turn-1",
-      expect.stringContaining("second"),
+      expect.stringContaining("author (ID: author-id): second"),
     );
 
     client.completeTurn("turn-1", createCompletedTurnResult());
@@ -253,6 +253,7 @@ function createPromptBundle(userRolePrompt: string): {
 function createAiInput(messageId: string, channelId: string, content: string): AiInput {
   const currentMessage: RuntimeMessage = {
     authorId: "author-id",
+    authorIsBot: false,
     authorName: "author",
     channelId,
     content,

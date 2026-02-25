@@ -3,6 +3,7 @@ export type RuntimeMessage = {
   channelId: string;
   authorId: string;
   authorName: string;
+  authorIsBot: boolean;
   content: string;
   mentionedBot: boolean;
   createdAt: string;
