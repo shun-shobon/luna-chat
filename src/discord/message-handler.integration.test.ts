@@ -127,7 +127,7 @@ describe("handleMessageCreate integration", () => {
     });
 
     expect(generateReply).toHaveBeenCalledTimes(1);
-    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
     expect(fetchHistory).toHaveBeenCalledWith({ before: "message", limit: 10 });
     expect(generateReply).toHaveBeenCalledWith({
       channelName: "general",
@@ -247,11 +247,11 @@ describe("handleMessageCreate integration", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("AI処理中は入力中表示を定期更新する", async () => {
+  it("Botメンション時はAI処理中の入力中表示を定期更新する", async () => {
     vi.useFakeTimers();
     try {
       const sendTyping = vi.fn(async () => undefined);
-      const message = createMessage({ sendTyping });
+      const message = createMessage({ mentionBot: true, sendTyping });
       const aiService = createAiService(
         vi.fn(async () => {
           await new Promise<void>((resolve) => {
@@ -279,11 +279,43 @@ describe("handleMessageCreate integration", () => {
     }
   });
 
+  it("Bot未メンション時はAI処理中でも入力中表示を送信しない", async () => {
+    vi.useFakeTimers();
+    try {
+      const sendTyping = vi.fn(async () => undefined);
+      const message = createMessage({ sendTyping });
+      const aiService = createAiService(
+        vi.fn(async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 17_000);
+          });
+          return undefined;
+        }),
+      );
+      const attachmentStore = createAttachmentStore();
+
+      const handlePromise = handleMessageCreate({
+        attachmentStore,
+        aiService,
+        allowedChannelIds: new Set(["allowed"]),
+        botUserId: "bot",
+        logger: createLogger(),
+        message,
+      });
+      await vi.advanceTimersByTimeAsync(17_000);
+      await handlePromise;
+
+      expect(sendTyping).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("入力中表示送信に失敗してもAI呼び出しは継続する", async () => {
     const sendTyping = vi.fn(async () => {
       throw new Error("typing failed");
     });
-    const message = createMessage({ sendTyping });
+    const message = createMessage({ mentionBot: true, sendTyping });
     const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);

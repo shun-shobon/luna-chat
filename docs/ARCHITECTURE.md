@@ -21,7 +21,8 @@
 - `src/discord`
   - Discord.js の受信イベント処理
   - 返信対象判定の適用
-  - 現在メッセージ整形・直近履歴 10 件取得・typing 表示
+  - 現在メッセージ整形・直近履歴 10 件取得
+  - Bot 直接メンション時のみ typing 表示
 - `src/policy`
   - 返信可否判定（DM・スレッド・許可外チャンネルを除外）
 - `src/attachments`
@@ -76,11 +77,11 @@
 1. Discord でメッセージ受信
 2. 返信判定（DM・スレッド・許可外チャンネルは終了）
 3. 現在メッセージを RuntimeMessage に変換（添付マーカー含む）
-4. typing 表示ループを開始
+4. Bot 直接メンション時のみ typing 表示ループを開始
 5. 直近履歴 10 件を取得し、時系列昇順で整形
 6. AI へ入力（チャンネル名 + 現在メッセージ + 直近履歴）
 7. AI が必要時に `read_message_history` / `send_message` / `add_reaction` を tool call
-8. typing 表示ループを停止
+8. typing 表示ループを開始した場合のみ停止
 
 ### 5.2 同一チャンネル連投時
 

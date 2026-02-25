@@ -14,7 +14,7 @@
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
 - 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
-- AI 処理中は 8 秒間隔で typing を送信する。
+- AI 処理中の typing は Bot が直接メンションされた投稿に限り、8 秒間隔で送信する。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
 - 設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
 - 起動時に `LUNA_HOME` / `workspace` / `codex` を自動作成する。

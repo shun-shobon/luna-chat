@@ -116,10 +116,12 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     messageId: currentMessage.id,
   });
 
-  const stopTypingLoop = startTypingLoop({
-    channel: message.channel,
-    logger: input.logger,
-  });
+  const stopTypingLoop = currentMessage.mentionedBot
+    ? startTypingLoop({
+        channel: message.channel,
+        logger: input.logger,
+      })
+    : () => undefined;
   try {
     const recentMessages = await fetchRecentMessages({
       attachmentStore: input.attachmentStore,
