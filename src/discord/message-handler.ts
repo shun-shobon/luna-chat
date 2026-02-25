@@ -27,6 +27,7 @@ type RuntimeMessageSource = {
     has: (userId: string) => boolean;
   };
   author: {
+    bot: boolean;
     id: string;
     username: string;
   };
@@ -172,6 +173,7 @@ async function toRuntimeMessageFromSource(input: {
     channelId: input.message.channelId,
     authorId: input.message.author.id,
     authorName: input.message.member?.displayName ?? input.message.author.username,
+    authorIsBot: input.message.author.bot,
     content,
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),

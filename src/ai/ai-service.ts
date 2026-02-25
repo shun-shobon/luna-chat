@@ -8,6 +8,7 @@ import {
   type TurnResult,
 } from "./codex-app-server-client";
 import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
+import { formatMessageAuthorLabel } from "./message-author-label";
 import { buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
@@ -298,7 +299,7 @@ export class CodexAppServerAiService implements AiService {
 }
 
 function buildSteerPrompt(message: RuntimeMessage): string {
-  return `追加メッセージ:\n[${message.createdAt}] ${message.authorName}: ${message.content}`;
+  return `追加メッセージ:\n[${message.createdAt}] ${formatMessageAuthorLabel(message)}: ${message.content}`;
 }
 
 function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {

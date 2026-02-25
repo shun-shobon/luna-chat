@@ -77,6 +77,7 @@ function createFakeMessage(input: {
 }): Message {
   return {
     author: {
+      bot: false,
       id: "author",
       username: "author",
     },

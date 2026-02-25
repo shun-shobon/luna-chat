@@ -15,6 +15,7 @@ import { logger } from "../logger";
 type DiscordMessage = {
   attachments: DiscordAttachmentInput[];
   authorId: string;
+  authorIsBot: boolean;
   authorName: string;
   content: string;
   createdAt: string;
@@ -78,6 +79,7 @@ const discordApiAttachmentSchema = z.object({
 const discordApiMessageSchema = z.object({
   attachments: z.array(discordApiAttachmentSchema).optional().default([]),
   author: z.object({
+    bot: z.boolean().optional().default(false),
     id: z.string(),
     username: z.string(),
   }),
@@ -171,7 +173,8 @@ function createDiscordMcpToolServer(
           });
           return {
             authorId: message.authorId,
-            authorName: message.authorName,
+            authorIsBot: message.authorIsBot,
+            authorName: formatAuthorLabel(message),
             content,
             createdAt: message.createdAt,
             id: message.id,
@@ -331,6 +334,7 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
         };
       }),
       authorId: message.author.id,
+      authorIsBot: message.author.bot,
       authorName: message.author.username,
       content: message.content,
       createdAt: message.timestamp,
@@ -339,4 +343,11 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
   }
 
   return messages;
+}
+
+function formatAuthorLabel(
+  message: Pick<DiscordMessage, "authorId" | "authorIsBot" | "authorName">,
+): string {
+  const botSuffix = message.authorIsBot ? " (Bot)" : "";
+  return `${message.authorName}${botSuffix} (ID: ${message.authorId})`;
 }

@@ -19,6 +19,12 @@ describe("buildPromptBundle", () => {
       expect(promptBundle.userRolePrompt).toContain("チャンネル名: channel-name (ID: channel-id)");
       expect(promptBundle.userRolePrompt).toContain("直近のメッセージ:");
       expect(promptBundle.userRolePrompt).toContain("投稿されたメッセージ:");
+      expect(promptBundle.userRolePrompt).toContain(
+        "[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id): 直近メッセージ",
+      );
+      expect(promptBundle.userRolePrompt).toContain(
+        "[2026-02-23 09:00:00 JST] author-name (ID: author-id): テスト本文",
+      );
       expect(promptBundle.userRolePrompt).toContain("テスト本文");
       expect(promptBundle.userRolePrompt).not.toContain("forceReply");
 
@@ -92,6 +98,7 @@ function createInput(): AiInput {
     channelName: "channel-name",
     currentMessage: {
       authorId: "author-id",
+      authorIsBot: false,
       authorName: "author-name",
       channelId: "channel-id",
       content: "テスト本文",
@@ -102,6 +109,7 @@ function createInput(): AiInput {
     recentMessages: [
       {
         authorId: "recent-author-id",
+        authorIsBot: true,
         authorName: "recent-author-name",
         channelId: "channel-id",
         content: "直近メッセージ",

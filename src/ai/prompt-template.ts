@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AiInput } from "./ai-service";
+import { formatMessageAuthorLabel } from "./message-author-label";
 
 export type PromptBundle = {
   instructions: string;
@@ -32,7 +33,7 @@ export async function buildPromptBundle(
   ].join("\n");
 
   const recentMessages = input.recentMessages.map((message) => {
-    return `[${message.createdAt}] ${message.authorName}: ${message.content}`;
+    return `[${message.createdAt}] ${formatMessageAuthorLabel(message)}: ${message.content}`;
   });
 
   const userRolePrompt = [
@@ -41,7 +42,7 @@ export async function buildPromptBundle(
     "直近のメッセージ:",
     ...(recentMessages.length > 0 ? recentMessages : ["(none)"]),
     "投稿されたメッセージ:",
-    `[${input.currentMessage.createdAt}] ${input.currentMessage.authorName}: ${input.currentMessage.content}`,
+    `[${input.currentMessage.createdAt}] ${formatMessageAuthorLabel(input.currentMessage)}: ${input.currentMessage.content}`,
   ].join("\n");
 
   return {

@@ -18,6 +18,7 @@ type AttachmentLike = {
 type HistoryMessageLike = {
   attachments?: Collection<string, AttachmentLike>;
   author: {
+    bot: boolean;
     id: string;
     username: string;
   };
@@ -79,6 +80,7 @@ describe("handleMessageCreate integration", () => {
       channelName: "general",
       currentMessage: {
         authorId: "author",
+        authorIsBot: false,
         authorName: "author",
         channelId: "allowed",
         content: "hello?",
@@ -89,6 +91,7 @@ describe("handleMessageCreate integration", () => {
       recentMessages: [
         {
           authorId: "author",
+          authorIsBot: false,
           authorName: "display",
           channelId: "channel",
           content: "history",
@@ -98,6 +101,7 @@ describe("handleMessageCreate integration", () => {
         },
         {
           authorId: "author",
+          authorIsBot: false,
           authorName: "display",
           channelId: "channel",
           content: "history",
@@ -386,6 +390,7 @@ function createMessage(input?: {
 function createFakeHistoryMessage(input: { id: string; createdAt: Date }): HistoryMessageLike {
   return {
     author: {
+      bot: false,
       id: "author",
       username: "author",
     },
