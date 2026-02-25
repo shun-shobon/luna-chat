@@ -10,6 +10,7 @@ import {
 } from "./attachments/discord-attachment-store";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
+import { startHeartbeatRunner, type HeartbeatRunnerHandle } from "./heartbeat/heartbeat-runner";
 import { logger } from "./logger";
 import { startDiscordMcpServer, type DiscordMcpServerHandle } from "./mcp/discord-mcp-server";
 
@@ -19,6 +20,7 @@ const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
 const CODEX_APP_SERVER_SANDBOX = "workspace-write";
 const CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
 const CODEX_APP_SERVER_REASONING_EFFORT: ReasoningEffort = "medium";
+const HEARTBEAT_PROMPT = "`HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。";
 
 const client = new Client({
   intents: [
@@ -46,10 +48,16 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
   timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS,
 };
 const aiService = new CodexAppServerAiService(aiServiceOptions);
+const heartbeatRunner = startHeartbeatRunner({
+  aiService,
+  logger,
+  prompt: HEARTBEAT_PROMPT,
+});
 
 registerShutdownHooks({
   client,
   discordMcpServer,
+  heartbeatRunner,
 });
 
 client.on("clientReady", () => {
@@ -76,6 +84,7 @@ client.on("messageCreate", async (message) => {
 
 await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
   logger.error("Failed to login:", error);
+  heartbeatRunner.stop();
   void closeDiscordMcpServer(discordMcpServer);
   process.exit(1);
 });
@@ -117,6 +126,7 @@ async function closeDiscordMcpServer(discordMcpServer: DiscordMcpServerHandle): 
 function registerShutdownHooks(input: {
   client: Client;
   discordMcpServer: DiscordMcpServerHandle;
+  heartbeatRunner: HeartbeatRunnerHandle;
 }): void {
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -127,6 +137,7 @@ function registerShutdownHooks(input: {
     logger.info("Shutting down.", {
       signal,
     });
+    input.heartbeatRunner.stop();
     await input.client.destroy();
     await closeDiscordMcpServer(input.discordMcpServer);
     process.exit(0);

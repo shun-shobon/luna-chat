@@ -141,6 +141,58 @@ describe("CodexAppServerAiService", () => {
     client2.completeTurn("turn-1", createCompletedTurnResult());
     await secondPromise;
   });
+
+  it("heartbeat 実行時は専用プロンプトで turn を完了まで待機する", async () => {
+    const client = new FakeCodexClient();
+    const buildHeartbeatPromptBundle = vi.fn(async () => {
+      return createPromptBundle("heartbeat prompt");
+    });
+    const service = createService({
+      buildHeartbeatPromptBundle,
+      buildPromptBundle: vi.fn(async () => {
+        return createPromptBundle("初回プロンプト");
+      }),
+      createClient: vi.fn(() => client),
+    });
+
+    const runPromise = service.generateHeartbeat({
+      prompt: "HEARTBEAT.mdを確認し、作業を行ってください。",
+    });
+    await vi.waitFor(() => {
+      expect(client.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    expect(buildHeartbeatPromptBundle).toHaveBeenCalledWith(
+      "/tmp/workspace",
+      "HEARTBEAT.mdを確認し、作業を行ってください。",
+    );
+    expect(client.startTurn).toHaveBeenCalledWith("thread-1", "heartbeat prompt");
+
+    client.completeTurn("turn-1", createCompletedTurnResult());
+    await runPromise;
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("heartbeat の turn が失敗した場合でも client を close する", async () => {
+    const client = new FakeCodexClient();
+    const service = createService({
+      buildPromptBundle: vi.fn(async () => {
+        return createPromptBundle("初回プロンプト");
+      }),
+      createClient: vi.fn(() => client),
+    });
+
+    const runPromise = service.generateHeartbeat({
+      prompt: "HEARTBEAT.mdを確認し、作業を行ってください。",
+    });
+    await vi.waitFor(() => {
+      expect(client.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    client.completeTurn("turn-1", createFailedTurnResult("heartbeat failed"));
+    await expect(runPromise).rejects.toThrow("heartbeat failed");
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("buildThreadConfig", () => {
@@ -206,7 +258,15 @@ class FakeCodexClient {
 }
 
 type CreateServiceInput = {
-  buildPromptBundle: (
+  buildHeartbeatPromptBundle?: (
+    workspaceDir: string,
+    prompt: string,
+  ) => Promise<{
+    developerRolePrompt: string;
+    instructions: string;
+    userRolePrompt: string;
+  }>;
+  buildPromptBundle?: (
     input: AiInput,
     cwd: string,
   ) => Promise<{
@@ -218,8 +278,20 @@ type CreateServiceInput = {
 };
 
 function createService(input: CreateServiceInput): CodexAppServerAiService {
+  const buildPromptBundle =
+    input.buildPromptBundle ??
+    (async () => {
+      return createPromptBundle("初回プロンプト");
+    });
+  const buildHeartbeatPromptBundle =
+    input.buildHeartbeatPromptBundle ??
+    (async (_workspaceDir, prompt) => {
+      return createPromptBundle(prompt);
+    });
+
   return new CodexAppServerAiService(createOptions(), {
-    buildPromptBundle: input.buildPromptBundle,
+    buildHeartbeatPromptBundle,
+    buildPromptBundle,
     createClient: () => input.createClient(),
   });
 }
@@ -274,6 +346,15 @@ function createCompletedTurnResult(): TurnResult {
     assistantText: "ok",
     mcpToolCalls: [],
     status: "completed",
+  };
+}
+
+function createFailedTurnResult(errorMessage: string): TurnResult {
+  return {
+    assistantText: "",
+    errorMessage,
+    mcpToolCalls: [],
+    status: "failed",
   };
 }
 

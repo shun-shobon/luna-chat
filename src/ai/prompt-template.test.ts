@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AiInput } from "./ai-service";
-import { buildPromptBundle } from "./prompt-template";
+import { buildHeartbeatPromptBundle, buildPromptBundle } from "./prompt-template";
 
 describe("buildPromptBundle", () => {
   it("instructions/developer/user role prompt を分離して生成する", async () => {
@@ -89,6 +89,24 @@ describe("buildPromptBundle", () => {
         "あなたはLunaで動作しているパーソナルアシスタント",
       );
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
+    });
+  });
+});
+
+describe("buildHeartbeatPromptBundle", () => {
+  it("heartbeat 用の user role prompt を固定文言で生成する", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const promptBundle = await buildHeartbeatPromptBundle(
+        workspaceDir,
+        "HEARTBEAT.mdを確認し、作業を行ってください。",
+      );
+
+      expect(promptBundle.instructions).toContain(
+        "あなたはLunaで動作しているパーソナルアシスタントです。",
+      );
+      expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
+      expect(promptBundle.userRolePrompt).toBe("HEARTBEAT.mdを確認し、作業を行ってください。");
+      expect(promptBundle.userRolePrompt).not.toContain("チャンネル名:");
     });
   });
 });

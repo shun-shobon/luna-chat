@@ -59,9 +59,7 @@ describe("handleMessageCreate integration", () => {
       sendTyping,
     });
     const generateReply = vi.fn(async () => undefined);
-    const aiService: AiService = {
-      generateReply,
-    };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
@@ -121,11 +119,11 @@ describe("handleMessageCreate integration", () => {
       mentionBot: true,
       reply,
     });
-    const aiService: AiService = {
-      generateReply: vi.fn(async () => {
+    const aiService = createAiService(
+      vi.fn(async () => {
         throw new Error("ai failed");
       }),
-    };
+    );
     const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
@@ -146,9 +144,7 @@ describe("handleMessageCreate integration", () => {
     const sendTyping = vi.fn(async () => undefined);
     const message = createMessage({ channelId: "other", reply, sendTyping });
     const generateReply = vi.fn(async () => undefined);
-    const aiService: AiService = {
-      generateReply,
-    };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
@@ -175,9 +171,7 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
-    const aiService: AiService = {
-      generateReply,
-    };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
@@ -203,14 +197,14 @@ describe("handleMessageCreate integration", () => {
     try {
       const sendTyping = vi.fn(async () => undefined);
       const message = createMessage({ sendTyping });
-      const aiService: AiService = {
-        generateReply: vi.fn(async () => {
+      const aiService = createAiService(
+        vi.fn(async () => {
           await new Promise<void>((resolve) => {
             setTimeout(resolve, 17_000);
           });
           return undefined;
         }),
-      };
+      );
       const attachmentStore = createAttachmentStore();
 
       const handlePromise = handleMessageCreate({
@@ -237,9 +231,7 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({ sendTyping });
     const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
-    const aiService: AiService = {
-      generateReply,
-    };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
@@ -271,7 +263,7 @@ describe("handleMessageCreate integration", () => {
       ],
     });
     const generateReply = vi.fn(async () => undefined);
-    const aiService: AiService = { generateReply };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore({
       pathsById: {
         a1: "/tmp/a1.png",
@@ -309,7 +301,7 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn(async () => undefined);
     const logger = createLogger();
-    const aiService: AiService = { generateReply };
+    const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore({
       failIds: new Set(["a1"]),
     });
@@ -431,6 +423,13 @@ function createAttachmentStore(input?: {
 
       return input?.pathsById?.[attachment.id] ?? `/tmp/${attachment.id}`;
     }),
+  };
+}
+
+function createAiService(generateReply: AiService["generateReply"]): AiService {
+  return {
+    generateHeartbeat: async () => undefined,
+    generateReply,
   };
 }
 

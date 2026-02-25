@@ -31,6 +31,8 @@
 - `src/ai`
   - Codex CLI app-server 呼び出し
   - tool use 実行ループ
+- `src/heartbeat`
+  - cron 起点の定期 AI 実行
 - `src/improvement`
   - ドキュメント更新要求の判定
   - Codex ワークスペースへの更新実行
@@ -58,6 +60,10 @@
 - `channelName: string`
 - `currentMessage: RuntimeMessage`
 - `recentMessages: RuntimeMessage[]`
+
+### HeartbeatInput
+
+- `prompt: string`
 
 ## 5. 主要シーケンス
 
@@ -90,6 +96,13 @@
 2. 対象が `$LUNA_HOME/workspace` 配下ドキュメントか検証
 3. 条件を満たす場合のみ更新
 4. `STATUS.md` に更新内容を記録
+
+### 5.5 heartbeat 実行
+
+1. cron（毎時 00 分 / 30 分, JST）で heartbeat を起動
+2. 固定プロンプト「HEARTBEAT.mdを確認し、作業を行ってください。」を AI に渡す
+3. AI が必要時に `read_message_history` / `send_message` / `add_reaction` を tool use で実行
+4. heartbeat 失敗時はログのみ記録して次周期へ継続
 
 ## 6. 設定
 
