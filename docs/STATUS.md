@@ -21,9 +21,9 @@
 - ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
 - ただし「返信時は必ず `send_message` を使う」指示のみ developer role prompt に残す方針へ更新済み。
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
-- `ARTEMIS_HOME` は default `~/.artemis` を使用する。
-- `workspace` は `$ARTEMIS_HOME/workspace` を使用する。
-- 起動時に `ARTEMIS_HOME` と `workspace` を自動作成する。
+- `LUNA_HOME` は default `~/.luna` を使用する。
+- `workspace` は `$LUNA_HOME/workspace` を使用する。
+- 起動時に `LUNA_HOME` と `workspace` を自動作成する。
 - 謝罪定型文は固定文言を返す実装へ移行済み（外部ファイル設定なし）。
 - AI 呼び出し失敗時は、メンション投稿（forceReply）の場合のみ固定謝罪文を返信し、通常投稿は無返信で終了する。
 - Discord 送信失敗時の再送は行わず、ログ記録して処理終了する。
@@ -33,8 +33,8 @@
 - server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
 - `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
 - app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
-- Codex 起動時は `CODEX_HOME=$ARTEMIS_HOME/codex` を設定する。
-- app-server 実行 CWD は `$ARTEMIS_HOME/workspace` を使用する。
+- Codex 起動時は `CODEX_HOME=$LUNA_HOME/codex` を設定する。
+- app-server 実行 CWD は `$LUNA_HOME/workspace` を使用する。
 - reasoning effort は `index.ts` 側で固定し、`thread/start` の `config.model_reasoning_effort` に反映する。
 - `thread/start` は `ephemeral=true` と `personality=\"friendly\"` を固定で指定する。
 - MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
@@ -47,7 +47,7 @@
 - `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
 - 2026-02-24 時点で `SPEC` / `ARCHITECTURE` / `RUNBOOK` を現行実装に整合する内容へ更新済み。
 - 今後の正しい方向は「雑談参加 Bot」への移行。
-- 本体コードと `$ARTEMIS_HOME/workspace`（自己改善対象）を分離する方針が確定した。
+- 本体コードと `$LUNA_HOME/workspace`（自己改善対象）を分離する方針が確定した。
 
 ## 3. 確定済み方針
 

@@ -1,8 +1,8 @@
 {
-  "name": "artemis",
+  "name": "luna",
   "version": "0.1.0",
   "private": true,
-  "description": "artemis",
+  "description": "luna",
   "license": "MIT",
   "author": "NISHIZAWA Shuntaro <me@s2n.tech>",
   "type": "module",
