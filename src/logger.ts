@@ -1,5 +1,3 @@
 import { createConsola } from "consola";
 
-export const logger = createConsola({
-  level: 4,
-});
+export const logger = createConsola();
