@@ -20,7 +20,8 @@ const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
 const CODEX_APP_SERVER_SANDBOX = "workspace-write";
 const CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
 const CODEX_APP_SERVER_REASONING_EFFORT: ReasoningEffort = "medium";
-const HEARTBEAT_PROMPT = "`HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。";
+const HEARTBEAT_PROMPT =
+  "`HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。";
 
 const client = new Client({
   intents: [
