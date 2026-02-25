@@ -11,7 +11,7 @@ RUN corepack enable
 
 FROM base AS deps
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile
 
 FROM deps AS build
@@ -22,7 +22,7 @@ RUN pnpm run build
 
 FROM base AS prod-deps
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
 FROM node:24.13.1-trixie-slim AS runtime
