@@ -9,7 +9,7 @@
 
 ## 2. システム境界
 
-- `luna` ディレクトリ: Discord Bot 本体コード（AI 自己改変の対象外）
+- `luna-chat` ディレクトリ: Discord Bot 本体コード（AI 自己改変の対象外）
 - `workspace` ディレクトリ（`$LUNA_HOME/workspace`）: 人格設定、運用ドキュメント、定型文（AI 自己改善の対象）
 
 ## 3. モジュール構成（提案）
@@ -95,7 +95,7 @@
 
 - `DISCORD_BOT_TOKEN`: Bot トークン
 - `ALLOWED_CHANNEL_IDS`: 返信対象チャンネル ID（カンマ区切り）
-- `LUNA_HOME`: Luna 作業ルート（未設定時は `~/.luna`）
+- `LUNA_HOME`: luna-chat 作業ルート（未設定時は `~/.luna`）
 - `workspace`: 起動時に `$LUNA_HOME/workspace` を自動作成して利用する
 - `CODEX_HOME`: Codex 起動時に `$LUNA_HOME/codex` を設定する
 

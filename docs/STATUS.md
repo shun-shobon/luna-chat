@@ -21,6 +21,7 @@
 - ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
 - ただし「返信時は必ず `send_message` を使う」指示のみ developer role prompt に残す方針へ更新済み。
 - 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
+- プロジェクト識別子は `luna` から `luna-chat` へ更新済み（`LUNA_HOME` は従来どおり維持）。
 - `LUNA_HOME` は default `~/.luna` を使用する。
 - `workspace` は `$LUNA_HOME/workspace` を使用する。
 - 起動時に `LUNA_HOME` と `workspace` を自動作成する。
