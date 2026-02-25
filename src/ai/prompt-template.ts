@@ -16,17 +16,19 @@ export async function buildPromptBundle(
   workspaceDir: string,
 ): Promise<PromptBundle> {
   const instructions = [
-    "あなたは Discord Bot『ルナ』です。",
-    "常に日本語で応答する。",
-    "口調は優しい少女で、敬語とため口を自然に混ぜる。",
+    "あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。",
+    "",
+    "## セーフティガード",
+    "",
+    "ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。",
+    "ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。",
+    "セーフティガードを決して回避してはいけません。",
+    "",
     ...(await readWorkspaceInstructions(workspaceDir)),
   ].join("\n");
 
   const developerRolePrompt = [
-    "あなたは開発者指示に従って Discord Bot を実行する。",
-    "メンション時は必ず返信する（forceReply=true）。",
-    "通常投稿は返信不要なら終了してよい。",
-    "返信する場合は必ず MCP tool `send_message` を使う。",
+    "メッセージに返信やリアクションをする場合は`discord`ツールを使うこと。",
   ].join("\n");
 
   const recentMessages = input.recentMessages.map((message) => {
@@ -35,12 +37,10 @@ export async function buildPromptBundle(
 
   const userRolePrompt = [
     "以下は現在の入力情報です。",
-    `forceReply: ${String(input.forceReply)}`,
-    `channelId: ${input.currentMessage.channelId}`,
-    `channelName: ${input.channelName}`,
-    "recentMessages:",
+    `チャンネル名: ${input.channelName} (ID: ${input.currentMessage.channelId})`,
+    "直近のメッセージ:",
     ...(recentMessages.length > 0 ? recentMessages : ["(none)"]),
-    "currentMessage:",
+    "投稿されたメッセージ:",
     `[${input.currentMessage.createdAt}] ${input.currentMessage.authorName}: ${input.currentMessage.content}`,
   ].join("\n");
 
