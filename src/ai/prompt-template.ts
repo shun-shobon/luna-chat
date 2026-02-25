@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import type { AiInput } from "./ai-service";
 
 export type PromptBundle = {
@@ -6,11 +9,17 @@ export type PromptBundle = {
   userRolePrompt: string;
 };
 
-export function buildPromptBundle(input: AiInput): PromptBundle {
+const WORKSPACE_INSTRUCTION_FILES = ["LUNA.md", "SOUL.md"] as const;
+
+export async function buildPromptBundle(
+  input: AiInput,
+  workspaceDir: string,
+): Promise<PromptBundle> {
   const instructions = [
     "あなたは Discord Bot『ルナ』です。",
     "常に日本語で応答する。",
     "口調は優しい少女で、敬語とため口を自然に混ぜる。",
+    ...(await readWorkspaceInstructions(workspaceDir)),
   ].join("\n");
 
   const developerRolePrompt = [
@@ -40,4 +49,23 @@ export function buildPromptBundle(input: AiInput): PromptBundle {
     instructions,
     userRolePrompt,
   };
+}
+
+async function readWorkspaceInstructions(workspaceDir: string): Promise<string[]> {
+  const loaded = await Promise.all(
+    WORKSPACE_INSTRUCTION_FILES.map(async (fileName) => {
+      const filePath = resolve(workspaceDir, fileName);
+
+      try {
+        const content = await readFile(filePath, "utf8");
+        return content;
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+
+  return loaded.flatMap((content) => {
+    return content === undefined ? [] : [content];
+  });
 }

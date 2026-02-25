@@ -25,7 +25,7 @@ const client = new Client({
   ],
 });
 
-const runtimeConfig = loadConfigOrExit();
+const runtimeConfig = await loadConfigOrExit();
 const discordMcpServer = await startDiscordMcpServerOrExit(runtimeConfig.discordBotToken);
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
@@ -74,9 +74,9 @@ await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
   process.exit(1);
 });
 
-function loadConfigOrExit(): RuntimeConfig {
+async function loadConfigOrExit(): Promise<RuntimeConfig> {
   try {
-    return loadRuntimeConfig();
+    return await loadRuntimeConfig();
   } catch (error: unknown) {
     logger.error("Invalid configuration:", error);
     process.exit(1);
