@@ -73,7 +73,7 @@ export type StartedTurn = {
 };
 
 export type CodexAppServerClientOptions = {
-  command: string;
+  command: readonly [string, ...string[]];
   codexHomeDir: string;
   cwd: string;
   model: string;
@@ -112,13 +112,13 @@ export class CodexAppServerClient {
   private closed = false;
 
   constructor(private readonly options: CodexAppServerClientOptions) {
-    this.child = spawn(this.options.command, {
+    const [command, ...args] = this.options.command;
+    this.child = spawn(command, args, {
       cwd: this.options.cwd,
       env: {
         ...process.env,
         CODEX_HOME: this.options.codexHomeDir,
       },
-      shell: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.lineReader = readline.createInterface({
