@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-02-25
+- 2026-02-26
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -27,6 +27,7 @@
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
 - プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。
 - 自己改善ドキュメントの自動更新フローは未実装。
+- GitHub Actions `docker-publish` で `main` push時に `linux/amd64,linux/arm64` のマルチプラットフォームDockerイメージを `ghcr.io/${owner}/${repo}` へpushする（タグ: `latest` と `github.sha`）。
 
 ## 3. 確定済み方針
 
