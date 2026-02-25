@@ -1,0 +1,6 @@
+.git
+.vscode
+node_modules
+dist
+.env
+docs
