@@ -24,14 +24,13 @@
   - 返信送信
 - `src/policy`
   - 返信可否判定
-  - メンション必須返信ルール
+  - 対象チャンネル判定ルール
 - `src/context`
   - Discord からの都度履歴取得
   - AI へ渡す文脈整形
 - `src/ai`
   - Codex CLI app-server 呼び出し
   - tool use 実行ループ
-  - 謝罪定型文の読み出し
 - `src/improvement`
   - ドキュメント更新要求の判定
   - Codex ワークスペースへの更新実行
@@ -56,13 +55,9 @@
 
 ### AiInput
 
-- `forceReply: boolean`
+- `channelName: string`
 - `currentMessage: RuntimeMessage`
-- `contextFetchLimit: number`
-
-### AiOutput
-
-- `didReply: boolean`
+- `recentMessages: RuntimeMessage[]`
 
 ## 5. 主要シーケンス
 
@@ -71,7 +66,7 @@
 1. Discord でメッセージ受信
 2. 許可チャンネル判定（許可以外は終了）
 3. メンション有無判定
-4. AI へ入力（現在メッセージ + `forceReply` + `contextFetchLimit`）
+4. AI へ入力（チャンネル情報 + 現在メッセージ + 直近履歴）
 5. AI が必要時に `read_message_history` を tool call
 6. AI が返信時に `send_message` を tool call
 7. AI が必要時に `add_reaction` を tool call
@@ -79,8 +74,8 @@
 ### 5.2 メンション受信
 
 1. メンション検出
-2. `forceReply=true` で AI 呼び出し
-3. AI 返信失敗時は謝罪定型文を返す
+2. AI 呼び出し
+3. AI 返信失敗時は無返信で終了し、ログを記録する
 
 ### 5.3 履歴追加取得（tool use）
 
@@ -103,11 +98,10 @@
 - `LUNA_HOME`: Luna 作業ルート（未設定時は `~/.luna`）
 - `workspace`: 起動時に `$LUNA_HOME/workspace` を自動作成して利用する
 - `CODEX_HOME`: Codex 起動時に `$LUNA_HOME/codex` を設定する
-- `APOLOGY_TEMPLATE_PATH`: 現時点では未使用（謝罪定型文は固定文言）
 
 ## 7. エラーハンドリング
 
-- AI 呼び出し失敗: `forceReply=true` 時のみ謝罪定型文で返信
+- AI 呼び出し失敗: 無返信で終了し、ログを記録する
 - Discord 送信失敗: ログ記録して処理終了（再送なし）
 - 設定不備: 起動時 fail-fast
 
@@ -115,7 +109,7 @@
 
 - ユニット:
   - チャンネル判定
-  - メンション必須返信判定
+  - 返信対象判定
   - 設定パーサ
 - 結合:
   - Discord API モック + AI モックで会話フロー
