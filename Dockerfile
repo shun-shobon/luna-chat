@@ -36,7 +36,8 @@ RUN \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y git
-RUN npm install --global @openai/codex
+RUN git config --global user.name "Luna" && git config --global user.email "luna@s2n.tech"
+RUN npm install --global @openai/codex@0.104.0
 
 COPY --from=build /app/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
