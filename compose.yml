@@ -1,0 +1,12 @@
+services:
+  luna-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    env_file:
+      - .env
+    volumes:
+      - ./data:/home/node/.luna
+    init: true
+    restart: unless-stopped
