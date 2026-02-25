@@ -28,7 +28,7 @@ export interface AiService {
 
 export type CodexAppServerAiServiceOptions = {
   approvalPolicy: string;
-  command: string;
+  command: readonly [string, ...string[]];
   codexHomeDir: string;
   cwd: string;
   discordMcpServerUrl: string;

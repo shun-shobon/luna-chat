@@ -14,7 +14,7 @@ import { startHeartbeatRunner, type HeartbeatRunnerHandle } from "./heartbeat/he
 import { logger } from "./logger";
 import { startDiscordMcpServer, type DiscordMcpServerHandle } from "./mcp/discord-mcp-server";
 
-const CODEX_APP_SERVER_COMMAND = "codex app-server --listen stdio://";
+const CODEX_APP_SERVER_COMMAND = ["codex", "app-server", "--listen", "stdio://"] as const;
 const CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
 const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
 const CODEX_APP_SERVER_SANDBOX = "workspace-write";

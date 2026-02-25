@@ -300,7 +300,7 @@ function createOptions(): CodexAppServerAiServiceOptions {
   return {
     approvalPolicy: "never",
     codexHomeDir: "/tmp/codex",
-    command: "codex app-server --listen stdio://",
+    command: ["codex", "app-server", "--listen", "stdio://"],
     cwd: "/tmp/workspace",
     discordMcpServerUrl: "http://127.0.0.1:43123/mcp",
     model: "gpt-5.3-codex",
