@@ -138,7 +138,7 @@ function createDiscordMcpToolServer(
   attachmentStore: DiscordAttachmentStore,
 ): McpServer {
   const server = new McpServer({
-    name: "luna-discord-mcp",
+    name: "luna-chat-discord-mcp",
     version: "0.1.0",
   });
 

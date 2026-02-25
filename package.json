@@ -1,8 +1,8 @@
 {
-  "name": "luna",
+  "name": "luna-chat",
   "version": "0.1.0",
   "private": true,
-  "description": "luna",
+  "description": "luna-chat",
   "license": "MIT",
   "author": "NISHIZAWA Shuntaro <me@s2n.tech>",
   "type": "module",

@@ -83,8 +83,8 @@ export type CodexAppServerClientOptions = {
 };
 
 const CLIENT_INFO = {
-  name: "luna",
-  title: "Luna",
+  name: "luna-chat",
+  title: "Luna Chat",
   version: "0.1.0",
 };
 
