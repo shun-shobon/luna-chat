@@ -5,7 +5,15 @@ import { REST, Routes } from "discord.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
+import {
+  appendAttachmentMarkersFromSources,
+  type DiscordAttachmentInput,
+  type DiscordAttachmentStore,
+} from "../attachments/discord-attachment-store";
+import { logger } from "../logger";
+
 type DiscordMessage = {
+  attachments: DiscordAttachmentInput[];
   authorId: string;
   authorName: string;
   content: string;
@@ -19,6 +27,7 @@ export type DiscordMcpServerHandle = {
 };
 
 export type StartDiscordMcpServerOptions = {
+  attachmentStore: DiscordAttachmentStore;
   hostname?: string;
   port?: number;
   token: string;
@@ -60,7 +69,14 @@ const addReactionInputSchema = z.object({
     .describe("付与する絵文字。Unicodeまたはカスタム絵文字（name:id）を指定する。"),
 });
 
+const discordApiAttachmentSchema = z.object({
+  filename: z.string(),
+  id: z.string(),
+  url: z.string(),
+});
+
 const discordApiMessageSchema = z.object({
+  attachments: z.array(discordApiAttachmentSchema).optional().default([]),
   author: z.object({
     id: z.string(),
     username: z.string(),
@@ -81,7 +97,7 @@ export async function startDiscordMcpServer(
   const hostname = options.hostname ?? DISCORD_MCP_HOSTNAME;
   const port = options.port ?? 0;
   const rest = new REST({ version: "10" }).setToken(token);
-  const mcpServer = createDiscordMcpToolServer(rest);
+  const mcpServer = createDiscordMcpToolServer(rest, options.attachmentStore);
   const transport = new StreamableHTTPTransport();
   let connectPromise: Promise<void> | undefined;
   const app = new Hono();
@@ -115,7 +131,10 @@ export function createDiscordMcpServerUrl(hostname: string, port: number): strin
   return `http://${formattedHost}:${port}${DISCORD_MCP_PATH}`;
 }
 
-function createDiscordMcpToolServer(rest: REST): McpServer {
+function createDiscordMcpToolServer(
+  rest: REST,
+  attachmentStore: DiscordAttachmentStore,
+): McpServer {
   const server = new McpServer({
     name: "luna-discord-mcp",
     version: "0.1.0",
@@ -139,7 +158,26 @@ function createDiscordMcpToolServer(rest: REST): McpServer {
       const rawMessages = await rest.get(Routes.channelMessages(channelId), {
         query,
       });
-      const messages = parseDiscordMessages(rawMessages).reverse();
+      const parsedMessages = parseDiscordMessages(rawMessages).reverse();
+      const messages = await Promise.all(
+        parsedMessages.map(async (message) => {
+          const content = await appendAttachmentMarkersFromSources({
+            attachmentStore,
+            attachments: message.attachments,
+            channelId,
+            content: message.content,
+            logger,
+            messageId: message.id,
+          });
+          return {
+            authorId: message.authorId,
+            authorName: message.authorName,
+            content,
+            createdAt: message.createdAt,
+            id: message.id,
+          };
+        }),
+      );
 
       const payload = {
         channelId,
@@ -285,6 +323,13 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
     const message = parsed.data;
 
     messages.push({
+      attachments: message.attachments.map((attachment) => {
+        return {
+          id: attachment.id,
+          name: attachment.filename,
+          url: attachment.url,
+        };
+      }),
       authorId: message.author.id,
       authorName: message.author.username,
       content: message.content,

@@ -4,6 +4,10 @@ import { Client, GatewayIntentBits } from "discord.js";
 
 import { CodexAppServerAiService, type CodexAppServerAiServiceOptions } from "./ai/ai-service";
 import type { ReasoningEffort } from "./ai/codex-generated/ReasoningEffort";
+import {
+  type DiscordAttachmentStore,
+  WorkspaceDiscordAttachmentStore,
+} from "./attachments/discord-attachment-store";
 import { loadRuntimeConfig, type RuntimeConfig } from "./config/runtime-config";
 import { handleMessageCreate } from "./discord/message-handler";
 import { logger } from "./logger";
@@ -25,7 +29,11 @@ const client = new Client({
 });
 
 const runtimeConfig = await loadConfigOrExit();
-const discordMcpServer = await startDiscordMcpServerOrExit(runtimeConfig.discordBotToken);
+const attachmentStore = new WorkspaceDiscordAttachmentStore(runtimeConfig.codexWorkspaceDir);
+const discordMcpServer = await startDiscordMcpServerOrExit(
+  runtimeConfig.discordBotToken,
+  attachmentStore,
+);
 const aiServiceOptions: CodexAppServerAiServiceOptions = {
   approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
   command: CODEX_APP_SERVER_COMMAND,
@@ -55,6 +63,7 @@ client.on("messageCreate", async (message) => {
   const botUserId = client.user.id;
 
   await handleMessageCreate({
+    attachmentStore,
     aiService,
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     botUserId,
@@ -80,9 +89,13 @@ async function loadConfigOrExit(): Promise<RuntimeConfig> {
   }
 }
 
-async function startDiscordMcpServerOrExit(token: string): Promise<DiscordMcpServerHandle> {
+async function startDiscordMcpServerOrExit(
+  token: string,
+  attachmentStore: DiscordAttachmentStore,
+): Promise<DiscordMcpServerHandle> {
   try {
     const mcpServer = await startDiscordMcpServer({
+      attachmentStore,
       token,
     });
     logger.info("Discord MCP server started.", {

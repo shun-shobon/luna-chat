@@ -2,6 +2,8 @@ import type { REST } from "discord.js";
 import { Routes } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { DiscordAttachmentStore } from "../attachments/discord-attachment-store";
+
 import { addMessageReaction, DISCORD_MCP_PATH, startDiscordMcpServer } from "./discord-mcp-server";
 
 const startedServers: Array<{ close: () => Promise<void>; url: string }> = [];
@@ -16,6 +18,7 @@ describe("startDiscordMcpServer", () => {
   it("throws when token is empty", async () => {
     await expect(
       startDiscordMcpServer({
+        attachmentStore: createAttachmentStoreStub(),
         token: "   ",
       }),
     ).rejects.toThrow("DISCORD_BOT_TOKEN is required");
@@ -23,6 +26,7 @@ describe("startDiscordMcpServer", () => {
 
   it("starts server and returns /mcp url", async () => {
     const server = await startDiscordMcpServer({
+      attachmentStore: createAttachmentStoreStub(),
       token: "dummy-token",
     });
     startedServers.push(server);
@@ -82,4 +86,10 @@ function createRestClientStub() {
   return {
     put,
   } satisfies Pick<REST, "put">;
+}
+
+function createAttachmentStoreStub(): DiscordAttachmentStore {
+  return {
+    saveAttachment: vi.fn(async () => "/tmp/attachment"),
+  };
 }
