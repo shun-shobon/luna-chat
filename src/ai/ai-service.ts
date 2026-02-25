@@ -1,7 +1,12 @@
 import type { RuntimeMessage } from "../context/types";
 import { logger } from "../logger";
 
-import { CodexAppServerClient } from "./codex-app-server-client";
+import {
+  CodexAppServerClient,
+  type CodexAppServerClientOptions,
+  type StartedTurn,
+  type TurnResult,
+} from "./codex-app-server-client";
 import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
 import { buildPromptBundle } from "./prompt-template";
 
@@ -27,12 +32,165 @@ export type CodexAppServerAiServiceOptions = {
   timeoutMs: number;
 };
 
+type PromptBundle = Awaited<ReturnType<typeof buildPromptBundle>>;
+type PromptBundleBuilder = (input: AiInput, cwd: string) => Promise<PromptBundle>;
+
+type CodexAppServerClientLike = {
+  close: () => void;
+  initialize: () => Promise<void>;
+  startThread: (input: {
+    instructions: string;
+    developerRolePrompt: string;
+    config?: Record<string, unknown>;
+  }) => Promise<string>;
+  startTurn: (threadId: string, prompt: string) => Promise<StartedTurn>;
+  steerTurn: (threadId: string, expectedTurnId: string, prompt: string) => Promise<void>;
+};
+
+type CodexAppServerAiServiceDependencies = {
+  buildPromptBundle?: PromptBundleBuilder;
+  createClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike;
+};
+
+type ActiveChannelSession = {
+  channelId: string;
+  client: CodexAppServerClientLike;
+  phase: "booting" | "running";
+  opChain: Promise<void>;
+  threadId: string | undefined;
+  activeTurnId: string | undefined;
+  turnCompletion: Promise<void> | undefined;
+};
+
 export class CodexAppServerAiService implements AiService {
-  constructor(private readonly options: CodexAppServerAiServiceOptions) {}
+  private readonly activeSessions = new Map<string, ActiveChannelSession>();
+  private readonly buildPromptBundleFn: PromptBundleBuilder;
+  private readonly createClientFn: (
+    options: CodexAppServerClientOptions,
+  ) => CodexAppServerClientLike;
+
+  constructor(
+    private readonly options: CodexAppServerAiServiceOptions,
+    dependencies: CodexAppServerAiServiceDependencies = {},
+  ) {
+    this.buildPromptBundleFn = dependencies.buildPromptBundle ?? buildPromptBundle;
+    this.createClientFn =
+      dependencies.createClient ??
+      ((clientOptions) => {
+        return new CodexAppServerClient(clientOptions);
+      });
+  }
 
   async generateReply(input: AiInput): Promise<void> {
-    let activeThreadId: string | undefined;
-    const client = new CodexAppServerClient({
+    const handled = await this.tryHandleExistingSession(input);
+    if (handled) {
+      return;
+    }
+
+    await this.startNewSession(input);
+  }
+
+  private async tryHandleExistingSession(input: AiInput): Promise<boolean> {
+    const session = this.activeSessions.get(input.currentMessage.channelId);
+    if (!session) {
+      return false;
+    }
+
+    return await this.enqueueSessionOperation(session, async () => {
+      return await this.appendMessageToSession(session, input.currentMessage);
+    });
+  }
+
+  private async startNewSession(input: AiInput): Promise<void> {
+    const existingSession = this.activeSessions.get(input.currentMessage.channelId);
+    if (existingSession) {
+      const handled = await this.enqueueSessionOperation(existingSession, async () => {
+        return await this.appendMessageToSession(existingSession, input.currentMessage);
+      });
+      if (handled) {
+        return;
+      }
+    }
+
+    const session = this.createSession(input.currentMessage.channelId);
+    this.activeSessions.set(session.channelId, session);
+
+    try {
+      await this.enqueueSessionOperation(session, async () => {
+        await session.client.initialize();
+        const promptBundle = await this.buildPromptBundleFn(input, this.options.cwd);
+
+        const threadId = await session.client.startThread({
+          config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
+          developerRolePrompt: promptBundle.developerRolePrompt,
+          instructions: promptBundle.instructions,
+        });
+        session.phase = "running";
+        session.threadId = threadId;
+
+        await this.startTurn(session, {
+          messageId: input.currentMessage.id,
+          prompt: promptBundle.userRolePrompt,
+        });
+      });
+
+      const turnCompletion = session.turnCompletion;
+      if (!turnCompletion) {
+        throw new Error("Active turn was not started.");
+      }
+      await turnCompletion;
+    } catch (error: unknown) {
+      this.disposeSession(session);
+      logger.debug("ai.turn.failed", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        messageId: input.currentMessage.id,
+        threadId: session.threadId,
+      });
+      throw error;
+    }
+  }
+
+  private async appendMessageToSession(
+    session: ActiveChannelSession,
+    currentMessage: RuntimeMessage,
+  ): Promise<boolean> {
+    if (this.activeSessions.get(session.channelId) !== session) {
+      return false;
+    }
+
+    if (!session.threadId || !session.activeTurnId) {
+      return false;
+    }
+
+    const steerPrompt = buildSteerPrompt(currentMessage);
+    const expectedTurnId = session.activeTurnId;
+
+    try {
+      await session.client.steerTurn(session.threadId, expectedTurnId, steerPrompt);
+      logger.debug("ai.turn.steered", {
+        channelId: session.channelId,
+        messageId: currentMessage.id,
+        threadId: session.threadId,
+        turnId: expectedTurnId,
+      });
+      return true;
+    } catch (error: unknown) {
+      logger.debug("ai.turn.steer_failed", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        messageId: currentMessage.id,
+        threadId: session.threadId,
+        turnId: expectedTurnId,
+      });
+      await this.startTurn(session, {
+        messageId: currentMessage.id,
+        prompt: steerPrompt,
+      });
+      return true;
+    }
+  }
+
+  private createSession(channelId: string): ActiveChannelSession {
+    const client = this.createClientFn({
       approvalPolicy: this.options.approvalPolicy,
       command: this.options.command,
       codexHomeDir: this.options.codexHomeDir,
@@ -42,55 +200,129 @@ export class CodexAppServerAiService implements AiService {
       timeoutMs: this.options.timeoutMs,
     });
 
-    try {
-      await client.initialize();
-      const promptBundle = await buildPromptBundle(input, this.options.cwd);
-      const threadId = await client.startThread({
-        config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
-        developerRolePrompt: promptBundle.developerRolePrompt,
-        instructions: promptBundle.instructions,
-      });
-      activeThreadId = threadId;
-      logger.debug("ai.turn.started", {
-        channelId: input.currentMessage.channelId,
-        messageId: input.currentMessage.id,
-        threadId,
-      });
-      const turnResult = await client.runTurn(threadId, promptBundle.userRolePrompt);
-      logger.debug("ai.turn.assistant_output", {
-        assistantText: turnResult.assistantText,
-        threadId,
-      });
-      for (const toolCall of turnResult.mcpToolCalls) {
-        logger.debug("ai.turn.mcp_tool_call", {
-          arguments: toolCall.arguments,
-          server: toolCall.server,
-          status: toolCall.status,
-          threadId,
-          tool: toolCall.tool,
-        });
-      }
-      logger.debug("ai.turn.completed", {
-        errorMessage: turnResult.errorMessage,
-        status: turnResult.status,
-        threadId,
-      });
-      if (turnResult.status !== "completed") {
-        const errorMessage =
-          turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
-        throw new Error(errorMessage);
-      }
-    } catch (error: unknown) {
-      logger.debug("ai.turn.failed", {
-        errorMessage: error instanceof Error ? error.message : String(error),
-        messageId: input.currentMessage.id,
-        threadId: activeThreadId,
-      });
-      throw error;
-    } finally {
-      client.close();
-    }
+    return {
+      channelId,
+      client,
+      opChain: Promise.resolve(),
+      phase: "booting",
+      activeTurnId: undefined,
+      threadId: undefined,
+      turnCompletion: undefined,
+    };
   }
+
+  private async startTurn(
+    session: ActiveChannelSession,
+    input: {
+      prompt: string;
+      messageId: string;
+    },
+  ): Promise<void> {
+    const threadId = session.threadId;
+    if (!threadId) {
+      throw new Error("Thread is not started yet.");
+    }
+
+    const startedTurn = await session.client.startTurn(threadId, input.prompt);
+    session.phase = "running";
+    session.activeTurnId = startedTurn.turnId;
+
+    logger.debug("ai.turn.started", {
+      channelId: session.channelId,
+      messageId: input.messageId,
+      threadId,
+      turnId: startedTurn.turnId,
+    });
+
+    const turnCompletion = this.trackTurnCompletion(session, startedTurn, {
+      threadId,
+      turnId: startedTurn.turnId,
+    });
+    turnCompletion.catch(() => undefined);
+    session.turnCompletion = turnCompletion;
+  }
+
+  private trackTurnCompletion(
+    session: ActiveChannelSession,
+    startedTurn: StartedTurn,
+    meta: {
+      threadId: string;
+      turnId: string;
+    },
+  ): Promise<void> {
+    return startedTurn.completion
+      .then((turnResult) => {
+        logTurnResult(meta.threadId, meta.turnId, turnResult);
+        if (turnResult.status !== "completed") {
+          const errorMessage =
+            turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
+          throw new Error(errorMessage);
+        }
+      })
+      .finally(() => {
+        if (this.activeSessions.get(session.channelId) !== session) {
+          return;
+        }
+        if (session.activeTurnId !== meta.turnId) {
+          return;
+        }
+
+        this.activeSessions.delete(session.channelId);
+        session.activeTurnId = undefined;
+        session.turnCompletion = undefined;
+        session.client.close();
+      });
+  }
+
+  private disposeSession(session: ActiveChannelSession): void {
+    if (this.activeSessions.get(session.channelId) === session) {
+      this.activeSessions.delete(session.channelId);
+    }
+    session.activeTurnId = undefined;
+    session.turnCompletion = undefined;
+    session.client.close();
+  }
+
+  private async enqueueSessionOperation<T>(
+    session: ActiveChannelSession,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const chained = session.opChain.then(operation, operation);
+    session.opChain = chained.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return await chained;
+  }
+}
+
+function buildSteerPrompt(message: RuntimeMessage): string {
+  return `追加メッセージ:\n[${message.createdAt}] ${message.authorName}: ${message.content}`;
+}
+
+function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {
+  logger.debug("ai.turn.assistant_output", {
+    assistantText: turnResult.assistantText,
+    threadId,
+    turnId,
+  });
+  for (const toolCall of turnResult.mcpToolCalls) {
+    logger.debug("ai.turn.mcp_tool_call", {
+      arguments: toolCall.arguments,
+      server: toolCall.server,
+      status: toolCall.status,
+      threadId,
+      tool: toolCall.tool,
+      turnId,
+    });
+  }
+  logger.debug("ai.turn.completed", {
+    errorMessage: turnResult.errorMessage,
+    status: turnResult.status,
+    threadId,
+    turnId,
+  });
 }
 
 export function buildThreadConfig(
