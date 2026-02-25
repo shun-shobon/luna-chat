@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 jobs:
-  docker-publish:
+  publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
