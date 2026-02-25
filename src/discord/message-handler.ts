@@ -24,6 +24,7 @@ type RuntimeMessageSource = {
 };
 
 type FetchedMessageCollectionLike = Collection<string, RuntimeMessageSource>;
+type SendTyping = () => Promise<unknown>;
 
 export type MessageLike = {
   id: string;
@@ -39,6 +40,7 @@ export type MessageLike = {
   channel: {
     isThread: () => boolean;
     name?: string | null;
+    sendTyping?: SendTyping;
     messages?: {
       fetch: (options: { before?: string; limit: number }) => Promise<FetchedMessageCollectionLike>;
     };
@@ -70,6 +72,7 @@ export type HandleMessageInput = {
 };
 
 const INITIAL_PROMPT_HISTORY_LIMIT = 10;
+const TYPING_INTERVAL_MS = 8_000;
 
 export async function handleMessageCreate(input: HandleMessageInput): Promise<void> {
   const { message } = input;
@@ -96,6 +99,10 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     messageId: currentMessage.id,
   });
 
+  const stopTypingLoop = startTypingLoop({
+    channel: message.channel,
+    logger: input.logger,
+  });
   try {
     const recentMessages = await fetchRecentMessages({
       botUserId: input.botUserId,
@@ -123,6 +130,8 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     await message.reply(input.apologyMessage).catch((replyError: unknown) => {
       input.logger.error("Failed to send fallback apology message:", replyError);
     });
+  } finally {
+    stopTypingLoop();
   }
 }
 
@@ -180,4 +189,27 @@ function resolveChannelName(channelName: string | null | undefined): string {
   }
 
   return trimmed;
+}
+
+function startTypingLoop(input: {
+  channel: MessageLike["channel"];
+  logger: LoggerLike;
+}): () => void {
+  if (!input.channel.sendTyping) {
+    return () => undefined;
+  }
+  const sendTyping = input.channel.sendTyping.bind(input.channel);
+
+  const runSendTyping = (): void => {
+    void sendTyping().catch((error: unknown) => {
+      input.logger.warn("Failed to send typing indicator:", error);
+    });
+  };
+
+  runSendTyping();
+  const interval = setInterval(runSendTyping, TYPING_INTERVAL_MS);
+
+  return () => {
+    clearInterval(interval);
+  };
 }

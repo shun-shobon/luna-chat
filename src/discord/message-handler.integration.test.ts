@@ -26,6 +26,7 @@ type HistoryMessageLike = {
 describe("handleMessageCreate integration", () => {
   it("指定チャンネルの通常投稿で AI が呼び出される", async () => {
     const reply = vi.fn(async () => undefined);
+    const sendTyping = vi.fn(async () => undefined);
     const oldMessage = createFakeHistoryMessage({
       createdAt: new Date("2025-12-31T23:59:00.000Z"),
       id: "old",
@@ -43,6 +44,7 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({
       fetchHistory,
       reply,
+      sendTyping,
     });
     const generateReply = vi.fn(async () => {
       return {
@@ -63,6 +65,7 @@ describe("handleMessageCreate integration", () => {
     });
 
     expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledTimes(1);
     expect(fetchHistory).toHaveBeenCalledWith({ before: "message", limit: 10 });
     expect(generateReply).toHaveBeenCalledWith({
       channelName: "general",
@@ -126,7 +129,8 @@ describe("handleMessageCreate integration", () => {
 
   it("指定外チャンネルは無反応", async () => {
     const reply = vi.fn(async () => undefined);
-    const message = createMessage({ channelId: "other", reply });
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({ channelId: "other", reply, sendTyping });
     const generateReply = vi.fn(async () => {
       return {
         didReply: false,
@@ -147,6 +151,7 @@ describe("handleMessageCreate integration", () => {
 
     expect(generateReply).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
   });
 
   it("履歴取得に失敗しても空履歴で AI を呼び出す", async () => {
@@ -184,6 +189,67 @@ describe("handleMessageCreate integration", () => {
     );
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it("AI処理中は入力中表示を定期更新する", async () => {
+    vi.useFakeTimers();
+    try {
+      const sendTyping = vi.fn(async () => undefined);
+      const message = createMessage({ sendTyping });
+      const aiService: AiService = {
+        generateReply: vi.fn(async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 17_000);
+          });
+          return {
+            didReply: false,
+          };
+        }),
+      };
+
+      const handlePromise = handleMessageCreate({
+        aiService,
+        allowedChannelIds: new Set(["allowed"]),
+        apologyMessage: "apology",
+        botUserId: "bot",
+        logger: createLogger(),
+        message,
+      });
+      await vi.advanceTimersByTimeAsync(17_000);
+      await handlePromise;
+
+      expect(sendTyping).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("入力中表示送信に失敗してもAI呼び出しは継続する", async () => {
+    const sendTyping = vi.fn(async () => {
+      throw new Error("typing failed");
+    });
+    const message = createMessage({ sendTyping });
+    const generateReply = vi.fn(async () => {
+      return {
+        didReply: false,
+      };
+    });
+    const logger = createLogger();
+    const aiService: AiService = {
+      generateReply,
+    };
+
+    await handleMessageCreate({
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      apologyMessage: "apology",
+      botUserId: "bot",
+      logger,
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith("Failed to send typing indicator:", expect.any(Error));
+  });
 });
 
 function createMessage(input?: {
@@ -195,24 +261,30 @@ function createMessage(input?: {
   }) => Promise<Collection<string, HistoryMessageLike>>;
   mentionBot?: boolean;
   reply?: MessageLike["reply"];
+  sendTyping?: () => Promise<unknown>;
 }): MessageLike {
+  const channel: MessageLike["channel"] = {
+    isThread: () => false,
+    messages: {
+      fetch:
+        input?.fetchHistory ??
+        vi.fn(async () => {
+          return new Collection<string, HistoryMessageLike>();
+        }),
+    },
+    name: input?.channelName === undefined ? "general" : input.channelName,
+  };
+  if (input?.sendTyping) {
+    channel.sendTyping = input.sendTyping;
+  }
+
   return {
     author: {
       bot: false,
       id: "author",
       username: "author",
     },
-    channel: {
-      isThread: () => false,
-      messages: {
-        fetch:
-          input?.fetchHistory ??
-          vi.fn(async () => {
-            return new Collection<string, HistoryMessageLike>();
-          }),
-      },
-      name: input?.channelName === undefined ? "general" : input.channelName,
-    },
+    channel,
     channelId: input?.channelId ?? "allowed",
     content: "hello?",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
