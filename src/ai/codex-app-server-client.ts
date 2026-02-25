@@ -15,6 +15,7 @@ import type { ToolRequestUserInputParams } from "./codex-generated/v2/ToolReques
 import type { ToolRequestUserInputQuestion } from "./codex-generated/v2/ToolRequestUserInputQuestion";
 import type { ToolRequestUserInputResponse } from "./codex-generated/v2/ToolRequestUserInputResponse";
 import type { TurnStartParams } from "./codex-generated/v2/TurnStartParams";
+import type { TurnSteerParams } from "./codex-generated/v2/TurnSteerParams";
 
 type JsonRpcResponseMessage = {
   id: RequestId;
@@ -45,6 +46,7 @@ type SupportedClientRequest =
   | Extract<ClientRequest, { method: "initialize" }>
   | Extract<ClientRequest, { method: "thread/start" }>
   | Extract<ClientRequest, { method: "turn/start" }>
+  | Extract<ClientRequest, { method: "turn/steer" }>
   | Extract<ClientRequest, { method: "turn/interrupt" }>;
 type SupportedClientRequestMethod = SupportedClientRequest["method"];
 type SupportedClientRequestParams<M extends SupportedClientRequestMethod> = Extract<
@@ -63,6 +65,11 @@ export type TurnResult = {
     tool: string;
   }>;
   status: "completed" | "failed" | "interrupted";
+};
+
+export type StartedTurn = {
+  turnId: string;
+  completion: Promise<TurnResult>;
 };
 
 export type CodexAppServerClientOptions = {
@@ -166,6 +173,11 @@ export class CodexAppServerClient {
   }
 
   async runTurn(threadId: string, prompt: string): Promise<TurnResult> {
+    const startedTurn = await this.startTurn(threadId, prompt);
+    return await startedTurn.completion;
+  }
+
+  async startTurn(threadId: string, prompt: string): Promise<StartedTurn> {
     const tracker = createTurnTracker();
     const unbind = this.onNotification((notification) => {
       handleTurnNotification(notification, tracker);
@@ -173,16 +185,31 @@ export class CodexAppServerClient {
 
     try {
       const turnStartParams: TurnStartParams = {
-        input: [{ text: prompt, text_elements: [], type: "text" }],
+        input: [toTextUserInput(prompt)],
         threadId,
       };
       const turnStartResult = await this.request("turn/start", turnStartParams);
       const turnId = extractTurnId(turnStartResult);
-
-      return await waitForTurnCompletion(this, threadId, turnId, tracker);
-    } finally {
+      const completion = waitForTurnCompletion(this, threadId, turnId, tracker).finally(() => {
+        unbind();
+      });
+      return {
+        completion,
+        turnId,
+      };
+    } catch (error) {
       unbind();
+      throw error;
     }
+  }
+
+  async steerTurn(threadId: string, expectedTurnId: string, prompt: string): Promise<void> {
+    const steerParams: TurnSteerParams = {
+      expectedTurnId,
+      input: [toTextUserInput(prompt)],
+      threadId,
+    };
+    await this.request("turn/steer", steerParams);
   }
 
   close(): void {
@@ -870,6 +897,14 @@ function resolvePendingRequestKey(
 
 function isIntegerString(value: string): boolean {
   return /^-?[0-9]+$/.test(value);
+}
+
+function toTextUserInput(text: string): NonNullable<TurnStartParams["input"]>[number] {
+  return {
+    text,
+    text_elements: [],
+    type: "text",
+  };
 }
 
 async function wait(ms: number): Promise<void> {
