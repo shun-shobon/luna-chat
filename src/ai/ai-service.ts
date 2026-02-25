@@ -49,7 +49,7 @@ export class CodexAppServerAiService implements AiService {
 
     try {
       await client.initialize();
-      const promptBundle = buildPromptBundle(input);
+      const promptBundle = await buildPromptBundle(input, this.options.cwd);
       const threadId = await client.startThread({
         config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
         developerRolePrompt: promptBundle.developerRolePrompt,

@@ -1,4 +1,4 @@
-import { accessSync, constants, mkdirSync, statSync } from "node:fs";
+import { access, constants, mkdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
@@ -21,7 +21,9 @@ export class RuntimeConfigError extends Error {
   }
 }
 
-export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
+export async function loadRuntimeConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RuntimeConfig> {
   const discordBotToken = env["DISCORD_BOT_TOKEN"]?.trim();
   if (!discordBotToken) {
     throw new RuntimeConfigError("DISCORD_BOT_TOKEN is required.");
@@ -32,9 +34,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   const codexWorkspaceDir = resolve(lunaHomeDir, WORKSPACE_DIR_NAME);
   const codexHomeDir = resolve(lunaHomeDir, CODEX_HOME_DIR_NAME);
 
-  ensureDirectoryReady(lunaHomeDir, "LUNA_HOME must be a writable directory.");
-  ensureDirectoryReady(codexWorkspaceDir, "workspace must be a writable directory.");
-  ensureDirectoryReady(codexHomeDir, "codex home must be a writable directory.");
+  await ensureDirectoryReady(lunaHomeDir, "LUNA_HOME must be a writable directory.");
+  await ensureDirectoryReady(codexWorkspaceDir, "workspace must be a writable directory.");
+  await ensureDirectoryReady(codexHomeDir, "codex home must be a writable directory.");
 
   return {
     allowedChannelIds,
@@ -80,15 +82,15 @@ function expandHomeDirectory(path: string): string {
   return path;
 }
 
-function ensureDirectoryReady(path: string, message: string): void {
+async function ensureDirectoryReady(path: string, message: string): Promise<void> {
   try {
-    mkdirSync(path, {
+    await mkdir(path, {
       recursive: true,
     });
-    if (!statSync(path).isDirectory()) {
+    if (!(await stat(path)).isDirectory()) {
       throw new RuntimeConfigError(message);
     }
-    accessSync(path, constants.W_OK);
+    await access(path, constants.W_OK);
   } catch {
     throw new RuntimeConfigError(message);
   }
