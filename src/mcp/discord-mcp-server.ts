@@ -117,7 +117,7 @@ export function createDiscordMcpServerUrl(hostname: string, port: number): strin
 
 function createDiscordMcpToolServer(rest: REST): McpServer {
   const server = new McpServer({
-    name: "artemis-discord-mcp",
+    name: "luna-discord-mcp",
     version: "0.1.0",
   });
 

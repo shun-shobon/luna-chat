@@ -14,8 +14,8 @@
 5. 会話ログ本文は永続保存しない。
 6. 文脈が必要なときは Discord から都度取得する。
 7. AI の履歴追加取得（tool use）は無制限で許可する。
-8. 自己改善は `$ARTEMIS_HOME/workspace` 配下ドキュメントのみ更新可能。
-9. Artemis 本体コードは AI 自己改善で更新しない。
+8. 自己改善は `$LUNA_HOME/workspace` 配下ドキュメントのみ更新可能。
+9. Luna 本体コードは AI 自己改善で更新しない。
 10. 秘密情報をログやドキュメントに平文出力しない。
 11. `STATUS.md` は作業ごとに AI が更新する。
 
@@ -25,9 +25,9 @@
 
 1. `DISCORD_BOT_TOKEN` が設定されていることを確認する。
 2. `ALLOWED_CHANNEL_IDS` が 1 件以上設定されていることを確認する。
-3. `ARTEMIS_HOME` 未設定時は `~/.artemis` を使用することを確認する。
-4. 起動時に `ARTEMIS_HOME` と `$ARTEMIS_HOME/workspace` が自動作成されることを確認する。
-5. Codex 起動時に `CODEX_HOME=$ARTEMIS_HOME/codex` を設定する。
+3. `LUNA_HOME` 未設定時は `~/.luna` を使用することを確認する。
+4. 起動時に `LUNA_HOME` と `$LUNA_HOME/workspace` が自動作成されることを確認する。
+5. Codex 起動時に `CODEX_HOME=$LUNA_HOME/codex` を設定する。
 
 ### 3.2 開発時コマンド
 

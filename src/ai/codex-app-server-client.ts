@@ -76,8 +76,8 @@ export type CodexAppServerClientOptions = {
 };
 
 const CLIENT_INFO = {
-  name: "artemis",
-  title: "Artemis",
+  name: "luna",
+  title: "Luna",
   version: "0.1.0",
 };
 

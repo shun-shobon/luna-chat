@@ -8,46 +8,46 @@ import { loadRuntimeConfig, RuntimeConfigError } from "./runtime-config";
 
 describe("loadRuntimeConfig", () => {
   it("必須設定のみ読み込む", () => {
-    const artemisHomeDir = createTempArtemisHomeDir();
+    const lunaHomeDir = createTempLunaHomeDir();
     const config = loadRuntimeConfig({
       ALLOWED_CHANNEL_IDS: "111, 222,333",
-      ARTEMIS_HOME: artemisHomeDir,
+      LUNA_HOME: lunaHomeDir,
       DISCORD_BOT_TOKEN: "token",
     });
 
     expect(config.discordBotToken).toBe("token");
     expect(Array.from(config.allowedChannelIds)).toEqual(["111", "222", "333"]);
-    expect(config.artemisHomeDir).toBe(resolve(artemisHomeDir));
-    expect(config.codexWorkspaceDir).toBe(resolve(artemisHomeDir, "workspace"));
-    expect(config.codexHomeDir).toBe(resolve(artemisHomeDir, "codex"));
+    expect(config.lunaHomeDir).toBe(resolve(lunaHomeDir));
+    expect(config.codexWorkspaceDir).toBe(resolve(lunaHomeDir, "workspace"));
+    expect(config.codexHomeDir).toBe(resolve(lunaHomeDir, "codex"));
 
-    rmSync(config.artemisHomeDir, {
+    rmSync(config.lunaHomeDir, {
       force: true,
       recursive: true,
     });
   });
 
-  it("ARTEMIS_HOME が ~/ 形式ならホーム配下へ展開する", () => {
+  it("LUNA_HOME が ~/ 形式ならホーム配下へ展開する", () => {
     const originalHome = process.env["HOME"];
-    const testHome = createTempArtemisHomeDir();
+    const testHome = createTempLunaHomeDir();
     mkdirSync(testHome, {
       recursive: true,
     });
     process.env["HOME"] = testHome;
 
-    const relativeArtemisHome = `.artemis-runtime-config-test-${Date.now()}`;
+    const relativeLunaHome = `.luna-runtime-config-test-${Date.now()}`;
     try {
       const config = loadRuntimeConfig({
         ALLOWED_CHANNEL_IDS: "111",
-        ARTEMIS_HOME: `~/${relativeArtemisHome}`,
+        LUNA_HOME: `~/${relativeLunaHome}`,
         DISCORD_BOT_TOKEN: "token",
       });
 
-      expect(config.artemisHomeDir).toBe(resolve(testHome, relativeArtemisHome));
-      expect(config.codexWorkspaceDir).toBe(resolve(testHome, relativeArtemisHome, "workspace"));
-      expect(config.codexHomeDir).toBe(resolve(testHome, relativeArtemisHome, "codex"));
+      expect(config.lunaHomeDir).toBe(resolve(testHome, relativeLunaHome));
+      expect(config.codexWorkspaceDir).toBe(resolve(testHome, relativeLunaHome, "workspace"));
+      expect(config.codexHomeDir).toBe(resolve(testHome, relativeLunaHome, "codex"));
 
-      rmSync(config.artemisHomeDir, {
+      rmSync(config.lunaHomeDir, {
         force: true,
         recursive: true,
       });
@@ -65,9 +65,9 @@ describe("loadRuntimeConfig", () => {
   });
 
   it("workspace と codex ディレクトリを自動作成する", () => {
-    const artemisHomeDir = createTempArtemisHomeDir();
-    const workspaceDir = resolve(artemisHomeDir, "workspace");
-    const codexHomeDir = resolve(artemisHomeDir, "codex");
+    const lunaHomeDir = createTempLunaHomeDir();
+    const workspaceDir = resolve(lunaHomeDir, "workspace");
+    const codexHomeDir = resolve(lunaHomeDir, "codex");
     rmSync(workspaceDir, {
       force: true,
       recursive: true,
@@ -79,14 +79,14 @@ describe("loadRuntimeConfig", () => {
 
     loadRuntimeConfig({
       ALLOWED_CHANNEL_IDS: "111",
-      ARTEMIS_HOME: artemisHomeDir,
+      LUNA_HOME: lunaHomeDir,
       DISCORD_BOT_TOKEN: "token",
     });
 
     expect(existsSync(workspaceDir)).toBe(true);
     expect(existsSync(codexHomeDir)).toBe(true);
 
-    rmSync(artemisHomeDir, {
+    rmSync(lunaHomeDir, {
       force: true,
       recursive: true,
     });
@@ -110,8 +110,6 @@ describe("loadRuntimeConfig", () => {
   });
 });
 
-function createTempArtemisHomeDir(): string {
-  return resolve(
-    join(tmpdir(), `artemis-runtime-config-${Date.now()}-${Math.random().toString(16)}`),
-  );
+function createTempLunaHomeDir(): string {
+  return resolve(join(tmpdir(), `luna-runtime-config-${Date.now()}-${Math.random().toString(16)}`));
 }

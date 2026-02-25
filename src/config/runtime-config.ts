@@ -2,14 +2,14 @@ import { accessSync, constants, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-const DEFAULT_ARTEMIS_HOME = "~/.artemis";
+const DEFAULT_LUNA_HOME = "~/.luna";
 const WORKSPACE_DIR_NAME = "workspace";
 const CODEX_HOME_DIR_NAME = "codex";
 
 export type RuntimeConfig = {
   discordBotToken: string;
   allowedChannelIds: ReadonlySet<string>;
-  artemisHomeDir: string;
+  lunaHomeDir: string;
   codexHomeDir: string;
   codexWorkspaceDir: string;
 };
@@ -28,17 +28,17 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   }
 
   const allowedChannelIds = parseAllowedChannelIds(env["ALLOWED_CHANNEL_IDS"]);
-  const artemisHomeDir = resolveArtemisHome(env["ARTEMIS_HOME"]);
-  const codexWorkspaceDir = resolve(artemisHomeDir, WORKSPACE_DIR_NAME);
-  const codexHomeDir = resolve(artemisHomeDir, CODEX_HOME_DIR_NAME);
+  const lunaHomeDir = resolveLunaHome(env["LUNA_HOME"]);
+  const codexWorkspaceDir = resolve(lunaHomeDir, WORKSPACE_DIR_NAME);
+  const codexHomeDir = resolve(lunaHomeDir, CODEX_HOME_DIR_NAME);
 
-  ensureDirectoryReady(artemisHomeDir, "ARTEMIS_HOME must be a writable directory.");
+  ensureDirectoryReady(lunaHomeDir, "LUNA_HOME must be a writable directory.");
   ensureDirectoryReady(codexWorkspaceDir, "workspace must be a writable directory.");
   ensureDirectoryReady(codexHomeDir, "codex home must be a writable directory.");
 
   return {
     allowedChannelIds,
-    artemisHomeDir,
+    lunaHomeDir,
     codexHomeDir,
     codexWorkspaceDir,
     discordBotToken,
@@ -61,14 +61,12 @@ function parseAllowedChannelIds(rawAllowedChannelIds: string | undefined): Reado
   return new Set(allowedChannelIds);
 }
 
-function resolveArtemisHome(rawArtemisHome: string | undefined): string {
-  const configuredArtemisHome = rawArtemisHome?.trim();
-  const artemisHome =
-    configuredArtemisHome && configuredArtemisHome.length > 0
-      ? configuredArtemisHome
-      : DEFAULT_ARTEMIS_HOME;
+function resolveLunaHome(rawLunaHome: string | undefined): string {
+  const configuredLunaHome = rawLunaHome?.trim();
+  const lunaHome =
+    configuredLunaHome && configuredLunaHome.length > 0 ? configuredLunaHome : DEFAULT_LUNA_HOME;
 
-  return resolve(expandHomeDirectory(artemisHome));
+  return resolve(expandHomeDirectory(lunaHome));
 }
 
 function expandHomeDirectory(path: string): string {
