@@ -20,6 +20,9 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - Bot へのメンションがある投稿は優先して返信を試みる。
 - メンションがない投稿への返信可否は AI が判断する。
 - すべての投稿へ返信する必要はない。
+- Discord 投稿起点に加えて heartbeat 起点でも AI を実行する。
+- heartbeat は毎時 00 分 / 30 分（JST）に自動実行する。
+- heartbeat 実行時のプロンプトは「HEARTBEAT.mdを確認し、作業を行ってください。」を固定で使う。
 - AI は必要に応じて tool use（`add_reaction`）でメッセージにリアクションを付与してよい。
 - 返信時は必ず `send_message` を使い、`add_reaction` のみで返信を代替しない。
 
@@ -72,3 +75,5 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 6. AI 失敗時は返信せず終了し、失敗ログを確認できる。
 7. 自己改善で更新されるのは Codex ワークスペース内ドキュメントのみで、luna-chat 本体コードは更新しない。
 8. リアクション付与は `add_reaction` で実行できるが、メンション返信の成立条件は `send_message` 実行である。
+9. heartbeat は毎時 00 分 / 30 分（JST）に実行される。
+10. heartbeat 実行時は固定プロンプト「HEARTBEAT.mdを確認し、作業を行ってください。」が渡される。

@@ -22,6 +22,7 @@
     "@hono/node-server": "1.19.9",
     "@modelcontextprotocol/sdk": "1.26.0",
     "consola": "3.4.2",
+    "cron": "4.4.0",
     "discord.js": "14.25.1",
     "hono": "4.12.1",
     "zod": "4.3.6"

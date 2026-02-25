@@ -42,6 +42,10 @@
 - Discord MCP サーバーは `hono` + `@hono/mcp` の HTTP(Streamable) 実装へ移行済み（`/mcp`）。
 - アプリ起動時に Discord MCP サーバーを同時起動し、`thread/start` の `config.mcp_servers.discord.url` に実URLを注入する。
 - プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
+- Discord投稿起点とは別に、cron 起点の heartbeat 実行を追加済み。
+- heartbeat は `cron` パッケージ（`node-cron` / kelektiv）で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行する。
+- heartbeat 実行時は固定プロンプト「HEARTBEAT.mdを確認し、作業を行ってください。」を使用する。
+- heartbeat 実行中の次周期は `waitForCompletion` で重複実行をスキップする構成へ更新済み。
 - `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
 - `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。
 - ロガーは `src/logger.ts` の共通 `consola` を直接参照する構成に統一した。

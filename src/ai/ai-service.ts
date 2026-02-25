@@ -9,7 +9,7 @@ import {
 } from "./codex-app-server-client";
 import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
 import { formatMessageAuthorLabel } from "./message-author-label";
-import { buildPromptBundle } from "./prompt-template";
+import { buildHeartbeatPromptBundle, buildPromptBundle } from "./prompt-template";
 
 export type AiInput = {
   channelName: string;
@@ -17,8 +17,13 @@ export type AiInput = {
   recentMessages: RuntimeMessage[];
 };
 
+export type HeartbeatInput = {
+  prompt: string;
+};
+
 export interface AiService {
   generateReply(input: AiInput): Promise<void>;
+  generateHeartbeat(input: HeartbeatInput): Promise<void>;
 }
 
 export type CodexAppServerAiServiceOptions = {
@@ -35,6 +40,7 @@ export type CodexAppServerAiServiceOptions = {
 
 type PromptBundle = Awaited<ReturnType<typeof buildPromptBundle>>;
 type PromptBundleBuilder = (input: AiInput, cwd: string) => Promise<PromptBundle>;
+type HeartbeatPromptBundleBuilder = (workspaceDir: string, prompt: string) => Promise<PromptBundle>;
 
 type CodexAppServerClientLike = {
   close: () => void;
@@ -50,6 +56,7 @@ type CodexAppServerClientLike = {
 
 type CodexAppServerAiServiceDependencies = {
   buildPromptBundle?: PromptBundleBuilder;
+  buildHeartbeatPromptBundle?: HeartbeatPromptBundleBuilder;
   createClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike;
 };
 
@@ -66,6 +73,7 @@ type ActiveChannelSession = {
 export class CodexAppServerAiService implements AiService {
   private readonly activeSessions = new Map<string, ActiveChannelSession>();
   private readonly buildPromptBundleFn: PromptBundleBuilder;
+  private readonly buildHeartbeatPromptBundleFn: HeartbeatPromptBundleBuilder;
   private readonly createClientFn: (
     options: CodexAppServerClientOptions,
   ) => CodexAppServerClientLike;
@@ -75,6 +83,8 @@ export class CodexAppServerAiService implements AiService {
     dependencies: CodexAppServerAiServiceDependencies = {},
   ) {
     this.buildPromptBundleFn = dependencies.buildPromptBundle ?? buildPromptBundle;
+    this.buildHeartbeatPromptBundleFn =
+      dependencies.buildHeartbeatPromptBundle ?? buildHeartbeatPromptBundle;
     this.createClientFn =
       dependencies.createClient ??
       ((clientOptions) => {
@@ -89,6 +99,41 @@ export class CodexAppServerAiService implements AiService {
     }
 
     await this.startNewSession(input);
+  }
+
+  async generateHeartbeat(input: HeartbeatInput): Promise<void> {
+    const client = this.createClient();
+    let threadId: string | undefined;
+    let turnId: string | undefined;
+
+    try {
+      await client.initialize();
+      const promptBundle = await this.buildHeartbeatPromptBundleFn(this.options.cwd, input.prompt);
+      threadId = await client.startThread({
+        config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
+        developerRolePrompt: promptBundle.developerRolePrompt,
+        instructions: promptBundle.instructions,
+      });
+
+      const startedTurn = await client.startTurn(threadId, promptBundle.userRolePrompt);
+      turnId = startedTurn.turnId;
+      const turnResult = await startedTurn.completion;
+      logTurnResult(threadId, turnId, turnResult);
+      if (turnResult.status !== "completed") {
+        const errorMessage =
+          turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
+        throw new Error(errorMessage);
+      }
+    } catch (error: unknown) {
+      logger.debug("ai.heartbeat.failed", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        threadId,
+        turnId,
+      });
+      throw error;
+    } finally {
+      client.close();
+    }
   }
 
   private async tryHandleExistingSession(input: AiInput): Promise<boolean> {
@@ -191,15 +236,7 @@ export class CodexAppServerAiService implements AiService {
   }
 
   private createSession(channelId: string): ActiveChannelSession {
-    const client = this.createClientFn({
-      approvalPolicy: this.options.approvalPolicy,
-      command: this.options.command,
-      codexHomeDir: this.options.codexHomeDir,
-      cwd: this.options.cwd,
-      model: this.options.model,
-      sandbox: this.options.sandbox,
-      timeoutMs: this.options.timeoutMs,
-    });
+    const client = this.createClient();
 
     return {
       channelId,
@@ -210,6 +247,18 @@ export class CodexAppServerAiService implements AiService {
       threadId: undefined,
       turnCompletion: undefined,
     };
+  }
+
+  private createClient(): CodexAppServerClientLike {
+    return this.createClientFn({
+      approvalPolicy: this.options.approvalPolicy,
+      command: this.options.command,
+      codexHomeDir: this.options.codexHomeDir,
+      cwd: this.options.cwd,
+      model: this.options.model,
+      sandbox: this.options.sandbox,
+      timeoutMs: this.options.timeoutMs,
+    });
   }
 
   private async startTurn(
