@@ -7,74 +7,42 @@
 
 ## 2. 現在の真実（Project Truth）
 
-- プロジェクトは MVP 定義を完了した。
-- `!ping` 依存を廃止し、チャンネル制限 + メンション優先返信フローへ移行済み。
-- 通常投稿は AI が tool use で返信可否を決定し、必要時のみ返信ツールを実行する。
-- Discord の履歴は初期入力に含めず、必要時に MCP tool `read_message_history` で都度取得する実装へ移行済み。
-- 過去履歴取得は MCP tool `read_message_history` を呼び出す方式へ移行済み。
-- 返信送信は MCP tool `send_message` を呼び出す方式へ移行済み（特定メッセージへの reply ではなくチャンネル送信）。
-- `send_message` の入力は `{ channelId, text }` に簡素化済み。
-- リアクション付与は MCP tool `add_reaction` を呼び出す方式を追加済み。
-- メンション返信の成立条件は従来どおり `send_message` 必須とし、`add_reaction` は補助用途とする。
-- Discord MCP の zod スキーマには `describe` で各パラメータ説明を付与済み。
-- Discord MCP の tool `description` / zod `describe` は日本語へ統一済み。
-- ツール使用方法の説明は MCP メタデータに委譲し、developer role prompt からは削除済み。
-- ただし「返信時は必ず `send_message` を使う」指示のみ developer role prompt に残す方針へ更新済み。
-- 環境変数設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` のみ使用する構成へ削減済み。
-- プロジェクト識別子は `luna` から `luna-chat` へ更新済み（`LUNA_HOME` は従来どおり維持）。
-- `LUNA_HOME` は default `~/.luna` を使用する。
-- `workspace` は `$LUNA_HOME/workspace` を使用する。
-- 起動時に `LUNA_HOME` と `workspace` を自動作成する。
-- フォールバック返信機能（固定謝罪文）を削除済み。
-- AI 呼び出し失敗時は、メンション有無に関わらず無返信で終了しログ記録のみ行う。
-- Discord 送信失敗時の再送は行わず、ログ記録して処理終了する。
-- 改善提案の自動適用フローは保留中（現状は返信/履歴取得ツールに集中）。
-- 受信ハンドラをモジュール化し、Discord API モック + AI モックの結合テストを追加済み。
-- Codex app-server は JSON-RPC 手順（`initialize` → `initialized` → `thread/start` → `turn/start`）で接続する実装へ更新済み。
-- server-initiated request（approval / requestUserInput）へのクライアント応答を実装済み。
-- `codex app-server generate-ts` で公式スキーマを生成し、パラメータ互換性を確認済み。
-- app-server 起動コマンドは `codex app-server --listen stdio://` を固定使用し、標準入出力で JSON-RPC を送受信する。
-- Codex 起動時は `CODEX_HOME=$LUNA_HOME/codex` を設定する。
-- app-server 実行 CWD は `$LUNA_HOME/workspace` を使用する。
-- reasoning effort は `index.ts` 側で固定し、`thread/start` の `config.model_reasoning_effort` に反映する。
-- `thread/start` は `ephemeral=true` と `personality=\"friendly\"` を固定で指定する。
-- MCP サーバー設定は `thread/start` の `config` で都度注入する（`config.toml` に依存しない）。
-- Discord MCP サーバーは `hono` + `@hono/mcp` の HTTP(Streamable) 実装へ移行済み（`/mcp`）。
-- アプリ起動時に Discord MCP サーバーを同時起動し、`thread/start` の `config.mcp_servers.discord.url` に実URLを注入する。
-- プロンプトは `instructions` / `developer role prompt` / `user role prompt` に分割し、`thread/start` の `baseInstructions` / `developerInstructions` と `turn/start` 入力へ振り分ける実装に更新済み。
-- Discord投稿起点とは別に、cron 起点の heartbeat 実行を追加済み。
-- heartbeat は `cron` パッケージ（`node-cron` / kelektiv）で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行する。
-- heartbeat 実行時は固定プロンプト「HEARTBEAT.mdを確認し、作業を行ってください。」を使用する。
-- heartbeat 実行中の次周期は `waitForCompletion` で重複実行をスキップする構成へ更新済み。
-- `docs/RUNBOOK.md` は AI へのプロンプト入力から除外済み（プロジェクト運用ドキュメントとしてのみ利用）。
-- `consola.debug` で message受信・AI turn開始/終了・assistant出力・reply tool call本文を追跡できるようにした。
-- ロガーは `src/logger.ts` の共通 `consola` を直接参照する構成に統一した。
-- `typecheck` / `lint` / `format:check` / `test` / `build` が通る状態を確認済み。
-- 2026-02-24 時点で `SPEC` / `ARCHITECTURE` / `RUNBOOK` を現行実装に整合する内容へ更新済み。
-- 今後の正しい方向は「雑談参加 Bot」への移行。
-- 本体コードと `$LUNA_HOME/workspace`（自己改善対象）を分離する方針が確定した。
+- 返信判定は `ALLOWED_CHANNEL_IDS` + 非DM + 非スレッドのみで行う。
+- メンション有無は `mentionedBot` として保持するが、返信優先制御には使っていない。
+- Bot投稿は無視し、許可チャンネル投稿を AI へ渡す。
+- AI 入力には現在メッセージに加えて、同一チャンネルの直近 10 件履歴を初期投入する。
+- 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
+- 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
+- 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
+- AI 処理中は 8 秒間隔で typing を送信する。
+- AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
+- 設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
+- 起動時に `LUNA_HOME` / `workspace` / `codex` を自動作成する。
+- Codex app-server は `codex app-server --listen stdio://` を使い、JSON-RPC で接続する。
+- `thread/start` は `ephemeral=true` / `personality="friendly"` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。
+- server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
+- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message` / `add_reaction` を提供する。
+- heartbeat は `cron` で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行し、`waitForCompletion=true` で重複実行を抑止する。
+- heartbeat プロンプトは以下の固定文を使用する。  
+  `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
+- プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。
+- 自己改善ドキュメントの自動更新フローは未実装。
 
 ## 3. 確定済み方針
 
 1. 人格名は「ルナ」。
-2. 口調は敬語とため口を混在し、優しい少女トーンを維持する。
-3. 対象チャンネル限定で動作する。
-4. メンション投稿は優先的に返信を試みる。
-5. 通常投稿への返信は AI 判断とする。
-6. 会話ログ本文は永続保存しない。
-7. 文脈は Discord から都度取得する。
-8. 追加履歴取得（tool use）は無制限。
-9. 自己改善はドキュメントのみ更新し、コードは更新しない。
-10. `STATUS.md` は作業ごとに AI が更新する。
+2. 対象チャンネル限定で動作する。
+3. 会話ログ本文は永続保存しない。
+4. 初期文脈は直近 10 件、追加文脈は tool use で取得する。
+5. heartbeat を定期実行する。
+6. 本体コードと `$LUNA_HOME/workspace` を分離する。
+7. `STATUS.md` は作業ごとに AI が更新する。
 
 ## 4. 直近タスク
 
-1. 実運用の認証状態で Codex CLI app-server 接続を確認する。
-2. tool use の引数スキーマをより厳格にし、誤呼び出し時の回復文言を整備する。
-3. 履歴取得遅延の観測ログを運用で確認する。
-4. 実環境で返信頻度のチューニングを行う。
-5. Bot トークンを設定したローカル常駐運用で実地検証する。
-6. prompt 3分割後の返信品質を運用観測で調整する。
+1. 実運用トークンで接続・返信フローを継続観測する。
+2. `read_message_history` 多用時の遅延傾向をログから確認する。
+3. 返信頻度の運用チューニング方針を整理する。
 
 ## 5. ブロッカー
 
@@ -82,9 +50,9 @@
 
 ## 6. リスクメモ
 
-1. 履歴追加取得が無制限のため、遅延増加の可能性がある。
-2. ログ非永続のため、長期記憶は人格ドキュメント運用に依存する。
-3. 自己改善が過剰更新にならないよう、対象ディレクトリ制約が重要。
+1. 履歴取得回数が増えると遅延が伸びる可能性がある。
+2. ログ非永続のため、長期記憶はワークスペース文書運用に依存する。
+3. ワークスペース文書の品質が返信品質に直結する。
 
 ## 7. 再開時コンテキスト
 
