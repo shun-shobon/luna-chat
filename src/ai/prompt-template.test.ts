@@ -20,14 +20,14 @@ describe("buildPromptBundle", () => {
       expect(promptBundle.userRolePrompt).toContain("テスト本文");
       expect(promptBundle.userRolePrompt).not.toContain("forceReply");
 
-      const recentMessagesIndex = promptBundle.userRolePrompt.indexOf("直近のメッセージ:");
-      const currentMessageIndex = promptBundle.userRolePrompt.indexOf("投稿されたメッセージ:");
+      const recentMessagesIndex = promptBundle.userRolePrompt.indexOf("## 直近のメッセージ");
+      const currentMessageIndex = promptBundle.userRolePrompt.indexOf("## 投稿されたメッセージ");
       expect(recentMessagesIndex).toBeGreaterThanOrEqual(0);
       expect(currentMessageIndex).toBeGreaterThan(recentMessagesIndex);
     });
   });
 
-  it("返信メッセージがある場合は返信先情報を既存フォーマットで含める", async () => {
+  it("返信メッセージがある場合は返信先情報を引用形式で含める", async () => {
     await withWorkspaceDir(async (workspaceDir) => {
       const input = createInput();
       input.currentMessage.replyTo = {
@@ -40,7 +40,16 @@ describe("buildPromptBundle", () => {
       };
       const promptBundle = await buildPromptBundle(input, workspaceDir);
 
-      expect(promptBundle.userRolePrompt).toContain("返信先メッセージ:");
+      expect(promptBundle.userRolePrompt).not.toContain("返信先メッセージ:");
+      expect(promptBundle.userRolePrompt).toContain(
+        "> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):",
+      );
+      expect(promptBundle.userRolePrompt).toContain("> 返信先本文");
+      expect(promptBundle.userRolePrompt).toContain(
+        "(Message ID: reply-message-id):\n> 返信先本文",
+      );
+      expect(promptBundle.userRolePrompt).toContain("(Message ID: message-id):\nテスト本文");
+      expect(promptBundle.userRolePrompt).toMatch(/> 返信先本文\n\[2026-02-23 09:00:00 JST]/);
       expect(promptBundle.userRolePrompt).toMatchSnapshot();
     });
   });
@@ -101,6 +110,9 @@ describe("buildPromptBundle", () => {
       expect(secondIndex).toBeGreaterThan(firstIndex);
       expect(thirdIndex).toBeGreaterThan(secondIndex);
       expect(fourthIndex).toBeGreaterThan(thirdIndex);
+      expect(promptBundle.userRolePrompt).toMatch(
+        /recent-message-id-1\):\n直近メッセージ1\n\n\[2026-02-23 08:57:00 JST]/,
+      );
       expect(promptBundle.userRolePrompt).toMatchSnapshot();
     });
   });
@@ -157,9 +169,9 @@ describe("buildPromptBundle", () => {
       input.currentMessage.content = "投稿本文1\n投稿本文2\n投稿本文3";
       const promptBundle = await buildPromptBundle(input, workspaceDir);
 
-      const replyHeaderCount = (promptBundle.userRolePrompt.match(/返信先メッセージ:/g) ?? [])
-        .length;
-      expect(replyHeaderCount).toBe(3);
+      const quotedReplyMetaCount = (promptBundle.userRolePrompt.match(/^> \[/gm) ?? []).length;
+      expect(quotedReplyMetaCount).toBe(3);
+      expect(promptBundle.userRolePrompt).not.toContain("返信先メッセージ:");
       expect(promptBundle.userRolePrompt).toContain("投稿本文3");
       expect(promptBundle.userRolePrompt).toMatchSnapshot();
     });

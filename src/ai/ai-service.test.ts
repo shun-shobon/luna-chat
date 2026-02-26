@@ -31,7 +31,7 @@ describe("CodexAppServerAiService", () => {
     expect(client.steerTurn).toHaveBeenCalledWith(
       "thread-1",
       "turn-1",
-      expect.stringContaining("author (ID: author-id) (Message ID: m2): second"),
+      expect.stringContaining("author (ID: author-id) (Message ID: m2):\nsecond"),
     );
 
     client.completeTurn("turn-1", createCompletedTurnResult());
@@ -69,14 +69,14 @@ describe("CodexAppServerAiService", () => {
     expect(client.steerTurn).toHaveBeenCalledWith(
       "thread-1",
       "turn-1",
-      expect.stringContaining("返信先メッセージ:"),
+      expect.stringContaining(
+        "> [2026-01-01 08:59:00 JST] reply-author (ID: reply-author-id) (Message ID: reply-message-id):",
+      ),
     );
     expect(client.steerTurn).toHaveBeenCalledWith(
       "thread-1",
       "turn-1",
-      expect.stringContaining(
-        "[2026-01-01 08:59:00 JST] reply-author (ID: reply-author-id) (Message ID: reply-message-id): reply content",
-      ),
+      expect.stringContaining("> reply content\n["),
     );
 
     client.completeTurn("turn-1", createCompletedTurnResult());

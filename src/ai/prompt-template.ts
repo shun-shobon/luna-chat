@@ -24,13 +24,18 @@ export async function buildPromptBundle(
 ): Promise<PromptBundle> {
   const instructions = await buildInstructions(workspaceDir);
   const recentMessages = input.recentMessages.map(formatRuntimeMessageForPrompt);
+  const recentMessagesSection = recentMessages.length > 0 ? recentMessages.join("\n\n") : "(none)";
 
   const userRolePrompt = [
     "以下は現在の入力情報です。",
     `チャンネル名: ${input.channelName} (ID: ${input.currentMessage.channelId})`,
-    "直近のメッセージ:",
-    ...(recentMessages.length > 0 ? recentMessages : ["(none)"]),
-    "投稿されたメッセージ:",
+    "",
+    "## 直近のメッセージ",
+    "",
+    recentMessagesSection,
+    "",
+    "## 投稿されたメッセージ",
+    "",
     formatRuntimeMessageForPrompt(input.currentMessage),
   ].join("\n");
 
@@ -42,22 +47,34 @@ export async function buildPromptBundle(
 }
 
 export function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
-  const lines: string[] = [];
-  if (message.replyTo) {
-    lines.push("返信先メッセージ:");
-    lines.push(formatRuntimeMessageLine(message.replyTo));
+  const messageBlock = formatRuntimeMessageBlock(message);
+  if (!message.replyTo) {
+    return messageBlock;
   }
-  lines.push(formatRuntimeMessageLine(message));
-  return lines.join("\n");
+
+  return [toQuotedBlock(formatRuntimeMessageBlock(message.replyTo)), messageBlock].join("\n");
 }
 
-function formatRuntimeMessageLine(
+function formatRuntimeMessageBlock(
   message: Pick<
     RuntimeMessage,
     "id" | "authorId" | "authorIsBot" | "authorName" | "content" | "createdAt"
   >,
 ): string {
-  return `[${message.createdAt}] ${formatMessageAuthorLabel(message)} (Message ID: ${message.id}): ${message.content}`;
+  return `${formatRuntimeMessageMetaLine(message)}\n${message.content}`;
+}
+
+function formatRuntimeMessageMetaLine(
+  message: Pick<RuntimeMessage, "id" | "authorId" | "authorIsBot" | "authorName" | "createdAt">,
+): string {
+  return `[${message.createdAt}] ${formatMessageAuthorLabel(message)} (Message ID: ${message.id}):`;
+}
+
+function toQuotedBlock(block: string): string {
+  return block
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
 }
 
 export async function buildHeartbeatPromptBundle(

@@ -35,10 +35,16 @@ exports[`buildPromptBundle > instructions/developer/user role prompt を分離�
 exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 3`] = `
 "以下は現在の入力情報です。
 チャンネル名: channel-name (ID: channel-id)
-直近のメッセージ:
-[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
-投稿されたメッセージ:
-[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文"
+
+## 直近のメッセージ
+
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id):
+直近メッセージ
+
+## 投稿されたメッセージ
+
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文"
 `;
 
 exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 4`] = `
@@ -55,10 +61,16 @@ exports[`buildPromptBundle > instructions/developer/user role prompt を分離�
 ",
   "userRolePrompt": "以下は現在の入力情報です。
 チャンネル名: channel-name (ID: channel-id)
-直近のメッセージ:
-[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
-投稿されたメッセージ:
-[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
+
+## 直近のメッセージ
+
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id):
+直近メッセージ
+
+## 投稿されたメッセージ
+
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文",
 }
 `;
 
@@ -102,40 +114,66 @@ SOUL の追加指示"
 exports[`buildPromptBundle > 直近メッセージが複数ある場合は順序どおりにすべて含める 1`] = `
 "以下は現在の入力情報です。
 チャンネル名: channel-name (ID: channel-id)
-直近のメッセージ:
-[2026-02-23 08:56:00 JST] recent-author-name-1 (ID: recent-author-id-1) (Message ID: recent-message-id-1): 直近メッセージ1
-[2026-02-23 08:57:00 JST] recent-author-name-2 (Bot) (ID: recent-author-id-2) (Message ID: recent-message-id-2): 直近メッセージ2
-[2026-02-23 08:58:00 JST] recent-author-name-3 (ID: recent-author-id-3) (Message ID: recent-message-id-3): 直近メッセージ3
-[2026-02-23 08:59:00 JST] recent-author-name-4 (ID: recent-author-id-4) (Message ID: recent-message-id-4): 直近メッセージ4
-投稿されたメッセージ:
-[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文"
+
+## 直近のメッセージ
+
+[2026-02-23 08:56:00 JST] recent-author-name-1 (ID: recent-author-id-1) (Message ID: recent-message-id-1):
+直近メッセージ1
+
+[2026-02-23 08:57:00 JST] recent-author-name-2 (Bot) (ID: recent-author-id-2) (Message ID: recent-message-id-2):
+直近メッセージ2
+
+[2026-02-23 08:58:00 JST] recent-author-name-3 (ID: recent-author-id-3) (Message ID: recent-message-id-3):
+直近メッセージ3
+
+[2026-02-23 08:59:00 JST] recent-author-name-4 (ID: recent-author-id-4) (Message ID: recent-message-id-4):
+直近メッセージ4
+
+## 投稿されたメッセージ
+
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文"
 `;
 
-exports[`buildPromptBundle > 返信メッセージがある場合は返信先情報を既存フォーマットで含める 1`] = `
+exports[`buildPromptBundle > 返信メッセージがある場合は返信先情報を引用形式で含める 1`] = `
 "以下は現在の入力情報です。
 チャンネル名: channel-name (ID: channel-id)
-直近のメッセージ:
-[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
-投稿されたメッセージ:
-返信先メッセージ:
-[2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id): 返信先本文
-[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文"
+
+## 直近のメッセージ
+
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id):
+直近メッセージ
+
+## 投稿されたメッセージ
+
+> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):
+> 返信先本文
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文"
 `;
 
 exports[`buildPromptBundle > 返信先メッセージが複数箇所にある場合もすべて含める 1`] = `
 "以下は現在の入力情報です。
 チャンネル名: channel-name (ID: channel-id)
-直近のメッセージ:
-返信先メッセージ:
-[2026-02-23 08:55:00 JST] reply-author-name-1 (ID: reply-author-id-1) (Message ID: reply-message-id-1): 返信先本文1
-[2026-02-23 08:56:00 JST] recent-author-name-1 (ID: recent-author-id-1) (Message ID: recent-message-id-1): 直近メッセージ1
-返信先メッセージ:
-[2026-02-23 08:57:00 JST] reply-author-name-2 (Bot) (ID: reply-author-id-2) (Message ID: reply-message-id-2): 返信先本文2
-[2026-02-23 08:58:00 JST] recent-author-name-2 (ID: recent-author-id-2) (Message ID: recent-message-id-2): 直近メッセージ2
-投稿されたメッセージ:
-返信先メッセージ:
-[2026-02-23 08:59:00 JST] reply-author-name-current (ID: reply-author-id-current) (Message ID: reply-message-id-current): 返信先本文-current
-[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): 投稿本文1
+
+## 直近のメッセージ
+
+> [2026-02-23 08:55:00 JST] reply-author-name-1 (ID: reply-author-id-1) (Message ID: reply-message-id-1):
+> 返信先本文1
+[2026-02-23 08:56:00 JST] recent-author-name-1 (ID: recent-author-id-1) (Message ID: recent-message-id-1):
+直近メッセージ1
+
+> [2026-02-23 08:57:00 JST] reply-author-name-2 (Bot) (ID: reply-author-id-2) (Message ID: reply-message-id-2):
+> 返信先本文2
+[2026-02-23 08:58:00 JST] recent-author-name-2 (ID: recent-author-id-2) (Message ID: recent-message-id-2):
+直近メッセージ2
+
+## 投稿されたメッセージ
+
+> [2026-02-23 08:59:00 JST] reply-author-name-current (ID: reply-author-id-current) (Message ID: reply-message-id-current):
+> 返信先本文-current
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+投稿本文1
 投稿本文2
 投稿本文3"
 `;
