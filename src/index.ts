@@ -18,7 +18,8 @@ const CODEX_APP_SERVER_COMMAND = ["codex", "app-server", "--listen", "stdio://"]
 const CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
 const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
 const CODEX_APP_SERVER_SANDBOX = "workspace-write";
-const CODEX_APP_SERVER_TIMEOUT_MS = 60_000;
+const CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD = 10 * 60_000;
+const CODEX_APP_SERVER_TIMEOUT_MS_FOR_HEARTBEAT = 30 * 60_000;
 const CODEX_APP_SERVER_REASONING_EFFORT: ReasoningEffort = "medium";
 const HEARTBEAT_PROMPT =
   "`HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。";
@@ -37,7 +38,7 @@ const discordMcpServer = await startDiscordMcpServerOrExit(
   runtimeConfig.discordBotToken,
   attachmentStore,
 );
-const aiServiceOptions: CodexAppServerAiServiceOptions = {
+const aiServiceOptionsBase: Omit<CodexAppServerAiServiceOptions, "timeoutMs"> = {
   approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
   command: CODEX_APP_SERVER_COMMAND,
   codexHomeDir: runtimeConfig.codexHomeDir,
@@ -46,11 +47,17 @@ const aiServiceOptions: CodexAppServerAiServiceOptions = {
   model: CODEX_APP_SERVER_MODEL,
   reasoningEffort: CODEX_APP_SERVER_REASONING_EFFORT,
   sandbox: CODEX_APP_SERVER_SANDBOX,
-  timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS,
 };
-const aiService = new CodexAppServerAiService(aiServiceOptions);
+const discordAiService = new CodexAppServerAiService({
+  ...aiServiceOptionsBase,
+  timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD,
+});
+const heartbeatAiService = new CodexAppServerAiService({
+  ...aiServiceOptionsBase,
+  timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_HEARTBEAT,
+});
 const heartbeatRunner = startHeartbeatRunner({
-  aiService,
+  aiService: heartbeatAiService,
   logger,
   prompt: HEARTBEAT_PROMPT,
 });
@@ -73,7 +80,7 @@ client.on("messageCreate", async (message) => {
 
   await handleMessageCreate({
     attachmentStore,
-    aiService,
+    aiService: discordAiService,
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     botUserId,
     logger,
