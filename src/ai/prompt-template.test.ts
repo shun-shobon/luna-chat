@@ -12,20 +12,11 @@ describe("buildPromptBundle", () => {
     await withWorkspaceDir(async (workspaceDir) => {
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
 
-      expect(promptBundle.instructions).toContain(
-        "あなたはLunaで動作しているパーソナルアシスタントです。",
-      );
-      expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
-      expect(promptBundle.developerRolePrompt).toContain("`start_typing`");
-      expect(promptBundle.userRolePrompt).toContain("チャンネル名: channel-name (ID: channel-id)");
-      expect(promptBundle.userRolePrompt).toContain("直近のメッセージ:");
-      expect(promptBundle.userRolePrompt).toContain("投稿されたメッセージ:");
-      expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ",
-      );
-      expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
-      );
+      expect(promptBundle.instructions).toMatchSnapshot();
+      expect(promptBundle.developerRolePrompt).toMatchSnapshot();
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
+      expect(promptBundle).toMatchSnapshot();
+
       expect(promptBundle.userRolePrompt).toContain("テスト本文");
       expect(promptBundle.userRolePrompt).not.toContain("forceReply");
 
@@ -50,12 +41,7 @@ describe("buildPromptBundle", () => {
       const promptBundle = await buildPromptBundle(input, workspaceDir);
 
       expect(promptBundle.userRolePrompt).toContain("返信先メッセージ:");
-      expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id): 返信先本文",
-      );
-      expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
-      );
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
     });
   });
 
@@ -88,6 +74,7 @@ describe("buildPromptBundle", () => {
       expect(baseIndex).toBeGreaterThanOrEqual(0);
       expect(lunaIndex).toBeGreaterThan(baseIndex);
       expect(soulIndex).toBeGreaterThan(lunaIndex);
+      expect(promptBundle.instructions).toMatchSnapshot();
     });
   });
 
@@ -99,6 +86,7 @@ describe("buildPromptBundle", () => {
 
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
       expect(promptBundle.instructions).not.toContain("LUNA の追加指示");
+      expect(promptBundle.instructions).toMatchSnapshot();
     });
   });
 
@@ -113,6 +101,7 @@ describe("buildPromptBundle", () => {
         "あなたはLunaで動作しているパーソナルアシスタント",
       );
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
+      expect(promptBundle.instructions).toMatchSnapshot();
     });
   });
 });
@@ -125,11 +114,7 @@ describe("buildHeartbeatPromptBundle", () => {
         "HEARTBEAT.mdを確認し、作業を行ってください。",
       );
 
-      expect(promptBundle.instructions).toContain(
-        "あなたはLunaで動作しているパーソナルアシスタントです。",
-      );
-      expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
-      expect(promptBundle.developerRolePrompt).toContain("`start_typing`");
+      expect(promptBundle).toMatchSnapshot();
       expect(promptBundle.userRolePrompt).toBe("HEARTBEAT.mdを確認し、作業を行ってください。");
       expect(promptBundle.userRolePrompt).not.toContain("チャンネル名:");
     });

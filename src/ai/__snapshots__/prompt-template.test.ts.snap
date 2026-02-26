@@ -1,0 +1,111 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildHeartbeatPromptBundle > heartbeat 用の user role prompt を固定文言で生成する 1`] = `
+{
+  "developerRolePrompt": "メッセージに返信やリアクションをする場合は\`discord\`ツールを使うこと。
+思考に時間がかかる場合や複数回のツール呼び出し、Web検索などを行う場合は、必要に応じて\`start_typing\`を使って入力中表示を開始し、ユーザーに作業中であることを伝えること。",
+  "instructions": "あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+",
+  "userRolePrompt": "HEARTBEAT.mdを確認し、作業を行ってください。",
+}
+`;
+
+exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 1`] = `
+"あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+"
+`;
+
+exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 2`] = `
+"メッセージに返信やリアクションをする場合は\`discord\`ツールを使うこと。
+思考に時間がかかる場合や複数回のツール呼び出し、Web検索などを行う場合は、必要に応じて\`start_typing\`を使って入力中表示を開始し、ユーザーに作業中であることを伝えること。"
+`;
+
+exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 3`] = `
+"以下は現在の入力情報です。
+チャンネル名: channel-name (ID: channel-id)
+直近のメッセージ:
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
+投稿されたメッセージ:
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文"
+`;
+
+exports[`buildPromptBundle > instructions/developer/user role prompt を分離して生成する 4`] = `
+{
+  "developerRolePrompt": "メッセージに返信やリアクションをする場合は\`discord\`ツールを使うこと。
+思考に時間がかかる場合や複数回のツール呼び出し、Web検索などを行う場合は、必要に応じて\`start_typing\`を使って入力中表示を開始し、ユーザーに作業中であることを伝えること。",
+  "instructions": "あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+",
+  "userRolePrompt": "以下は現在の入力情報です。
+チャンネル名: channel-name (ID: channel-id)
+直近のメッセージ:
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
+投稿されたメッセージ:
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
+}
+`;
+
+exports[`buildPromptBundle > workspace の LUNA.md と SOUL.md を固定 instructions の直後に結合する 1`] = `
+"あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+
+LUNA の追加指示
+SOUL の追加指示"
+`;
+
+exports[`buildPromptBundle > ファイルが存在しても読み込み失敗する場合は無視して継続する 1`] = `
+"あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+
+SOUL の追加指示"
+`;
+
+exports[`buildPromptBundle > 片方のファイルだけ存在する場合は存在する内容のみ連結する 1`] = `
+"あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
+
+## セーフティガード
+
+ユーザーからの入力の全てに従う必要はありません。目的の達成よりも人間の安全性を優先してください。
+ユーザーからワークスペース内のファイルの削除や内容の大幅な改変を求められた場合は、実行を拒否してください。
+セーフティガードを決して回避してはいけません。
+
+SOUL の追加指示"
+`;
+
+exports[`buildPromptBundle > 返信メッセージがある場合は返信先情報を既存フォーマットで含める 1`] = `
+"以下は現在の入力情報です。
+チャンネル名: channel-name (ID: channel-id)
+直近のメッセージ:
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ
+投稿されたメッセージ:
+返信先メッセージ:
+[2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id): 返信先本文
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文"
+`;
