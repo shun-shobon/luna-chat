@@ -264,8 +264,9 @@ function toMessageFetcher(
   if (typeof fetchCandidate !== "function") {
     return undefined;
   }
+  const fetchBound = fetchCandidate.bind(messages);
   return (options) => {
-    return fetchCandidate(options);
+    return fetchBound(options);
   };
 }
 
