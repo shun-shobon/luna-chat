@@ -21,10 +21,10 @@ describe("buildPromptBundle", () => {
       expect(promptBundle.userRolePrompt).toContain("直近のメッセージ:");
       expect(promptBundle.userRolePrompt).toContain("投稿されたメッセージ:");
       expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id): 直近メッセージ",
+        "[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id): 直近メッセージ",
       );
       expect(promptBundle.userRolePrompt).toContain(
-        "[2026-02-23 09:00:00 JST] author-name (ID: author-id): テスト本文",
+        "[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
       );
       expect(promptBundle.userRolePrompt).toContain("テスト本文");
       expect(promptBundle.userRolePrompt).not.toContain("forceReply");
@@ -33,6 +33,29 @@ describe("buildPromptBundle", () => {
       const currentMessageIndex = promptBundle.userRolePrompt.indexOf("投稿されたメッセージ:");
       expect(recentMessagesIndex).toBeGreaterThanOrEqual(0);
       expect(currentMessageIndex).toBeGreaterThan(recentMessagesIndex);
+    });
+  });
+
+  it("返信メッセージがある場合は返信先情報を既存フォーマットで含める", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const input = createInput();
+      input.currentMessage.replyTo = {
+        authorId: "reply-author-id",
+        authorIsBot: false,
+        authorName: "reply-author-name",
+        content: "返信先本文",
+        createdAt: "2026-02-23 08:58:00 JST",
+        id: "reply-message-id",
+      };
+      const promptBundle = await buildPromptBundle(input, workspaceDir);
+
+      expect(promptBundle.userRolePrompt).toContain("返信先メッセージ:");
+      expect(promptBundle.userRolePrompt).toContain(
+        "[2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id): 返信先本文",
+      );
+      expect(promptBundle.userRolePrompt).toContain(
+        "[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id): テスト本文",
+      );
     });
   });
 

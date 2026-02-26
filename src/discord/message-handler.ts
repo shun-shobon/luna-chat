@@ -1,4 +1,4 @@
-import type { Collection } from "discord.js";
+import { Collection } from "discord.js";
 
 import type { AiService } from "../ai/ai-service";
 import {
@@ -7,7 +7,7 @@ import {
   type DiscordAttachmentStore,
 } from "../attachments/discord-attachment-store";
 import { formatDateTimeJst } from "../context/date-time";
-import type { RuntimeMessage } from "../context/types";
+import type { RuntimeMessage, RuntimeReplyMessage } from "../context/types";
 import { evaluateReplyPolicy } from "../policy/reply-policy";
 
 type AttachmentSource = {
@@ -34,9 +34,12 @@ type RuntimeMessageSource = {
   member?: {
     displayName: string;
   } | null;
+  reference?: {
+    messageId?: string | null | undefined;
+  } | null;
+  fetchReference?: () => Promise<RuntimeMessageSource>;
 };
 
-type FetchedMessageCollectionLike = Collection<string, RuntimeMessageSource>;
 type SendTyping = () => Promise<unknown>;
 
 export type MessageLike = {
@@ -55,9 +58,7 @@ export type MessageLike = {
     isThread: () => boolean;
     name?: string | null;
     sendTyping?: SendTyping;
-    messages?: {
-      fetch: (options: { before?: string; limit: number }) => Promise<FetchedMessageCollectionLike>;
-    };
+    messages?: unknown;
   };
   author: {
     bot: boolean;
@@ -67,6 +68,10 @@ export type MessageLike = {
   member?: {
     displayName: string;
   } | null;
+  reference?: {
+    messageId?: string | null | undefined;
+  } | null;
+  fetchReference?: () => Promise<RuntimeMessageSource>;
 };
 
 export type LoggerLike = {
@@ -169,6 +174,11 @@ async function toRuntimeMessageFromSource(input: {
     logger: input.logger,
     messageId: input.message.id,
   });
+  const replyTo = await resolveReplyToMessage({
+    attachmentStore: input.attachmentStore,
+    logger: input.logger,
+    message: input.message,
+  });
 
   return {
     id: input.message.id,
@@ -179,6 +189,7 @@ async function toRuntimeMessageFromSource(input: {
     content,
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),
+    ...(replyTo ? { replyTo } : {}),
   };
 }
 
@@ -188,15 +199,20 @@ async function fetchRecentMessages(input: {
   attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage[]> {
-  if (!input.message.channel.messages) {
+  const fetchMessages = toMessageFetcher(input.message.channel.messages);
+  if (!fetchMessages) {
     return [];
   }
 
   try {
-    const fetchedMessages = await input.message.channel.messages.fetch({
+    const fetched = await fetchMessages({
       before: input.message.id,
       limit: INITIAL_PROMPT_HISTORY_LIMIT,
     });
+    if (!(fetched instanceof Collection)) {
+      throw new Error("Unexpected fetch result type while reading channel history.");
+    }
+    const fetchedMessages = fetched;
 
     const sortedMessages = Array.from(fetchedMessages.values()).sort((left, right) => {
       return left.createdTimestamp - right.createdTimestamp;
@@ -217,6 +233,24 @@ async function fetchRecentMessages(input: {
   }
 }
 
+function toMessageFetcher(
+  messages: MessageLike["channel"]["messages"],
+): ((options: { before?: string; limit: number }) => Promise<unknown>) | undefined {
+  if (!messages || typeof messages !== "object") {
+    return undefined;
+  }
+  if (!("fetch" in messages)) {
+    return undefined;
+  }
+  const fetchCandidate = messages.fetch;
+  if (typeof fetchCandidate !== "function") {
+    return undefined;
+  }
+  return (options) => {
+    return fetchCandidate(options);
+  };
+}
+
 function collectAttachments(
   attachments: Collection<string, AttachmentSource> | undefined,
 ): DiscordAttachmentInput[] {
@@ -231,6 +265,57 @@ function collectAttachments(
       url: attachment.url,
     };
   });
+}
+
+async function resolveReplyToMessage(input: {
+  message: RuntimeMessageSource;
+  attachmentStore: DiscordAttachmentStore;
+  logger: LoggerLike;
+}): Promise<RuntimeReplyMessage | undefined> {
+  const referencedMessageId = input.message.reference?.messageId;
+  if (!referencedMessageId || !input.message.fetchReference) {
+    return undefined;
+  }
+
+  try {
+    const referencedMessage = await input.message.fetchReference();
+    return await toRuntimeReplyMessageFromSource({
+      attachmentStore: input.attachmentStore,
+      logger: input.logger,
+      message: referencedMessage,
+    });
+  } catch (error: unknown) {
+    input.logger.warn("Failed to fetch referenced message:", {
+      error,
+      messageId: input.message.id,
+      referencedMessageId,
+    });
+    return undefined;
+  }
+}
+
+async function toRuntimeReplyMessageFromSource(input: {
+  message: RuntimeMessageSource;
+  attachmentStore: DiscordAttachmentStore;
+  logger: LoggerLike;
+}): Promise<RuntimeReplyMessage> {
+  const content = await appendAttachmentMarkersFromSources({
+    attachmentStore: input.attachmentStore,
+    attachments: collectAttachments(input.message.attachments),
+    channelId: input.message.channelId,
+    content: input.message.content,
+    logger: input.logger,
+    messageId: input.message.id,
+  });
+
+  return {
+    id: input.message.id,
+    authorId: input.message.author.id,
+    authorIsBot: input.message.author.bot,
+    authorName: input.message.member?.displayName ?? input.message.author.username,
+    content,
+    createdAt: formatDateTimeJst(input.message.createdAt),
+  };
 }
 
 function resolveChannelName(channelName: string | null | undefined): string {

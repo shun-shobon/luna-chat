@@ -33,6 +33,10 @@ type HistoryMessageLike = {
   mentions: {
     has: () => boolean;
   };
+  reference?: {
+    messageId?: string | null;
+  } | null;
+  fetchReference?: () => Promise<HistoryMessageLike>;
 };
 
 describe("handleMessageCreate integration", () => {
@@ -43,7 +47,7 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       sendTyping,
     });
-    const generateReply = vi.fn(async () => undefined);
+    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -66,7 +70,7 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       authorUsername: "other-bot",
     });
-    const generateReply = vi.fn(async () => undefined);
+    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -192,6 +196,133 @@ describe("handleMessageCreate integration", () => {
 
     expect(reply).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith("Failed to generate AI reply:", expect.any(Error));
+  });
+
+  it("返信投稿では返信先情報を含めて AI が呼び出される", async () => {
+    const referencedMessage = createFakeHistoryMessage({
+      authorDisplayName: "reply-target-display",
+      authorId: "reply-target-author-id",
+      authorUsername: "reply-target-username",
+      content: "reply target content",
+      createdAt: new Date("2025-12-31T23:58:00.000Z"),
+      id: "reply-target-id",
+    });
+    const message = createMessage({
+      referenceMessage: referencedMessage,
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          replyTo: {
+            authorId: "reply-target-author-id",
+            authorIsBot: false,
+            authorName: "reply-target-display",
+            content: "reply target content",
+            createdAt: "2026-01-01 08:58:00 JST",
+            id: "reply-target-id",
+          },
+        }),
+      }),
+    );
+  });
+
+  it("履歴メッセージが返信の場合も返信先情報を含める", async () => {
+    const replyTarget = createFakeHistoryMessage({
+      authorDisplayName: "history-reply-target-display",
+      authorId: "history-reply-target-author-id",
+      content: "history reply target",
+      createdAt: new Date("2025-12-31T23:57:00.000Z"),
+      id: "history-reply-target-id",
+    });
+    const historyReply = createFakeHistoryMessage({
+      createdAt: new Date("2025-12-31T23:59:00.000Z"),
+      id: "history-reply",
+      referenceMessage: replyTarget,
+    });
+    const fetchHistory = vi.fn(async () => {
+      return new Collection<string, HistoryMessageLike>([["history-reply", historyReply]]);
+    });
+    const message = createMessage({ fetchHistory });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recentMessages: [
+          expect.objectContaining({
+            id: "history-reply",
+            replyTo: {
+              authorId: "history-reply-target-author-id",
+              authorIsBot: false,
+              authorName: "history-reply-target-display",
+              content: "history reply target",
+              createdAt: "2026-01-01 08:57:00 JST",
+              id: "history-reply-target-id",
+            },
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("返信先取得に失敗しても処理を継続する", async () => {
+    const fetchReference = vi.fn(async () => {
+      throw new Error("fetch reference failed");
+    });
+    const message = createMessage({
+      fetchReference,
+      referenceMessageId: "reply-target-id",
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const logger = createLogger();
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger,
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.not.objectContaining({
+          replyTo: expect.anything(),
+        }),
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Failed to fetch referenced message:",
+      expect.objectContaining({
+        referencedMessageId: "reply-target-id",
+      }),
+    );
   });
 
   it("指定外チャンネルは無反応", async () => {
@@ -424,18 +555,36 @@ function createMessage(input?: {
     before?: string;
     limit: number;
   }) => Promise<Collection<string, HistoryMessageLike>>;
+  fetchReference?: () => Promise<HistoryMessageLike>;
   mentionBot?: boolean;
+  referenceMessage?: HistoryMessageLike;
+  referenceMessageId?: string;
   reply?: MessageLike["reply"];
   sendTyping?: () => Promise<unknown>;
 }): MessageLike {
+  const reference = resolveReference(input?.referenceMessageId, input?.referenceMessage);
+  const fallbackReferenceMessage = input?.referenceMessage;
+  const fetchReference =
+    input?.fetchReference ??
+    (fallbackReferenceMessage
+      ? async () => {
+          return fallbackReferenceMessage;
+        }
+      : undefined);
+  const fetchHistory =
+    input?.fetchHistory ??
+    vi.fn(async () => {
+      return new Collection<string, HistoryMessageLike>();
+    });
   const channel: MessageLike["channel"] = {
     isThread: () => false,
     messages: {
-      fetch:
-        input?.fetchHistory ??
-        vi.fn(async () => {
-          return new Collection<string, HistoryMessageLike>();
-        }),
+      fetch: async (options: unknown) => {
+        if (!isFetchHistoryOptions(options)) {
+          throw new Error("invalid fetch options");
+        }
+        return fetchHistory(options);
+      },
     },
     name: input?.channelName === undefined ? "general" : input.channelName,
   };
@@ -466,29 +615,86 @@ function createMessage(input?: {
     },
     reply: input?.reply ?? (async () => undefined),
     attachments: createAttachmentCollection(input?.attachments ?? []),
+    ...(reference ? { reference } : {}),
+    ...(fetchReference ? { fetchReference } : {}),
   };
 }
 
-function createFakeHistoryMessage(input: { id: string; createdAt: Date }): HistoryMessageLike {
+function createFakeHistoryMessage(input: {
+  authorDisplayName?: string;
+  authorId?: string;
+  authorIsBot?: boolean;
+  authorUsername?: string;
+  content?: string;
+  id: string;
+  createdAt: Date;
+  referenceMessage?: HistoryMessageLike;
+  referenceMessageId?: string;
+  fetchReference?: () => Promise<HistoryMessageLike>;
+}): HistoryMessageLike {
+  const reference = resolveReference(input.referenceMessageId, input.referenceMessage);
+  const fallbackReferenceMessage = input.referenceMessage;
+  const fetchReference =
+    input.fetchReference ??
+    (fallbackReferenceMessage
+      ? async () => {
+          return fallbackReferenceMessage;
+        }
+      : undefined);
+
   return {
     author: {
-      bot: false,
-      id: "author",
-      username: "author",
+      bot: input.authorIsBot ?? false,
+      id: input.authorId ?? "author",
+      username: input.authorUsername ?? "author",
     },
     channelId: "channel",
-    content: "history",
+    content: input.content ?? "history",
     createdAt: input.createdAt,
     createdTimestamp: input.createdAt.getTime(),
     id: input.id,
     member: {
-      displayName: "display",
+      displayName: input.authorDisplayName ?? "display",
     },
     mentions: {
       has: () => false,
     },
     attachments: createAttachmentCollection([]),
+    ...(reference ? { reference } : {}),
+    ...(fetchReference ? { fetchReference } : {}),
   };
+}
+
+function resolveReference(
+  referenceMessageId: string | undefined,
+  referenceMessage: HistoryMessageLike | undefined,
+): { messageId: string } | undefined {
+  if (referenceMessageId) {
+    return { messageId: referenceMessageId };
+  }
+  if (referenceMessage) {
+    return { messageId: referenceMessage.id };
+  }
+  return undefined;
+}
+
+function isFetchHistoryOptions(value: unknown): value is {
+  before?: string;
+  limit: number;
+} {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  if (!("limit" in value) || typeof value.limit !== "number") {
+    return false;
+  }
+
+  if (!("before" in value) || value.before === undefined) {
+    return true;
+  }
+
+  return typeof value.before === "string";
 }
 
 function createAttachmentCollection(

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import type { RuntimeMessage } from "../context/types";
+
 import type { AiInput } from "./ai-service";
 import { formatMessageAuthorLabel } from "./message-author-label";
 
@@ -21,9 +23,7 @@ export async function buildPromptBundle(
   workspaceDir: string,
 ): Promise<PromptBundle> {
   const instructions = await buildInstructions(workspaceDir);
-  const recentMessages = input.recentMessages.map((message) => {
-    return `[${message.createdAt}] ${formatMessageAuthorLabel(message)}: ${message.content}`;
-  });
+  const recentMessages = input.recentMessages.map(formatRuntimeMessageForPrompt);
 
   const userRolePrompt = [
     "以下は現在の入力情報です。",
@@ -31,7 +31,7 @@ export async function buildPromptBundle(
     "直近のメッセージ:",
     ...(recentMessages.length > 0 ? recentMessages : ["(none)"]),
     "投稿されたメッセージ:",
-    `[${input.currentMessage.createdAt}] ${formatMessageAuthorLabel(input.currentMessage)}: ${input.currentMessage.content}`,
+    formatRuntimeMessageForPrompt(input.currentMessage),
   ].join("\n");
 
   return {
@@ -39,6 +39,25 @@ export async function buildPromptBundle(
     instructions,
     userRolePrompt,
   };
+}
+
+export function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
+  const lines: string[] = [];
+  if (message.replyTo) {
+    lines.push("返信先メッセージ:");
+    lines.push(formatRuntimeMessageLine(message.replyTo));
+  }
+  lines.push(formatRuntimeMessageLine(message));
+  return lines.join("\n");
+}
+
+function formatRuntimeMessageLine(
+  message: Pick<
+    RuntimeMessage,
+    "id" | "authorId" | "authorIsBot" | "authorName" | "content" | "createdAt"
+  >,
+): string {
+  return `[${message.createdAt}] ${formatMessageAuthorLabel(message)} (Message ID: ${message.id}): ${message.content}`;
 }
 
 export async function buildHeartbeatPromptBundle(

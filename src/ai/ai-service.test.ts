@@ -31,12 +31,56 @@ describe("CodexAppServerAiService", () => {
     expect(client.steerTurn).toHaveBeenCalledWith(
       "thread-1",
       "turn-1",
-      expect.stringContaining("author (ID: author-id): second"),
+      expect.stringContaining("author (ID: author-id) (Message ID: m2): second"),
     );
 
     client.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
     expect(client.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("steer プロンプトに返信先情報を含める", async () => {
+    const client = new FakeCodexClient();
+    const service = createService({
+      buildPromptBundle: vi.fn(async () => {
+        return createPromptBundle("初回プロンプト");
+      }),
+      createClient: vi.fn(() => client),
+    });
+
+    const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
+    await vi.waitFor(() => {
+      expect(client.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    await service.generateReply(
+      createAiInput("m2", "c1", "second", {
+        replyTo: {
+          authorId: "reply-author-id",
+          authorIsBot: false,
+          authorName: "reply-author",
+          content: "reply content",
+          createdAt: "2026-01-01 08:59:00 JST",
+          id: "reply-message-id",
+        },
+      }),
+    );
+
+    expect(client.steerTurn).toHaveBeenCalledWith(
+      "thread-1",
+      "turn-1",
+      expect.stringContaining("返信先メッセージ:"),
+    );
+    expect(client.steerTurn).toHaveBeenCalledWith(
+      "thread-1",
+      "turn-1",
+      expect.stringContaining(
+        "[2026-01-01 08:59:00 JST] reply-author (ID: reply-author-id) (Message ID: reply-message-id): reply content",
+      ),
+    );
+
+    client.completeTurn("turn-1", createCompletedTurnResult());
+    await firstPromise;
   });
 
   it("起動中に到着した後続メッセージも同一セッションに合流する", async () => {
@@ -379,7 +423,14 @@ function createPromptBundle(userRolePrompt: string): {
   };
 }
 
-function createAiInput(messageId: string, channelId: string, content: string): AiInput {
+function createAiInput(
+  messageId: string,
+  channelId: string,
+  content: string,
+  options: {
+    replyTo?: RuntimeMessage["replyTo"];
+  } = {},
+): AiInput {
   const currentMessage: RuntimeMessage = {
     authorId: "author-id",
     authorIsBot: false,
@@ -389,6 +440,7 @@ function createAiInput(messageId: string, channelId: string, content: string): A
     createdAt: "2026-01-01 09:00:00 JST",
     id: messageId,
     mentionedBot: false,
+    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
   };
 
   return {
