@@ -14,14 +14,16 @@
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
 - 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
-- AI 処理中の typing は Bot が直接メンションされた投稿に限り、8 秒間隔で送信する。
+- AI は必要時に MCP tool `start_typing` で入力中表示を開始できる（8 秒間隔）。
+- `start_typing` で開始した入力中表示は、Discord turn 完了時に自動停止する。
+- 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
 - 設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
 - 起動時に `LUNA_HOME` / `workspace` / `codex` を自動作成する。
 - Codex app-server は `codex app-server --listen stdio://` を使い、JSON-RPC で接続する。
 - `thread/start` は `ephemeral=true` / `personality="friendly"` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
-- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message` / `add_reaction` を提供する。
+- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message` / `add_reaction` / `start_typing` を提供する。
 - heartbeat は `cron` で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行し、`waitForCompletion=true` で重複実行を抑止する。
 - heartbeat プロンプトは以下の固定文を使用する。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。

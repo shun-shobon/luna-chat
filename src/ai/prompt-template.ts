@@ -11,8 +11,10 @@ export type PromptBundle = {
 };
 
 const WORKSPACE_INSTRUCTION_FILES = ["LUNA.md", "SOUL.md"] as const;
-const DEVELOPER_ROLE_PROMPT =
-  "メッセージに返信やリアクションをする場合は`discord`ツールを使うこと。";
+const DEVELOPER_ROLE_PROMPT = [
+  "メッセージに返信やリアクションをする場合は`discord`ツールを使うこと。",
+  "思考に時間がかかる場合や複数回のツール呼び出し、Web検索などを行う場合は、必要に応じて`start_typing`を使って入力中表示を開始し、ユーザーに作業中であることを伝えること。",
+].join("\n");
 
 export async function buildPromptBundle(
   input: AiInput,

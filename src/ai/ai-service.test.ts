@@ -193,6 +193,54 @@ describe("CodexAppServerAiService", () => {
     await expect(runPromise).rejects.toThrow("heartbeat failed");
     expect(client.close).toHaveBeenCalledTimes(1);
   });
+
+  it("turn完了時に onDiscordTurnCompleted を呼び出す", async () => {
+    const client = new FakeCodexClient();
+    const onDiscordTurnCompleted = vi.fn();
+    const service = createService({
+      createClient: vi.fn(() => client),
+      onDiscordTurnCompleted,
+    });
+
+    const runPromise = service.generateReply(createAiInput("m1", "c1", "first"));
+    await vi.waitFor(() => {
+      expect(client.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    client.completeTurn("turn-1", createCompletedTurnResult());
+    await runPromise;
+
+    expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(1);
+    expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c1");
+  });
+
+  it("旧turn完了では onDiscordTurnCompleted を呼び出さない", async () => {
+    const client = new FakeCodexClient();
+    client.steerTurn.mockRejectedValueOnce(new Error("expected turn mismatch"));
+    const onDiscordTurnCompleted = vi.fn();
+    const service = createService({
+      createClient: vi.fn(() => client),
+      onDiscordTurnCompleted,
+    });
+
+    const runPromise = service.generateReply(createAiInput("m1", "c1", "first"));
+    await vi.waitFor(() => {
+      expect(client.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    await service.generateReply(createAiInput("m2", "c1", "second"));
+    expect(client.startTurn).toHaveBeenCalledTimes(2);
+
+    client.completeTurn("turn-1", createCompletedTurnResult());
+    await vi.waitFor(() => {
+      expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(0);
+    });
+
+    client.completeTurn("turn-2", createCompletedTurnResult());
+    await runPromise;
+    expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(1);
+    expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c1");
+  });
 });
 
 describe("buildThreadConfig", () => {
@@ -275,6 +323,7 @@ type CreateServiceInput = {
     userRolePrompt: string;
   }>;
   createClient: () => FakeCodexClient;
+  onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
 };
 
 function createService(input: CreateServiceInput): CodexAppServerAiService {
@@ -289,14 +338,21 @@ function createService(input: CreateServiceInput): CodexAppServerAiService {
       return createPromptBundle(prompt);
     });
 
-  return new CodexAppServerAiService(createOptions(), {
+  const optionOverrides: Partial<CodexAppServerAiServiceOptions> = {};
+  if (input.onDiscordTurnCompleted) {
+    optionOverrides.onDiscordTurnCompleted = input.onDiscordTurnCompleted;
+  }
+
+  return new CodexAppServerAiService(createOptions(optionOverrides), {
     buildHeartbeatPromptBundle,
     buildPromptBundle,
     createClient: () => input.createClient(),
   });
 }
 
-function createOptions(): CodexAppServerAiServiceOptions {
+function createOptions(
+  overrides: Partial<CodexAppServerAiServiceOptions> = {},
+): CodexAppServerAiServiceOptions {
   return {
     approvalPolicy: "never",
     codexHomeDir: "/tmp/codex",
@@ -307,6 +363,7 @@ function createOptions(): CodexAppServerAiServiceOptions {
     reasoningEffort: "medium",
     sandbox: "workspace-write",
     timeoutMs: 60_000,
+    ...overrides,
   };
 }
 

@@ -24,6 +24,7 @@ type DiscordMessage = {
 
 export type DiscordMcpServerHandle = {
   close: () => Promise<void>;
+  stopTypingByChannelId: (channelId: string) => void;
   url: string;
 };
 
@@ -37,6 +38,7 @@ export type StartDiscordMcpServerOptions = {
 const TOKEN_ENV_NAME = "DISCORD_BOT_TOKEN";
 const DEFAULT_HISTORY_LIMIT = 30;
 const MAX_HISTORY_LIMIT = 100;
+const TYPING_INTERVAL_MS = 8_000;
 const DISCORD_MCP_HOSTNAME = "127.0.0.1";
 export const DISCORD_MCP_PATH = "/mcp";
 
@@ -70,6 +72,10 @@ const addReactionInputSchema = z.object({
     .describe("付与する絵文字。Unicodeまたはカスタム絵文字（name:id）を指定する。"),
 });
 
+const startTypingInputSchema = z.object({
+  channelId: z.string().min(1).describe("入力中表示を開始するDiscordチャンネルID。"),
+});
+
 const discordApiAttachmentSchema = z.object({
   filename: z.string(),
   id: z.string(),
@@ -99,7 +105,12 @@ export async function startDiscordMcpServer(
   const hostname = options.hostname ?? DISCORD_MCP_HOSTNAME;
   const port = options.port ?? 0;
   const rest = new REST({ version: "10" }).setToken(token);
-  const mcpServer = createDiscordMcpToolServer(rest, options.attachmentStore);
+  const typingLoopController = createTypingLoopController(rest);
+  const mcpServer = createDiscordMcpToolServer({
+    attachmentStore: options.attachmentStore,
+    rest,
+    typingLoopController,
+  });
   const transport = new StreamableHTTPTransport();
   let connectPromise: Promise<void> | undefined;
   const app = new Hono();
@@ -122,7 +133,11 @@ export async function startDiscordMcpServer(
 
   return {
     close: async () => {
+      typingLoopController.stopAllTyping();
       await stopServer(started.server);
+    },
+    stopTypingByChannelId: (channelId: string) => {
+      typingLoopController.stopTypingByChannelId(channelId);
     },
     url: createDiscordMcpServerUrl(hostname, started.port),
   };
@@ -133,10 +148,12 @@ export function createDiscordMcpServerUrl(hostname: string, port: number): strin
   return `http://${formattedHost}:${port}${DISCORD_MCP_PATH}`;
 }
 
-function createDiscordMcpToolServer(
-  rest: REST,
-  attachmentStore: DiscordAttachmentStore,
-): McpServer {
+function createDiscordMcpToolServer(input: {
+  attachmentStore: DiscordAttachmentStore;
+  rest: REST;
+  typingLoopController: TypingLoopController;
+}): McpServer {
+  const { attachmentStore, rest, typingLoopController } = input;
   const server = new McpServer({
     name: "luna-chat-discord-mcp",
     version: "0.1.0",
@@ -245,7 +262,100 @@ function createDiscordMcpToolServer(
     },
   );
 
+  server.registerTool(
+    "start_typing",
+    {
+      description: "Discordチャンネルの入力中表示を開始する。turn 完了時に自動停止される。",
+      inputSchema: startTypingInputSchema,
+      title: "Discord入力中表示開始",
+    },
+    async ({ channelId }) => {
+      const payload = await typingLoopController.startTypingByChannelId(channelId);
+      return {
+        content: [{ text: JSON.stringify(payload), type: "text" }],
+        structuredContent: payload,
+      };
+    },
+  );
+
   return server;
+}
+
+type TypingLoopController = {
+  startTypingByChannelId: (channelId: string) => Promise<{ alreadyRunning: boolean; ok: true }>;
+  stopTypingByChannelId: (channelId: string) => void;
+  stopAllTyping: () => void;
+};
+
+type StartTypingLoopInput = {
+  activeTypingLoops: Map<string, ReturnType<typeof setInterval>>;
+  channelId: string;
+  rest: Pick<REST, "post">;
+  setIntervalFn?: typeof setInterval;
+};
+
+type StopTypingLoopInput = {
+  activeTypingLoops: Map<string, ReturnType<typeof setInterval>>;
+  channelId: string;
+  clearIntervalFn?: typeof clearInterval;
+};
+
+export async function startTypingLoop(
+  input: StartTypingLoopInput,
+): Promise<{ alreadyRunning: boolean; ok: true }> {
+  if (input.activeTypingLoops.has(input.channelId)) {
+    return {
+      alreadyRunning: true,
+      ok: true,
+    };
+  }
+
+  await sendTypingIndicator(input.rest, input.channelId);
+
+  const setIntervalFn = input.setIntervalFn ?? setInterval;
+  const interval = setIntervalFn(() => {
+    void sendTypingIndicator(input.rest, input.channelId).catch((error: unknown) => {
+      logger.warn("Failed to send typing indicator via MCP:", error);
+    });
+  }, TYPING_INTERVAL_MS);
+
+  input.activeTypingLoops.set(input.channelId, interval);
+  return {
+    alreadyRunning: false,
+    ok: true,
+  };
+}
+
+export function stopTypingLoop(input: StopTypingLoopInput): void {
+  const activeInterval = input.activeTypingLoops.get(input.channelId);
+  if (!activeInterval) {
+    return;
+  }
+
+  const clearIntervalFn = input.clearIntervalFn ?? clearInterval;
+  clearIntervalFn(activeInterval);
+  input.activeTypingLoops.delete(input.channelId);
+}
+
+export function stopAllTypingLoops(input: {
+  activeTypingLoops: Map<string, ReturnType<typeof setInterval>>;
+  clearIntervalFn?: typeof clearInterval;
+}): void {
+  for (const channelId of input.activeTypingLoops.keys()) {
+    if (input.clearIntervalFn) {
+      stopTypingLoop({
+        activeTypingLoops: input.activeTypingLoops,
+        channelId,
+        clearIntervalFn: input.clearIntervalFn,
+      });
+      continue;
+    }
+
+    stopTypingLoop({
+      activeTypingLoops: input.activeTypingLoops,
+      channelId,
+    });
+  }
 }
 
 type MessageReactionInput = {
@@ -268,6 +378,35 @@ export async function addMessageReaction(
   return {
     ok: true,
   };
+}
+
+function createTypingLoopController(rest: Pick<REST, "post">): TypingLoopController {
+  const activeTypingLoops = new Map<string, ReturnType<typeof setInterval>>();
+
+  return {
+    startTypingByChannelId: async (channelId) => {
+      return await startTypingLoop({
+        activeTypingLoops,
+        channelId,
+        rest,
+      });
+    },
+    stopAllTyping: () => {
+      stopAllTypingLoops({
+        activeTypingLoops,
+      });
+    },
+    stopTypingByChannelId: (channelId) => {
+      stopTypingLoop({
+        activeTypingLoops,
+        channelId,
+      });
+    },
+  };
+}
+
+async function sendTypingIndicator(rest: Pick<REST, "post">, channelId: string): Promise<void> {
+  await rest.post(Routes.channelTyping(channelId));
 }
 
 async function startServer(input: {

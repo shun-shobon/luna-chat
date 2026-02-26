@@ -50,6 +50,9 @@ const aiServiceOptionsBase: Omit<CodexAppServerAiServiceOptions, "timeoutMs"> = 
 };
 const discordAiService = new CodexAppServerAiService({
   ...aiServiceOptionsBase,
+  onDiscordTurnCompleted: (channelId) => {
+    discordMcpServer.stopTypingByChannelId(channelId);
+  },
   timeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD,
 });
 const heartbeatAiService = new CodexAppServerAiService({

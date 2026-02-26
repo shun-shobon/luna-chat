@@ -4,7 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DiscordAttachmentStore } from "../attachments/discord-attachment-store";
 
-import { addMessageReaction, DISCORD_MCP_PATH, startDiscordMcpServer } from "./discord-mcp-server";
+import {
+  addMessageReaction,
+  DISCORD_MCP_PATH,
+  startDiscordMcpServer,
+  startTypingLoop,
+  stopAllTypingLoops,
+  stopTypingLoop,
+} from "./discord-mcp-server";
 
 const startedServers: Array<{ close: () => Promise<void>; url: string }> = [];
 
@@ -81,11 +88,129 @@ describe("addMessageReaction", () => {
   });
 });
 
+describe("typing loop helpers", () => {
+  it("starts typing immediately and repeats periodically", async () => {
+    vi.useFakeTimers();
+    try {
+      const rest = createTypingRestClientStub();
+      const activeTypingLoops = new Map<string, ReturnType<typeof setInterval>>();
+
+      await expect(
+        startTypingLoop({
+          activeTypingLoops,
+          channelId: "channel-1",
+          rest,
+        }),
+      ).resolves.toEqual({
+        alreadyRunning: false,
+        ok: true,
+      });
+      expect(rest.post).toHaveBeenCalledTimes(1);
+      expect(rest.post).toHaveBeenCalledWith(Routes.channelTyping("channel-1"));
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(rest.post).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps existing loop when start is called repeatedly", async () => {
+    vi.useFakeTimers();
+    try {
+      const rest = createTypingRestClientStub();
+      const activeTypingLoops = new Map<string, ReturnType<typeof setInterval>>();
+
+      await startTypingLoop({
+        activeTypingLoops,
+        channelId: "channel-1",
+        rest,
+      });
+      await expect(
+        startTypingLoop({
+          activeTypingLoops,
+          channelId: "channel-1",
+          rest,
+        }),
+      ).resolves.toEqual({
+        alreadyRunning: true,
+        ok: true,
+      });
+
+      expect(activeTypingLoops.size).toBe(1);
+      expect(rest.post).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops loop by channel id", async () => {
+    vi.useFakeTimers();
+    try {
+      const rest = createTypingRestClientStub();
+      const activeTypingLoops = new Map<string, ReturnType<typeof setInterval>>();
+
+      await startTypingLoop({
+        activeTypingLoops,
+        channelId: "channel-1",
+        rest,
+      });
+      stopTypingLoop({
+        activeTypingLoops,
+        channelId: "channel-1",
+      });
+
+      await vi.advanceTimersByTimeAsync(24_000);
+      expect(rest.post).toHaveBeenCalledTimes(1);
+      expect(activeTypingLoops.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops all running loops", async () => {
+    vi.useFakeTimers();
+    try {
+      const rest = createTypingRestClientStub();
+      const activeTypingLoops = new Map<string, ReturnType<typeof setInterval>>();
+
+      await startTypingLoop({
+        activeTypingLoops,
+        channelId: "channel-1",
+        rest,
+      });
+      await startTypingLoop({
+        activeTypingLoops,
+        channelId: "channel-2",
+        rest,
+      });
+      stopAllTypingLoops({
+        activeTypingLoops,
+      });
+
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(rest.post).toHaveBeenCalledTimes(2);
+      expect(activeTypingLoops.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 function createRestClientStub() {
   const put = vi.fn(async () => {});
+  const post = vi.fn(async () => {});
   return {
+    post,
     put,
-  } satisfies Pick<REST, "put">;
+  } satisfies Pick<REST, "post" | "put">;
+}
+
+function createTypingRestClientStub() {
+  const post = vi.fn(async () => {});
+  return {
+    post,
+  } satisfies Pick<REST, "post">;
 }
 
 function createAttachmentStoreStub(): DiscordAttachmentStore {

@@ -16,6 +16,7 @@ describe("buildPromptBundle", () => {
         "あなたはLunaで動作しているパーソナルアシスタントです。",
       );
       expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
+      expect(promptBundle.developerRolePrompt).toContain("`start_typing`");
       expect(promptBundle.userRolePrompt).toContain("チャンネル名: channel-name (ID: channel-id)");
       expect(promptBundle.userRolePrompt).toContain("直近のメッセージ:");
       expect(promptBundle.userRolePrompt).toContain("投稿されたメッセージ:");
@@ -105,6 +106,7 @@ describe("buildHeartbeatPromptBundle", () => {
         "あなたはLunaで動作しているパーソナルアシスタントです。",
       );
       expect(promptBundle.developerRolePrompt).toContain("`discord`ツール");
+      expect(promptBundle.developerRolePrompt).toContain("`start_typing`");
       expect(promptBundle.userRolePrompt).toBe("HEARTBEAT.mdを確認し、作業を行ってください。");
       expect(promptBundle.userRolePrompt).not.toContain("チャンネル名:");
     });

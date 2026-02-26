@@ -33,6 +33,7 @@ export type CodexAppServerAiServiceOptions = {
   cwd: string;
   discordMcpServerUrl: string;
   model: string;
+  onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
   reasoningEffort: ReasoningEffort;
   sandbox: string;
   timeoutMs: number;
@@ -317,11 +318,23 @@ export class CodexAppServerAiService implements AiService {
           return;
         }
 
+        this.runOnDiscordTurnCompleted(session.channelId);
         this.activeSessions.delete(session.channelId);
         session.activeTurnId = undefined;
         session.turnCompletion = undefined;
         session.client.close();
       });
+  }
+
+  private runOnDiscordTurnCompleted(channelId: string): void {
+    const callback = this.options.onDiscordTurnCompleted;
+    if (!callback) {
+      return;
+    }
+
+    void Promise.resolve(callback(channelId)).catch((error: unknown) => {
+      logger.warn("Failed to run onDiscordTurnCompleted callback:", error);
+    });
   }
 
   private disposeSession(session: ActiveChannelSession): void {
