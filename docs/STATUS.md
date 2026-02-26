@@ -14,6 +14,9 @@
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
 - 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
+- `send_message` は任意で `replyToMessageId` を指定でき、指定時は返信投稿として送信する。
+- `send_message` の返信投稿は `fail_if_not_exists=false` で送信し、返信先が見つからない場合も通常投稿として継続する。
+- `send_message` の返信投稿では `allowed_mentions.replied_user=true` として返信先ユーザーへ通知する。
 - AI は必要時に MCP tool `start_typing` で入力中表示を開始できる（8 秒間隔）。
 - `start_typing` で開始した入力中表示は、Discord turn 完了時に自動停止する。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
@@ -23,7 +26,7 @@
 - Codex app-server は `codex app-server --listen stdio://` を使い、JSON-RPC で接続する。
 - `thread/start` は `ephemeral=true` / `personality="friendly"` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
-- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message` / `add_reaction` / `start_typing` を提供する。
+- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（任意 `replyToMessageId` 対応） / `add_reaction` / `start_typing` を提供する。
 - heartbeat は `cron` で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行し、`waitForCompletion=true` で重複実行を抑止する。
 - heartbeat プロンプトは以下の固定文を使用する。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。

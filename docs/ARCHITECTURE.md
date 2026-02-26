@@ -37,7 +37,7 @@
   - プロンプト組み立て（`instructions` / `developerRolePrompt` / `userRolePrompt`）
 - `src/mcp`
   - Discord MCP サーバー（`/mcp`）
-  - `read_message_history` / `send_message` / `add_reaction` / `start_typing`
+  - `read_message_history` / `send_message`（任意 `replyToMessageId` 対応） / `add_reaction` / `start_typing`
 - `src/heartbeat`
   - cron 起点の定期 AI 実行
 
@@ -80,7 +80,7 @@
 4. Bot 直接メンション時のみ typing 表示ループを開始
 5. 直近履歴 10 件を取得し、時系列昇順で整形
 6. AI へ入力（チャンネル名 + 現在メッセージ + 直近履歴）
-7. AI が必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` を tool call
+7. AI が必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` を tool call（`send_message` は任意で返信先IDを指定可能）
 8. メンション起点の typing ループはハンドラ終了時に停止
 9. `start_typing` 起点の typing ループは Discord turn 完了時に停止
 
@@ -141,5 +141,5 @@
 1. 会話ログは永続化しない。
 2. 初期文脈として直近 10 件を付与し、追加は tool use で取得する。
 3. メンション有無は入力に含めるが、ハンドラの優先制御には使わない。
-4. 返信送信・リアクション付与・追加履歴取得・AI主導typing開始は MCP tool 経由で実施する。
+4. 返信送信・リアクション付与・追加履歴取得・AI主導typing開始は MCP tool 経由で実施し、返信投稿は `send_message.replyToMessageId` で表現する。
 5. ワークスペースドキュメントは読み込み対象だが、自動更新フローは未実装。

@@ -7,6 +7,7 @@ import type { DiscordAttachmentStore } from "../attachments/discord-attachment-s
 import {
   addMessageReaction,
   DISCORD_MCP_PATH,
+  sendMessage,
   startDiscordMcpServer,
   startTypingLoop,
   stopAllTypingLoops,
@@ -85,6 +86,73 @@ describe("addMessageReaction", () => {
     expect(rest.put).toHaveBeenCalledWith(
       Routes.channelMessageOwnReaction("channel-id", "message-id", "party:987654321"),
     );
+  });
+});
+
+describe("sendMessage", () => {
+  it("throws when text is blank", async () => {
+    await expect(
+      sendMessage(createTypingRestClientStub(), {
+        channelId: "channel-id",
+        text: "   ",
+      }),
+    ).rejects.toThrow("text must not be empty.");
+  });
+
+  it("throws when replyToMessageId is blank", async () => {
+    await expect(
+      sendMessage(createTypingRestClientStub(), {
+        channelId: "channel-id",
+        replyToMessageId: "   ",
+        text: "hello",
+      }),
+    ).rejects.toThrow("replyToMessageId must not be empty.");
+  });
+
+  it("sends normal message when replyToMessageId is not specified", async () => {
+    const rest = createTypingRestClientStub();
+
+    await expect(
+      sendMessage(rest, {
+        channelId: "channel-id",
+        text: "  hello  ",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(rest.post).toHaveBeenCalledWith(Routes.channelMessages("channel-id"), {
+      body: {
+        allowed_mentions: {
+          parse: [],
+        },
+        content: "hello",
+      },
+    });
+  });
+
+  it("sends reply message when replyToMessageId is specified", async () => {
+    const rest = createTypingRestClientStub();
+
+    await expect(
+      sendMessage(rest, {
+        channelId: "channel-id",
+        replyToMessageId: "  reply-message-id  ",
+        text: "hello",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(rest.post).toHaveBeenCalledWith(Routes.channelMessages("channel-id"), {
+      body: {
+        allowed_mentions: {
+          parse: [],
+          replied_user: true,
+        },
+        content: "hello",
+        message_reference: {
+          fail_if_not_exists: false,
+          message_id: "reply-message-id",
+        },
+      },
+    });
   });
 });
 

@@ -60,6 +60,11 @@ const fetchHistoryInputSchema = z.object({
 
 const sendReplyInputSchema = z.object({
   channelId: z.string().min(1).describe("送信先のDiscordチャンネルID。"),
+  replyToMessageId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("返信先メッセージID。指定した場合は返信として投稿する。"),
   text: z.string().min(1).describe("チャンネルに投稿するメッセージ本文。"),
 });
 
@@ -217,24 +222,12 @@ function createDiscordMcpToolServer(input: {
       inputSchema: sendReplyInputSchema,
       title: "Discord送信",
     },
-    async ({ channelId, text }) => {
-      const trimmedText = text.trim();
-      if (trimmedText.length === 0) {
-        throw new Error("text must not be empty.");
-      }
-
-      await rest.post(Routes.channelMessages(channelId), {
-        body: {
-          allowed_mentions: {
-            parse: [],
-          },
-          content: trimmedText,
-        },
+    async ({ channelId, replyToMessageId, text }) => {
+      const payload = await sendMessage(rest, {
+        channelId,
+        text,
+        ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
       });
-
-      const payload = {
-        ok: true,
-      };
       return {
         content: [{ text: JSON.stringify(payload), type: "text" }],
         structuredContent: payload,
@@ -363,6 +356,49 @@ type MessageReactionInput = {
   emoji: string;
   messageId: string;
 };
+
+type SendMessageInput = {
+  channelId: string;
+  replyToMessageId?: string;
+  text: string;
+};
+
+export async function sendMessage(
+  rest: Pick<REST, "post">,
+  input: SendMessageInput,
+): Promise<{ ok: true }> {
+  const trimmedText = input.text.trim();
+  if (trimmedText.length === 0) {
+    throw new Error("text must not be empty.");
+  }
+
+  const trimmedReplyToMessageId = input.replyToMessageId?.trim();
+  if (input.replyToMessageId !== undefined && !trimmedReplyToMessageId) {
+    throw new Error("replyToMessageId must not be empty.");
+  }
+
+  await rest.post(Routes.channelMessages(input.channelId), {
+    body: {
+      allowed_mentions: {
+        parse: [],
+        ...(trimmedReplyToMessageId ? { replied_user: true } : {}),
+      },
+      content: trimmedText,
+      ...(trimmedReplyToMessageId
+        ? {
+            message_reference: {
+              fail_if_not_exists: false,
+              message_id: trimmedReplyToMessageId,
+            },
+          }
+        : {}),
+    },
+  });
+
+  return {
+    ok: true,
+  };
+}
 
 export async function addMessageReaction(
   rest: Pick<REST, "put">,
