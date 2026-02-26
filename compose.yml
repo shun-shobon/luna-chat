@@ -1,9 +1,6 @@
 services:
   luna-chat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
+    image: ghcr.io/shun-shobon/luna-chat:latest
     env_file:
       - .env
     volumes:
