@@ -1,6 +1,6 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 
-import type { AiService } from "../ai/ai-service";
+import type { AiService } from "../ai/application/channel-session-coordinator";
 
 import { startHeartbeatRunner, type HeartbeatCronJobOptions } from "./heartbeat-runner";
 

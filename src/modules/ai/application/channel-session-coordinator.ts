@@ -1,20 +1,15 @@
-import type { RuntimeMessage } from "../context/types";
-import { logger } from "../shared/logger";
+import type { ReasoningEffort } from "../../../ai/codex-generated/ReasoningEffort";
+import { logger } from "../../../shared/logger";
+import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
+import type { AiRuntimePort, StartedTurn } from "../ports/outbound/ai-runtime-port";
 
 import {
-  CodexAppServerClient,
-  type CodexAppServerClientOptions,
-  type StartedTurn,
-  type TurnResult,
-} from "./codex-app-server-client";
-import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
-import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-template";
-
-export type AiInput = {
-  channelName: string;
-  currentMessage: RuntimeMessage;
-  recentMessages: RuntimeMessage[];
-};
+  buildHeartbeatPromptBundle,
+  buildPromptBundle,
+  buildSteerPrompt,
+  type AiInput,
+} from "./prompt-composer";
+import { buildThreadConfig } from "./thread-config-factory";
 
 export type HeartbeatInput = {
   prompt: string;
@@ -25,44 +20,17 @@ export interface AiService {
   generateHeartbeat(input: HeartbeatInput): Promise<void>;
 }
 
-export type CodexAppServerAiServiceOptions = {
-  approvalPolicy: string;
-  command: readonly [string, ...string[]];
-  codexHomeDir: string;
-  cwd: string;
+export type ChannelSessionCoordinatorOptions = {
+  createRuntime: () => AiRuntimePort;
   discordMcpServerUrl: string;
-  model: string;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
   reasoningEffort: ReasoningEffort;
-  sandbox: string;
-  timeoutMs: number;
-};
-
-type PromptBundle = Awaited<ReturnType<typeof buildPromptBundle>>;
-type PromptBundleBuilder = (input: AiInput, cwd: string) => Promise<PromptBundle>;
-type HeartbeatPromptBundleBuilder = (workspaceDir: string, prompt: string) => Promise<PromptBundle>;
-
-type CodexAppServerClientLike = {
-  close: () => void;
-  initialize: () => Promise<void>;
-  startThread: (input: {
-    instructions: string;
-    developerRolePrompt: string;
-    config?: Record<string, unknown>;
-  }) => Promise<string>;
-  startTurn: (threadId: string, prompt: string) => Promise<StartedTurn>;
-  steerTurn: (threadId: string, expectedTurnId: string, prompt: string) => Promise<void>;
-};
-
-type CodexAppServerAiServiceDependencies = {
-  buildPromptBundle?: PromptBundleBuilder;
-  buildHeartbeatPromptBundle?: HeartbeatPromptBundleBuilder;
-  createClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike;
+  workspaceDir: string;
 };
 
 type ActiveChannelSession = {
   channelId: string;
-  client: CodexAppServerClientLike;
+  runtime: AiRuntimePort;
   phase: "booting" | "running";
   opChain: Promise<void>;
   threadId: string | undefined;
@@ -70,27 +38,10 @@ type ActiveChannelSession = {
   turnCompletion: Promise<void> | undefined;
 };
 
-export class CodexAppServerAiService implements AiService {
+export class ChannelSessionCoordinator implements AiService {
   private readonly activeSessions = new Map<string, ActiveChannelSession>();
-  private readonly buildPromptBundleFn: PromptBundleBuilder;
-  private readonly buildHeartbeatPromptBundleFn: HeartbeatPromptBundleBuilder;
-  private readonly createClientFn: (
-    options: CodexAppServerClientOptions,
-  ) => CodexAppServerClientLike;
 
-  constructor(
-    private readonly options: CodexAppServerAiServiceOptions,
-    dependencies: CodexAppServerAiServiceDependencies = {},
-  ) {
-    this.buildPromptBundleFn = dependencies.buildPromptBundle ?? buildPromptBundle;
-    this.buildHeartbeatPromptBundleFn =
-      dependencies.buildHeartbeatPromptBundle ?? buildHeartbeatPromptBundle;
-    this.createClientFn =
-      dependencies.createClient ??
-      ((clientOptions) => {
-        return new CodexAppServerClient(clientOptions);
-      });
-  }
+  constructor(private readonly options: ChannelSessionCoordinatorOptions) {}
 
   async generateReply(input: AiInput): Promise<void> {
     const handled = await this.tryHandleExistingSession(input);
@@ -102,20 +53,23 @@ export class CodexAppServerAiService implements AiService {
   }
 
   async generateHeartbeat(input: HeartbeatInput): Promise<void> {
-    const client = this.createClient();
+    const runtime = this.options.createRuntime();
     let threadId: string | undefined;
     let turnId: string | undefined;
 
     try {
-      await client.initialize();
-      const promptBundle = await this.buildHeartbeatPromptBundleFn(this.options.cwd, input.prompt);
-      threadId = await client.startThread({
+      await runtime.initialize();
+      const promptBundle = await buildHeartbeatPromptBundle(
+        this.options.workspaceDir,
+        input.prompt,
+      );
+      threadId = await runtime.startThread({
         config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
 
-      const startedTurn = await client.startTurn(threadId, promptBundle.userRolePrompt);
+      const startedTurn = await runtime.startTurn(threadId, promptBundle.userRolePrompt);
       turnId = startedTurn.turnId;
       const turnResult = await startedTurn.completion;
       logTurnResult(threadId, turnId, turnResult);
@@ -132,7 +86,7 @@ export class CodexAppServerAiService implements AiService {
       });
       throw error;
     } finally {
-      client.close();
+      runtime.close();
     }
   }
 
@@ -163,10 +117,10 @@ export class CodexAppServerAiService implements AiService {
 
     try {
       await this.enqueueSessionOperation(session, async () => {
-        await session.client.initialize();
-        const promptBundle = await this.buildPromptBundleFn(input, this.options.cwd);
+        await session.runtime.initialize();
+        const promptBundle = await buildPromptBundle(input, this.options.workspaceDir);
 
-        const threadId = await session.client.startThread({
+        const threadId = await session.runtime.startThread({
           config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
           developerRolePrompt: promptBundle.developerRolePrompt,
           instructions: promptBundle.instructions,
@@ -212,7 +166,7 @@ export class CodexAppServerAiService implements AiService {
     const expectedTurnId = session.activeTurnId;
 
     try {
-      await session.client.steerTurn(session.threadId, expectedTurnId, steerPrompt);
+      await session.runtime.steerTurn(session.threadId, expectedTurnId, steerPrompt);
       logger.debug("ai.turn.steered", {
         channelId: session.channelId,
         messageId: currentMessage.id,
@@ -236,29 +190,17 @@ export class CodexAppServerAiService implements AiService {
   }
 
   private createSession(channelId: string): ActiveChannelSession {
-    const client = this.createClient();
+    const runtime = this.options.createRuntime();
 
     return {
       channelId,
-      client,
+      runtime,
       opChain: Promise.resolve(),
       phase: "booting",
       activeTurnId: undefined,
       threadId: undefined,
       turnCompletion: undefined,
     };
-  }
-
-  private createClient(): CodexAppServerClientLike {
-    return this.createClientFn({
-      approvalPolicy: this.options.approvalPolicy,
-      command: this.options.command,
-      codexHomeDir: this.options.codexHomeDir,
-      cwd: this.options.cwd,
-      model: this.options.model,
-      sandbox: this.options.sandbox,
-      timeoutMs: this.options.timeoutMs,
-    });
   }
 
   private async startTurn(
@@ -273,7 +215,7 @@ export class CodexAppServerAiService implements AiService {
       throw new Error("Thread is not started yet.");
     }
 
-    const startedTurn = await session.client.startTurn(threadId, input.prompt);
+    const startedTurn = await session.runtime.startTurn(threadId, input.prompt);
     session.phase = "running";
     session.activeTurnId = startedTurn.turnId;
 
@@ -321,7 +263,7 @@ export class CodexAppServerAiService implements AiService {
         this.activeSessions.delete(session.channelId);
         session.activeTurnId = undefined;
         session.turnCompletion = undefined;
-        session.client.close();
+        session.runtime.close();
       });
   }
 
@@ -342,7 +284,7 @@ export class CodexAppServerAiService implements AiService {
     }
     session.activeTurnId = undefined;
     session.turnCompletion = undefined;
-    session.client.close();
+    session.runtime.close();
   }
 
   private async enqueueSessionOperation<T>(
@@ -359,7 +301,21 @@ export class CodexAppServerAiService implements AiService {
   }
 }
 
-function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {
+function logTurnResult(
+  threadId: string,
+  turnId: string,
+  turnResult: {
+    assistantText: string;
+    errorMessage?: string;
+    mcpToolCalls: Array<{
+      arguments: unknown;
+      server: string;
+      status: "completed" | "failed" | "inProgress";
+      tool: string;
+    }>;
+    status: "completed" | "failed" | "interrupted";
+  },
+): void {
   logger.debug("ai.turn.assistant_output", {
     assistantText: turnResult.assistantText,
     threadId,
@@ -381,20 +337,4 @@ function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult)
     threadId,
     turnId,
   });
-}
-
-export function buildThreadConfig(
-  reasoningEffort: ReasoningEffort,
-  discordMcpServerUrl: string,
-): Record<string, unknown> {
-  const config: Record<string, unknown> = {
-    model_reasoning_effort: reasoningEffort,
-    mcp_servers: {
-      discord: {
-        url: discordMcpServerUrl,
-      },
-    },
-  };
-
-  return config;
 }

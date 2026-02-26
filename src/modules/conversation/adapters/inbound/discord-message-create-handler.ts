@@ -1,19 +1,25 @@
 import { Collection } from "discord.js";
 
-import type { AiService } from "../ai/ai-service";
-import {
-  appendAttachmentMarkersFromSources,
-  type DiscordAttachmentInput,
-  type DiscordAttachmentStore,
-} from "../attachments/discord-attachment-store";
-import { formatDateTimeJst } from "../context/date-time";
-import { toRuntimeReactions } from "../context/runtime-reaction";
-import type { RuntimeMessage, RuntimeReplyMessage } from "../context/types";
-import { evaluateReplyPolicy } from "../policy/reply-policy";
+import type { DiscordAttachmentStore } from "../../../../attachments/discord-attachment-store";
+import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
+import type {
+  RuntimeMessage,
+  RuntimeReaction,
+  RuntimeReplyMessage,
+} from "../../domain/runtime-message";
+import { toRuntimeReactions } from "../../domain/runtime-reaction";
+
+export type { RuntimeMessage, RuntimeReaction, RuntimeReplyMessage };
 
 type AttachmentSource = {
   id: string;
   name?: string | null;
+  url: string;
+};
+
+type DiscordAttachmentInput = {
+  id: string;
+  name: string | null;
   url: string;
 };
 
@@ -97,20 +103,39 @@ export type LoggerLike = {
   error: (...arguments_: unknown[]) => void;
 };
 
+export type GenerateReplyInput = {
+  channelName: string;
+  currentMessage: RuntimeMessage;
+  recentMessages: RuntimeMessage[];
+};
+
+export type ReplyGenerator = {
+  generateReply: (input: GenerateReplyInput) => Promise<void>;
+};
+
 export type HandleMessageInput = {
   attachmentStore: DiscordAttachmentStore;
   message: MessageLike;
   botUserId: string;
   allowedChannelIds: ReadonlySet<string>;
-  aiService: AiService;
+  aiService: ReplyGenerator;
   logger: LoggerLike;
+  typingLifecycleRegistry?: ReturnType<typeof createTypingLifecycleRegistry>;
+};
+
+type ReplyPolicyInput = {
+  allowedChannelIds: ReadonlySet<string>;
+  channelId: string;
+  isThread: boolean;
+  isDm: boolean;
 };
 
 const INITIAL_PROMPT_HISTORY_LIMIT = 10;
-const TYPING_INTERVAL_MS = 8_000;
+const defaultTypingLifecycleRegistry = createTypingLifecycleRegistry();
 
 export async function handleMessageCreate(input: HandleMessageInput): Promise<void> {
   const { message } = input;
+  const typingLifecycleRegistry = input.typingLifecycleRegistry ?? defaultTypingLifecycleRegistry;
   if (message.author.id === input.botUserId) {
     return;
   }
@@ -138,11 +163,16 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   });
 
   const stopTypingLoop = currentMessage.mentionedBot
-    ? startTypingLoop({
-        channel: message.channel,
-        logger: input.logger,
-      })
+    ? typingLifecycleRegistry.start({
+        channelId: message.channelId,
+        onTypingError: (error) => {
+          input.logger.warn("Failed to send typing indicator:", error);
+        },
+        sendTyping: toSendTyping(message.channel),
+        source: `message:${message.id}`,
+      }).stop
     : () => undefined;
+
   try {
     const recentMessages = await fetchRecentMessages({
       attachmentStore: input.attachmentStore,
@@ -160,6 +190,28 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   } finally {
     stopTypingLoop();
   }
+}
+
+function toSendTyping(
+  channel: Pick<MessageLike["channel"], "sendTyping">,
+): (() => Promise<unknown>) | undefined {
+  if (!channel.sendTyping) {
+    return undefined;
+  }
+
+  return channel.sendTyping.bind(channel);
+}
+
+function evaluateReplyPolicy(input: ReplyPolicyInput): { shouldHandle: boolean } {
+  if (input.isDm || input.isThread) {
+    return { shouldHandle: false };
+  }
+
+  if (!input.allowedChannelIds.has(input.channelId)) {
+    return { shouldHandle: false };
+  }
+
+  return { shouldHandle: true };
 }
 
 async function toRuntimeMessage(input: {
@@ -361,6 +413,58 @@ function toRuntimeReactionsFromSource(
   );
 }
 
+function formatDateTimeJst(date: Date): string {
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1_000);
+  const year = String(jstDate.getUTCFullYear());
+  const month = String(jstDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(jstDate.getUTCDate()).padStart(2, "0");
+  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
+  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(jstDate.getUTCSeconds()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} JST`;
+}
+
+async function appendAttachmentMarkersFromSources(input: {
+  attachmentStore: DiscordAttachmentStore;
+  attachments: readonly DiscordAttachmentInput[];
+  channelId: string;
+  content: string;
+  logger: Pick<LoggerLike, "warn">;
+  messageId: string;
+}): Promise<string> {
+  const attachmentPaths: string[] = [];
+  for (const attachment of input.attachments) {
+    try {
+      const savedPath = await input.attachmentStore.saveAttachment(attachment);
+      attachmentPaths.push(savedPath);
+    } catch (error: unknown) {
+      input.logger.warn("Failed to save Discord attachment:", {
+        attachmentId: attachment.id,
+        channelId: input.channelId,
+        error,
+        messageId: input.messageId,
+        url: attachment.url,
+      });
+    }
+  }
+
+  return appendAttachmentMarkers(input.content, attachmentPaths);
+}
+
+function appendAttachmentMarkers(content: string, attachmentPaths: readonly string[]): string {
+  if (attachmentPaths.length === 0) {
+    return content;
+  }
+
+  const markerLine = attachmentPaths.map((path) => `<attachment:${path}>`).join(" ");
+  if (content.length === 0) {
+    return markerLine;
+  }
+
+  return `${content}\n${markerLine}`;
+}
+
 function resolveChannelName(channelName: string | null | undefined): string {
   if (typeof channelName !== "string") {
     return "unknown";
@@ -372,27 +476,4 @@ function resolveChannelName(channelName: string | null | undefined): string {
   }
 
   return trimmed;
-}
-
-function startTypingLoop(input: {
-  channel: MessageLike["channel"];
-  logger: LoggerLike;
-}): () => void {
-  if (!input.channel.sendTyping) {
-    return () => undefined;
-  }
-  const sendTyping = input.channel.sendTyping.bind(input.channel);
-
-  const runSendTyping = (): void => {
-    void sendTyping().catch((error: unknown) => {
-      input.logger.warn("Failed to send typing indicator:", error);
-    });
-  };
-
-  runSendTyping();
-  const interval = setInterval(runSendTyping, TYPING_INTERVAL_MS);
-
-  return () => {
-    clearInterval(interval);
-  };
 }

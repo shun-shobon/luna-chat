@@ -2,7 +2,7 @@ import type { REST } from "discord.js";
 import { Routes } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DiscordAttachmentStore } from "../attachments/discord-attachment-store";
+import type { DiscordAttachmentStore } from "../../../attachments/discord-attachment-store";
 
 import {
   addMessageReaction,
@@ -13,7 +13,7 @@ import {
   startTypingLoop,
   stopAllTypingLoops,
   stopTypingLoop,
-} from "./discord-mcp-server";
+} from "./discord-mcp-http-server";
 
 const startedServers: Array<{ close: () => Promise<void>; url: string }> = [];
 

@@ -1,13 +1,13 @@
 import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AiService } from "../ai/ai-service";
 import type {
   DiscordAttachmentInput,
   DiscordAttachmentStore,
-} from "../attachments/discord-attachment-store";
+} from "../../../../attachments/discord-attachment-store";
+import type { AiService } from "../../../ai/application/channel-session-coordinator";
 
-import { handleMessageCreate, type MessageLike } from "./message-handler";
+import { handleMessageCreate, type MessageLike } from "./discord-message-create-handler";
 
 type AttachmentLike = {
   id: string;
