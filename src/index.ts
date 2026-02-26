@@ -47,6 +47,7 @@ const runtimeConfig = await loadConfigOrExit();
 const typingLifecycleRegistry = createTypingLifecycleRegistry();
 const attachmentStore = new WorkspaceDiscordAttachmentStore(runtimeConfig.codexWorkspaceDir);
 const discordMcpServer = await startDiscordMcpServerOrExit(
+  runtimeConfig.allowedChannelIds,
   runtimeConfig.discordBotToken,
   attachmentStore,
   typingLifecycleRegistry,
@@ -134,12 +135,14 @@ async function loadConfigOrExit(): Promise<RuntimeConfig> {
 }
 
 async function startDiscordMcpServerOrExit(
+  allowedChannelIds: ReadonlySet<string>,
   token: string,
   attachmentStore: DiscordAttachmentStore,
   typingRegistry: ReturnType<typeof createTypingLifecycleRegistry>,
 ): Promise<DiscordMcpServerHandle> {
   try {
     const mcpServer = await startDiscordMcpServer({
+      allowedChannelIds,
       attachmentStore,
       token,
       typingLifecycleRegistry: typingRegistry,

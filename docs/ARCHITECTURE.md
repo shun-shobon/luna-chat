@@ -72,11 +72,11 @@
 
 - `src/modules/mcp/inbound/discord-mcp-http-server.ts`
   - `/mcp` HTTP サーバー起動
-  - tool 登録（`read_message_history` / `send_message` / `add_reaction` / `start_typing`）
+  - tool 登録（`read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail`）
 - `src/modules/mcp/application/tools/*`
   - tool 単位のユースケース実装
 - `src/modules/mcp/adapters/outbound/discord/*`
-  - Discord REST 呼び出し（履歴取得・送信・リアクション）
+  - Discord REST 呼び出し（履歴取得・送信・リアクション・チャンネル参照・ユーザー参照）
 
 ### 4.6 Typing / Heartbeat
 
@@ -188,6 +188,6 @@
 1. 会話ログ本文は永続化しない。
 2. 初期文脈は直近10件、追加文脈は `read_message_history` で取得する。
 3. メンション有無は入力に含めるが優先制御には使わない。
-4. 返信・リアクション・追加履歴取得・AI主導typingは MCP tool 経由で実行する。
+4. 返信・リアクション・追加履歴取得・AI主導typing・許可チャンネル一覧取得・ユーザー詳細取得は MCP tool 経由で実行する。
 5. `send_message.replyToMessageId` は任意指定とし、返信投稿を表現する。
 6. ワークスペース文書は読み込み対象だが、自動更新フローは未実装。

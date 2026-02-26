@@ -15,6 +15,8 @@ import {
   parseDiscordMessages,
 } from "../adapters/outbound/discord/discord-rest-history-gateway";
 import { addReactionTool } from "../application/tools/add-reaction";
+import { getUserDetailTool } from "../application/tools/get-user-detail";
+import { listChannelsTool } from "../application/tools/list-channels";
 import { readMessageHistory } from "../application/tools/read-message-history";
 import { sendMessageTool } from "../application/tools/send-message";
 import { startTypingTool } from "../application/tools/start-typing";
@@ -65,6 +67,13 @@ const startTypingInputSchema = z.object({
   channelId: z.string().min(1).describe("入力中表示を開始するDiscordチャンネルID。"),
 });
 
+const listChannelsInputSchema = z.object({});
+
+const getUserDetailInputSchema = z.object({
+  channelId: z.string().min(1).describe("ユーザー詳細を照会するDiscordチャンネルID。"),
+  userId: z.string().min(1).describe("詳細を取得するDiscordユーザーID。"),
+});
+
 export type DiscordMcpServerHandle = {
   close: () => Promise<void>;
   stopTypingByChannelId: (channelId: string) => void;
@@ -85,6 +94,7 @@ type StopTypingLoopInput = {
 };
 
 export type StartDiscordMcpServerOptions = {
+  allowedChannelIds: ReadonlySet<string>;
   attachmentStore: DiscordAttachmentStore;
   hostname?: string;
   port?: number;
@@ -200,6 +210,48 @@ export async function startDiscordMcpServer(
         channelId,
         gateway: commandGateway,
         typingRegistry,
+      });
+
+      return {
+        content: [{ text: JSON.stringify(payload), type: "text" }],
+        structuredContent: payload,
+      };
+    },
+  );
+
+  mcpServer.registerTool(
+    "list_channels",
+    {
+      description: "許可チャンネル一覧を取得する。",
+      inputSchema: listChannelsInputSchema,
+      title: "Discordチャンネル一覧取得",
+    },
+    async () => {
+      const payload = await listChannelsTool({
+        allowedChannelIds: options.allowedChannelIds,
+        gateway: historyGateway,
+      });
+
+      return {
+        content: [{ text: JSON.stringify(payload), type: "text" }],
+        structuredContent: payload,
+      };
+    },
+  );
+
+  mcpServer.registerTool(
+    "get_user_detail",
+    {
+      description: "Discordユーザーの詳細情報を取得する。",
+      inputSchema: getUserDetailInputSchema,
+      title: "Discordユーザー詳細取得",
+    },
+    async ({ channelId, userId }) => {
+      const payload = await getUserDetailTool({
+        allowedChannelIds: options.allowedChannelIds,
+        channelId,
+        gateway: historyGateway,
+        userId,
       });
 
       return {

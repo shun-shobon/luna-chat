@@ -45,7 +45,7 @@
 
 1. 受信イベントでチャンネル判定（DM/スレッド/許可外除外）を実施する。
 2. 現在メッセージと直近 10 件を AI に渡す。
-3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信する。
+3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信する。
 4. AI エラー時は返信せず終了し、失敗ログを確認する。
 5. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。
 

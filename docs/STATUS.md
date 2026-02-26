@@ -21,6 +21,9 @@
 - `send_message` の返信投稿では `allowed_mentions.replied_user=true` として返信先ユーザーへ通知する。
 - AI は必要時に MCP tool `start_typing` で入力中表示を開始できる（8 秒間隔）。
 - `start_typing` で開始した入力中表示は、Discord turn 完了時に自動停止する。
+- AI は必要時に MCP tool `list_channels` で `ALLOWED_CHANNEL_IDS` に含まれるチャンネル一覧を取得できる。
+- AI は必要時に MCP tool `get_user_detail` で `userId` と `channelId` から `user`（基本ユーザー情報 + `displayName` / `nickname`）を取得できる。
+- `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
 - typing 管理は `typing-lifecycle-registry` で一元化している。
@@ -31,7 +34,7 @@
 - Codex app-server は `codex app-server --listen stdio://` を使い、JSON-RPC で接続する。
 - `thread/start` は `ephemeral=true` / `personality="friendly"` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
-- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（任意 `replyToMessageId` 対応） / `add_reaction` / `start_typing` を提供する。
+- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（任意 `replyToMessageId` 対応） / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を提供する。
 - heartbeat は `cron` で毎時 00 分 / 30 分（`Asia/Tokyo`）に実行し、`waitForCompletion=true` で重複実行を抑止する。
 - heartbeat プロンプトは以下の固定文を使用する。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。

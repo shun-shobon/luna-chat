@@ -24,9 +24,11 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - heartbeat は毎時 00 分 / 30 分（JST）に自動実行する。
 - heartbeat 実行時のプロンプトは以下の固定文を使う。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
-- AI は必要に応じて tool use（`send_message` / `add_reaction` / `start_typing`）を使う。
+- AI は必要に応じて tool use（`send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail`）を使う。
 - `send_message` は任意の `replyToMessageId` を受け取り、指定時は該当メッセージへの返信として投稿する。
 - `start_typing` で開始した入力中表示は Discord turn 完了時に自動停止する。
+- `list_channels` は `ALLOWED_CHANNEL_IDS` に含まれるチャンネル情報のみを返し、各チャンネルに `guildId` と `guildName` を含める（チャンネル種別の数値は返さない）。
+- `get_user_detail` は `userId` と `channelId` を受け取り、`user` として基本ユーザー情報に `displayName` / `nickname` を加えた単一オブジェクトを返す（対象ユーザーが取得できない場合は `user=null`）。
 
 ### 3.2 文脈取得
 
@@ -76,6 +78,6 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 5. 必要時に `read_message_history` で追加履歴取得できる。
 6. AI 失敗時は返信せず終了し、失敗ログを確認できる。
 7. ワークスペース運用（`$LUNA_HOME/workspace`）で `LUNA.md` / `SOUL.md` を読み込める。
-8. `send_message` / `add_reaction` / `start_typing` を tool use で実行でき、`send_message` は任意で返信先IDを指定できる。
+8. `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を tool use で実行でき、`send_message` は任意で返信先IDを指定できる。
 9. heartbeat は毎時 00 分 / 30 分（JST）に実行される。
 10. heartbeat 実行時は実装済みの固定プロンプトが渡される。

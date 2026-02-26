@@ -27,6 +27,7 @@ describe("startDiscordMcpServer", () => {
   it("throws when token is empty", async () => {
     await expect(
       startDiscordMcpServer({
+        allowedChannelIds: new Set(["channel-id"]),
         attachmentStore: createAttachmentStoreStub(),
         token: "   ",
       }),
@@ -35,6 +36,7 @@ describe("startDiscordMcpServer", () => {
 
   it("starts server and returns /mcp url", async () => {
     const server = await startDiscordMcpServer({
+      allowedChannelIds: new Set(["channel-id"]),
       attachmentStore: createAttachmentStoreStub(),
       token: "dummy-token",
     });

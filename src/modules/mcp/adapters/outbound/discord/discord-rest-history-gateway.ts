@@ -19,6 +19,33 @@ export type DiscordHistoryMessage = {
   reactions?: RuntimeReaction[];
 };
 
+export type DiscordChannelSummary = {
+  guildId: string | null;
+  id: string;
+  name: string;
+};
+
+export type DiscordUserDetail = {
+  avatar: string | null;
+  banner: string | null;
+  bot: boolean;
+  globalName: string | null;
+  id: string;
+  username: string;
+};
+
+export type DiscordGuildMemberDetail = {
+  guildId: string;
+  joinedAt: string | null;
+  nickname: string | null;
+  user?: DiscordUserDetail;
+};
+
+export type DiscordGuildSummary = {
+  id: string;
+  name: string;
+};
+
 const discordApiAttachmentSchema = z.object({
   filename: z.string(),
   id: z.string(),
@@ -49,16 +76,83 @@ const discordApiMessageSchema = z.object({
   timestamp: z.string(),
 });
 
+const discordApiChannelSchema = z.object({
+  guild_id: z.string().nullable().optional(),
+  id: z.string(),
+  name: z.string(),
+  type: z.number().int(),
+});
+
+const discordApiUserSchema = z.object({
+  avatar: z.string().nullable().optional(),
+  banner: z.string().nullable().optional(),
+  bot: z.boolean().optional().default(false),
+  global_name: z.string().nullable().optional(),
+  id: z.string(),
+  username: z.string(),
+});
+
+const discordApiGuildMemberSchema = z.object({
+  joined_at: z.string().nullable().optional(),
+  nick: z.string().nullable().optional(),
+  user: discordApiUserSchema.optional(),
+});
+
+const discordApiGuildSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
 export type DiscordHistoryGateway = {
+  fetchChannelById: (channelId: string) => Promise<DiscordChannelSummary | null>;
+  fetchGuildById: (guildId: string) => Promise<DiscordGuildSummary | null>;
+  fetchGuildMemberByUserId: (input: {
+    guildId: string;
+    userId: string;
+  }) => Promise<DiscordGuildMemberDetail | null>;
   fetchMessages: (input: {
     beforeMessageId?: string;
     channelId: string;
     limit: number;
   }) => Promise<DiscordHistoryMessage[]>;
+  fetchUserById: (userId: string) => Promise<DiscordUserDetail | null>;
 };
 
 export function createDiscordRestHistoryGateway(rest: Pick<REST, "get">): DiscordHistoryGateway {
   return {
+    fetchChannelById: async (channelId) => {
+      try {
+        const rawChannel = await rest.get(Routes.channel(channelId));
+        return parseDiscordChannel(rawChannel);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildMemberByUserId: async ({ guildId, userId }) => {
+      try {
+        const rawMember = await rest.get(Routes.guildMember(guildId, userId));
+        return parseDiscordGuildMember(rawMember, guildId);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildById: async (guildId) => {
+      try {
+        const rawGuild = await rest.get(Routes.guild(guildId));
+        return parseDiscordGuild(rawGuild);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
     fetchMessages: async ({ beforeMessageId, channelId, limit }) => {
       const query = new URLSearchParams();
       query.set("limit", String(limit));
@@ -71,6 +165,17 @@ export function createDiscordRestHistoryGateway(rest: Pick<REST, "get">): Discor
       });
 
       return parseDiscordMessages(rawMessages);
+    },
+    fetchUserById: async (userId) => {
+      try {
+        const rawUser = await rest.get(Routes.user(userId));
+        return parseDiscordUser(rawUser);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
     },
   };
 }
@@ -121,4 +226,73 @@ export function parseDiscordMessages(rawMessages: unknown): DiscordHistoryMessag
   }
 
   return messages;
+}
+
+export function parseDiscordChannel(rawChannel: unknown): DiscordChannelSummary | null {
+  const parsed = discordApiChannelSchema.safeParse(rawChannel);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return {
+    guildId: parsed.data.guild_id ?? null,
+    id: parsed.data.id,
+    name: parsed.data.name,
+  };
+}
+
+export function parseDiscordGuild(rawGuild: unknown): DiscordGuildSummary | null {
+  const parsed = discordApiGuildSchema.safeParse(rawGuild);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return {
+    id: parsed.data.id,
+    name: parsed.data.name,
+  };
+}
+
+export function parseDiscordUser(rawUser: unknown): DiscordUserDetail | null {
+  const parsed = discordApiUserSchema.safeParse(rawUser);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return {
+    avatar: parsed.data.avatar ?? null,
+    banner: parsed.data.banner ?? null,
+    bot: parsed.data.bot,
+    globalName: parsed.data.global_name ?? null,
+    id: parsed.data.id,
+    username: parsed.data.username,
+  };
+}
+
+export function parseDiscordGuildMember(
+  rawMember: unknown,
+  guildId: string,
+): DiscordGuildMemberDetail | null {
+  const parsed = discordApiGuildMemberSchema.safeParse(rawMember);
+  if (!parsed.success) {
+    return null;
+  }
+
+  const user = parsed.data.user ? parseDiscordUser(parsed.data.user) : null;
+
+  return {
+    guildId,
+    joinedAt: parsed.data.joined_at ?? null,
+    nickname: parsed.data.nick ?? null,
+    ...(user ? { user } : {}),
+  };
+}
+
+function isSkippableDiscordRestError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const status = Reflect.get(error, "status");
+  return status === 403 || status === 404;
 }
