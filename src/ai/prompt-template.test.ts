@@ -45,6 +45,126 @@ describe("buildPromptBundle", () => {
     });
   });
 
+  it("直近メッセージが複数ある場合は順序どおりにすべて含める", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const input = createInput();
+      input.recentMessages = [
+        {
+          authorId: "recent-author-id-1",
+          authorIsBot: false,
+          authorName: "recent-author-name-1",
+          channelId: "channel-id",
+          content: "直近メッセージ1",
+          createdAt: "2026-02-23 08:56:00 JST",
+          id: "recent-message-id-1",
+          mentionedBot: false,
+        },
+        {
+          authorId: "recent-author-id-2",
+          authorIsBot: true,
+          authorName: "recent-author-name-2",
+          channelId: "channel-id",
+          content: "直近メッセージ2",
+          createdAt: "2026-02-23 08:57:00 JST",
+          id: "recent-message-id-2",
+          mentionedBot: false,
+        },
+        {
+          authorId: "recent-author-id-3",
+          authorIsBot: false,
+          authorName: "recent-author-name-3",
+          channelId: "channel-id",
+          content: "直近メッセージ3",
+          createdAt: "2026-02-23 08:58:00 JST",
+          id: "recent-message-id-3",
+          mentionedBot: false,
+        },
+        {
+          authorId: "recent-author-id-4",
+          authorIsBot: false,
+          authorName: "recent-author-name-4",
+          channelId: "channel-id",
+          content: "直近メッセージ4",
+          createdAt: "2026-02-23 08:59:00 JST",
+          id: "recent-message-id-4",
+          mentionedBot: false,
+        },
+      ];
+      const promptBundle = await buildPromptBundle(input, workspaceDir);
+
+      const firstIndex = promptBundle.userRolePrompt.indexOf("recent-message-id-1");
+      const secondIndex = promptBundle.userRolePrompt.indexOf("recent-message-id-2");
+      const thirdIndex = promptBundle.userRolePrompt.indexOf("recent-message-id-3");
+      const fourthIndex = promptBundle.userRolePrompt.indexOf("recent-message-id-4");
+
+      expect(firstIndex).toBeGreaterThanOrEqual(0);
+      expect(secondIndex).toBeGreaterThan(firstIndex);
+      expect(thirdIndex).toBeGreaterThan(secondIndex);
+      expect(fourthIndex).toBeGreaterThan(thirdIndex);
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
+    });
+  });
+
+  it("返信先メッセージが複数箇所にある場合もすべて含める", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const input = createInput();
+      input.recentMessages = [
+        {
+          authorId: "recent-author-id-1",
+          authorIsBot: false,
+          authorName: "recent-author-name-1",
+          channelId: "channel-id",
+          content: "直近メッセージ1",
+          createdAt: "2026-02-23 08:56:00 JST",
+          id: "recent-message-id-1",
+          mentionedBot: false,
+          replyTo: {
+            authorId: "reply-author-id-1",
+            authorIsBot: false,
+            authorName: "reply-author-name-1",
+            content: "返信先本文1",
+            createdAt: "2026-02-23 08:55:00 JST",
+            id: "reply-message-id-1",
+          },
+        },
+        {
+          authorId: "recent-author-id-2",
+          authorIsBot: false,
+          authorName: "recent-author-name-2",
+          channelId: "channel-id",
+          content: "直近メッセージ2",
+          createdAt: "2026-02-23 08:58:00 JST",
+          id: "recent-message-id-2",
+          mentionedBot: false,
+          replyTo: {
+            authorId: "reply-author-id-2",
+            authorIsBot: true,
+            authorName: "reply-author-name-2",
+            content: "返信先本文2",
+            createdAt: "2026-02-23 08:57:00 JST",
+            id: "reply-message-id-2",
+          },
+        },
+      ];
+      input.currentMessage.replyTo = {
+        authorId: "reply-author-id-current",
+        authorIsBot: false,
+        authorName: "reply-author-name-current",
+        content: "返信先本文-current",
+        createdAt: "2026-02-23 08:59:00 JST",
+        id: "reply-message-id-current",
+      };
+      input.currentMessage.content = "投稿本文1\n投稿本文2\n投稿本文3";
+      const promptBundle = await buildPromptBundle(input, workspaceDir);
+
+      const replyHeaderCount = (promptBundle.userRolePrompt.match(/返信先メッセージ:/g) ?? [])
+        .length;
+      expect(replyHeaderCount).toBe(3);
+      expect(promptBundle.userRolePrompt).toContain("投稿本文3");
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
+    });
+  });
+
   it("RUNBOOK 由来の文字列を含めない", async () => {
     await withWorkspaceDir(async (workspaceDir) => {
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
