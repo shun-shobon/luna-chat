@@ -55,6 +55,10 @@ export function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
   return [toQuotedBlock(formatRuntimeMessageBlock(message.replyTo)), messageBlock].join("\n");
 }
 
+export function buildSteerPrompt(message: RuntimeMessage): string {
+  return ["## 追加メッセージ", "", formatRuntimeMessageForPrompt(message)].join("\n");
+}
+
 function formatRuntimeMessageBlock(
   message: Pick<
     RuntimeMessage,

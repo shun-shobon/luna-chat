@@ -28,18 +28,14 @@ describe("CodexAppServerAiService", () => {
     await service.generateReply(createAiInput("m2", "c1", "second"));
 
     expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.steerTurn).toHaveBeenCalledWith(
-      "thread-1",
-      "turn-1",
-      expect.stringContaining("author (ID: author-id) (Message ID: m2):\nsecond"),
-    );
+    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
     client.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
     expect(client.close).toHaveBeenCalledTimes(1);
   });
 
-  it("steer プロンプトに返信先情報を含める", async () => {
+  it("返信付きメッセージでも同一 turn へ steer する", async () => {
     const client = new FakeCodexClient();
     const service = createService({
       buildPromptBundle: vi.fn(async () => {
@@ -66,18 +62,8 @@ describe("CodexAppServerAiService", () => {
       }),
     );
 
-    expect(client.steerTurn).toHaveBeenCalledWith(
-      "thread-1",
-      "turn-1",
-      expect.stringContaining(
-        "> [2026-01-01 08:59:00 JST] reply-author (ID: reply-author-id) (Message ID: reply-message-id):",
-      ),
-    );
-    expect(client.steerTurn).toHaveBeenCalledWith(
-      "thread-1",
-      "turn-1",
-      expect.stringContaining("> reply content\n["),
-    );
+    expect(client.steerTurn).toHaveBeenCalledTimes(1);
+    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
     client.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
@@ -109,11 +95,7 @@ describe("CodexAppServerAiService", () => {
     await secondPromise;
 
     expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.steerTurn).toHaveBeenCalledWith(
-      "thread-1",
-      "turn-1",
-      expect.stringContaining("second"),
-    );
+    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
     client.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
@@ -138,11 +120,7 @@ describe("CodexAppServerAiService", () => {
 
     expect(client.steerTurn).toHaveBeenCalledTimes(1);
     expect(client.startTurn).toHaveBeenCalledTimes(2);
-    expect(client.startTurn).toHaveBeenNthCalledWith(
-      2,
-      "thread-1",
-      expect.stringContaining("追加メッセージ"),
-    );
+    expect(client.startTurn).toHaveBeenNthCalledWith(2, "thread-1", expect.any(String));
 
     client.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;

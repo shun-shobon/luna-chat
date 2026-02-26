@@ -177,3 +177,19 @@ exports[`buildPromptBundle > 返信先メッセージが複数箇所にある場
 投稿本文2
 投稿本文3"
 `;
+
+exports[`buildSteerPrompt > 返信先がある場合は引用形式を含める 1`] = `
+"## 追加メッセージ
+
+> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):
+> 返信先本文
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文"
+`;
+
+exports[`buildSteerPrompt > 追加メッセージ見出し付きでメッセージ本文を生成する 1`] = `
+"## 追加メッセージ
+
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文"
+`;

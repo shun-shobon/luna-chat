@@ -8,11 +8,7 @@ import {
   type TurnResult,
 } from "./codex-app-server-client";
 import type { ReasoningEffort } from "./codex-generated/ReasoningEffort";
-import {
-  buildHeartbeatPromptBundle,
-  buildPromptBundle,
-  formatRuntimeMessageForPrompt,
-} from "./prompt-template";
+import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-template";
 
 export type AiInput = {
   channelName: string;
@@ -361,10 +357,6 @@ export class CodexAppServerAiService implements AiService {
 
     return await chained;
   }
-}
-
-function buildSteerPrompt(message: RuntimeMessage): string {
-  return `追加メッセージ:\n${formatRuntimeMessageForPrompt(message)}`;
 }
 
 function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {

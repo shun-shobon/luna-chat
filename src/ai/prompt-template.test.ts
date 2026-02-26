@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AiInput } from "./ai-service";
-import { buildHeartbeatPromptBundle, buildPromptBundle } from "./prompt-template";
+import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-template";
 
 describe("buildPromptBundle", () => {
   it("instructions/developer/user role prompt を分離して生成する", async () => {
@@ -250,6 +250,39 @@ describe("buildHeartbeatPromptBundle", () => {
       expect(promptBundle.userRolePrompt).toBe("HEARTBEAT.mdを確認し、作業を行ってください。");
       expect(promptBundle.userRolePrompt).not.toContain("チャンネル名:");
     });
+  });
+});
+
+describe("buildSteerPrompt", () => {
+  it("追加メッセージ見出し付きでメッセージ本文を生成する", () => {
+    const steerPrompt = buildSteerPrompt(createInput().currentMessage);
+
+    expect(steerPrompt).toMatch(
+      /^## 追加メッセージ\n\n\[2026-02-23 09:00:00 JST\] author-name \(ID: author-id\) \(Message ID: message-id\):\nテスト本文$/,
+    );
+    expect(steerPrompt).toMatchSnapshot();
+  });
+
+  it("返信先がある場合は引用形式を含める", () => {
+    const message = createInput().currentMessage;
+    message.replyTo = {
+      authorId: "reply-author-id",
+      authorIsBot: false,
+      authorName: "reply-author-name",
+      content: "返信先本文",
+      createdAt: "2026-02-23 08:58:00 JST",
+      id: "reply-message-id",
+    };
+
+    const steerPrompt = buildSteerPrompt(message);
+
+    expect(steerPrompt).toContain("## 追加メッセージ");
+    expect(steerPrompt).toContain(
+      "> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):",
+    );
+    expect(steerPrompt).toContain("> 返信先本文");
+    expect(steerPrompt).toMatch(/> 返信先本文\n\[2026-02-23 09:00:00 JST]/);
+    expect(steerPrompt).toMatchSnapshot();
   });
 });
 
