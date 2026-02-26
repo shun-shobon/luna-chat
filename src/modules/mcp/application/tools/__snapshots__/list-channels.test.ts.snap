@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`listChannelsTool > 許可チャンネルのみを返し、取得失敗分はスキップする 1`] = `
+{
+  "channels": [
+    {
+      "guildId": "guild-1",
+      "guildName": "guild-name",
+      "id": "channel-1",
+      "name": "general",
+    },
+  ],
+}
+`;

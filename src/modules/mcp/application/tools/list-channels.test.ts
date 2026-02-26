@@ -25,21 +25,12 @@ describe("listChannelsTool", () => {
       }),
     });
 
-    await expect(
-      listChannelsTool({
-        allowedChannelIds: new Set(["channel-1", "channel-2"]),
-        gateway,
-      }),
-    ).resolves.toEqual({
-      channels: [
-        {
-          guildId: "guild-1",
-          guildName: "guild-name",
-          id: "channel-1",
-          name: "general",
-        },
-      ],
+    const payload = await listChannelsTool({
+      allowedChannelIds: new Set(["channel-1", "channel-2"]),
+      gateway,
     });
+
+    expect(payload).toMatchSnapshot();
   });
 });
 

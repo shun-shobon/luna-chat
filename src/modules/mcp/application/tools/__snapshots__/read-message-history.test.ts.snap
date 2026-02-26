@@ -1,0 +1,32 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`readMessageHistory > 返却ペイロードのスナップショット 1`] = `
+{
+  "channelId": "channel-1",
+  "messages": [
+    {
+      "authorId": "user-1",
+      "authorIsBot": false,
+      "authorName": "Alice (ID: user-1)",
+      "content": "古いメッセージ <attachments:att-1>",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "id": "m1",
+    },
+    {
+      "authorId": "bot-1",
+      "authorIsBot": true,
+      "authorName": "ルナ (Bot) (ID: bot-1)",
+      "content": "新しいメッセージ",
+      "createdAt": "2026-01-01T00:01:00.000Z",
+      "id": "m2",
+      "reactions": [
+        {
+          "count": 2,
+          "emoji": "👍",
+          "selfReacted": true,
+        },
+      ],
+    },
+  ],
+}
+`;

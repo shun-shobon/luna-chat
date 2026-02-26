@@ -44,25 +44,14 @@ describe("getUserDetailTool", () => {
       fetchUserById,
     });
 
-    await expect(
-      getUserDetailTool({
-        allowedChannelIds: new Set(["channel-1", "channel-2"]),
-        channelId: "channel-1",
-        gateway,
-        userId: "user-1",
-      }),
-    ).resolves.toEqual({
-      user: {
-        avatar: null,
-        banner: null,
-        bot: false,
-        displayName: "guild-nick",
-        globalName: "global-user",
-        id: "user-1",
-        nickname: "guild-nick",
-        username: "username",
-      },
+    const payload = await getUserDetailTool({
+      allowedChannelIds: new Set(["channel-1", "channel-2"]),
+      channelId: "channel-1",
+      gateway,
+      userId: "user-1",
     });
+
+    expect(payload).toMatchSnapshot();
 
     expect(fetchGuildMemberByUserId).toHaveBeenCalledTimes(1);
     expect(fetchGuildMemberByUserId).toHaveBeenCalledWith({
@@ -99,25 +88,14 @@ describe("getUserDetailTool", () => {
       }),
     });
 
-    await expect(
-      getUserDetailTool({
-        allowedChannelIds: new Set(["channel-1"]),
-        channelId: "channel-1",
-        gateway,
-        userId: "user-1",
-      }),
-    ).resolves.toEqual({
-      user: {
-        avatar: null,
-        banner: null,
-        bot: false,
-        displayName: "global-name",
-        globalName: "global-name",
-        id: "user-1",
-        nickname: null,
-        username: "username",
-      },
+    const payload = await getUserDetailTool({
+      allowedChannelIds: new Set(["channel-1"]),
+      channelId: "channel-1",
+      gateway,
+      userId: "user-1",
     });
+
+    expect(payload).toMatchSnapshot();
   });
 
   it("許可外チャンネルでも user は返し、membership由来情報は空にする", async () => {
