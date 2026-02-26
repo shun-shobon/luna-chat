@@ -23,7 +23,8 @@
 - `start_typing` で開始した入力中表示は、Discord turn 完了時に自動停止する。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
-- typing 管理は `typing-lifecycle-registry` で一元化し、メンション起点と tool 起点を同じ停止条件で扱う。
+- typing 管理は `typing-lifecycle-registry` で一元化している。
+- メンション起点の typing は message handler の `finally` で停止し、tool 起点の typing は Discord turn 完了時コールバックで停止する。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
 - 設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
 - 起動時に `LUNA_HOME` / `workspace` / `codex` を自動作成する。
@@ -80,3 +81,4 @@
 - VPS / コンテナは将来オプション。
 - トークンなど秘密情報は常にマスクする。
 - テストランナーは `vitest` を使用する。
+- テストは実装モジュール近傍へ配置している（例: `src/modules/runtime-config/runtime-config.test.ts`）。

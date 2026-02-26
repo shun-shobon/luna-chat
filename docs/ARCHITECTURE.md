@@ -1,47 +1,101 @@
 # ARCHITECTURE.md
 
-## 1. 設計原則
+## 1. 位置づけ
 
-- KISS: 最小の部品で目的を達成する。
-- YAGNI: 使うまで作らない。
-- DRY: 返信判定・文脈構築・プロンプト生成を重複させない。
-- 本体コードとワークスペース運用ドキュメントを物理的に分離する。
+- 本書は、現在の実装構成（`src/modules/**`）に基づく実装準拠アーキテクチャを定義する。
+- 要件の正本は `SPEC.md`、運用方針の正本は `RUNBOOK.md`、進行状況の正本は `STATUS.md` とする。
 
-## 2. システム境界
+## 2. 設計原則
 
-- `luna-chat` ディレクトリ: Discord Bot 本体コード
-- `workspace` ディレクトリ（`$LUNA_HOME/workspace`）: 人格設定、運用ドキュメント、定型文
+- KISS: 小さい責務を明確な境界で分割する。
+- YAGNI: 現行要件に不要な機能は導入しない。
+- DRY: メッセージ整形・履歴取得・typing制御・tool実行を重複実装しない。
+- モジュラモノリス + Ports and Adapters を採用する。
+- 会話ログ本文は永続化しない（Discord API から都度取得）。
 
-## 3. モジュール構成（実装準拠）
+## 3. システム境界
 
-- `src/config`
-  - 環境変数読み込み
-  - `ALLOWED_CHANNEL_IDS` 解析
-  - `LUNA_HOME`（default: `~/.luna`）を解決し、`LUNA_HOME` / `workspace` / `codex` の自動作成・検証
-- `src/discord`
-  - Discord.js の受信イベント処理
-  - 返信対象判定の適用
-  - 現在メッセージ整形・直近履歴 10 件取得
-  - Bot 直接メンション時のみ typing 表示
-- `src/policy`
-  - 返信可否判定（DM・スレッド・許可外チャンネルを除外）
-- `src/attachments`
-  - 添付ファイルの保存
-  - 本文末尾への `<attachment:...>` マーカー付与
-- `src/context`
-  - Runtime 型定義
-  - 日時整形
-- `src/ai`
-  - Codex CLI app-server 呼び出し
-  - thread / turn のセッション制御
-  - プロンプト組み立て（`instructions` / `developerRolePrompt` / `userRolePrompt`）
-- `src/mcp`
-  - Discord MCP サーバー（`/mcp`）
-  - `read_message_history` / `send_message`（任意 `replyToMessageId` 対応） / `add_reaction` / `start_typing`
-- `src/heartbeat`
-  - cron 起点の定期 AI 実行
+- 本体コード: `luna-chat` リポジトリ。
+- ワークスペース: `$LUNA_HOME/workspace`（`LUNA.md` / `SOUL.md` / `HEARTBEAT.md`）。
+- 外部依存:
+  - Discord API（`discord.js` / REST）
+  - Codex CLI app-server（`codex app-server --listen stdio://`）
 
-## 4. データモデル（実装向け）
+## 4. モジュール構成（実装準拠）
+
+### 4.1 Composition Root
+
+- `src/index.ts`
+  - 依存配線（RuntimeConfig / MCP / AI / Heartbeat / Discord Client）
+  - シャットダウン処理（SIGINT/SIGTERM）
+
+### 4.2 Runtime/Shared
+
+- `src/modules/runtime-config/runtime-config.ts`
+  - 環境変数検証（`DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` / `LUNA_HOME`）
+  - `LUNA_HOME` / `workspace` / `codex` の自動作成・書込可否検証
+- `src/shared/logger.ts`
+  - 共通 logger
+
+### 4.3 Conversation
+
+- `src/modules/conversation/adapters/inbound/discord-message-create-handler.ts`
+  - `messageCreate` ハンドリング
+  - 返信判定（非DM・非スレッド・許可チャンネル）
+  - `RuntimeMessage` 整形（返信先・添付マーカー・リアクション含む）
+  - 初期履歴10件取得と AI 呼び出し
+- `src/modules/conversation/domain/runtime-message.ts`
+  - `RuntimeMessage` / `RuntimeReplyMessage` / `RuntimeReaction` 型
+- `src/modules/conversation/domain/runtime-reaction.ts`
+  - Discord reaction の正規化
+
+### 4.4 AI
+
+- `src/modules/ai/application/channel-session-coordinator.ts`
+  - チャンネル単位セッション管理
+  - `turn/steer` 優先、失敗時 `turn/start` フォールバック
+  - turn完了後の session 破棄とコールバック実行
+- `src/modules/ai/application/prompt-composer.ts`
+  - `instructions` / `developerRolePrompt` / `userRolePrompt` 生成
+  - `LUNA.md` / `SOUL.md` 連結
+- `src/modules/ai/application/thread-config-factory.ts`
+  - thread config 生成（`model_reasoning_effort` + MCP URL）
+- `src/modules/ai/adapters/outbound/codex/*`
+  - `codex-ai-runtime.ts`: app-server 実行ランタイム
+  - `json-rpc-client.ts`: JSON-RPC req/resp・server request 応答
+  - `turn-result-collector.ts`: turnイベント集約
+  - `stdio-process.ts`: 子プロセス制御
+- `src/modules/ai/ports/outbound/ai-runtime-port.ts`
+  - AI runtime のポート定義
+
+### 4.5 MCP
+
+- `src/modules/mcp/inbound/discord-mcp-http-server.ts`
+  - `/mcp` HTTP サーバー起動
+  - tool 登録（`read_message_history` / `send_message` / `add_reaction` / `start_typing`）
+- `src/modules/mcp/application/tools/*`
+  - tool 単位のユースケース実装
+- `src/modules/mcp/adapters/outbound/discord/*`
+  - Discord REST 呼び出し（履歴取得・送信・リアクション）
+
+### 4.6 Typing / Heartbeat
+
+- `src/modules/typing/typing-lifecycle-registry.ts`
+  - channel/source 単位の typing ループ管理
+  - 重複起動防止、停止制御
+- `src/modules/heartbeat/heartbeat-runner.ts`
+  - cron（毎時00/30, JST）実行
+  - heartbeat 失敗時ログのみで継続
+
+### 4.7 補助モジュール
+
+- `src/attachments/discord-attachment-store.ts`
+  - 添付ファイル保存
+  - 本文末尾 `<attachment:...>` マーカー付与
+- `src/ai/codex-generated/*`
+  - app-server 型定義（自動生成）
+
+## 5. データモデル
 
 ### RuntimeMessage
 
@@ -53,7 +107,7 @@
 - `content: string`
 - `mentionedBot: boolean`
 - `createdAt: string`
-- `reactions?: RuntimeReaction[]`（リアクションがある場合のみ）
+- `reactions?: RuntimeReaction[]`（存在時のみ）
 - `replyTo?: RuntimeReplyMessage`
 
 ### RuntimeReplyMessage
@@ -64,100 +118,76 @@
 - `authorIsBot: boolean`
 - `content: string`
 - `createdAt: string`
-- `reactions?: RuntimeReaction[]`（リアクションがある場合のみ）
+- `reactions?: RuntimeReaction[]`（存在時のみ）
 
 ### RuntimeReaction
 
 - `emoji: string`
 - `count: number`
-- `selfReacted?: true`（Bot自身がその絵文字でリアクション済みのときのみ）
+- `selfReacted?: true`（Bot自身のみ）
 
-### ConversationContext
+## 6. 主要シーケンス
 
-- `channelId: string`
-- `recentMessages: RuntimeMessage[]`
-- `requestedByToolUse: boolean`
+### 6.1 通常受信
 
-### AiInput
+1. Discord `messageCreate` を受信する。
+2. 自分自身の投稿を除外する。
+3. 返信判定（DM/スレッド/許可外チャンネルを除外）を行う。
+4. 現在メッセージを `RuntimeMessage` に変換する（添付・返信先・リアクション含む）。
+5. `mentionedBot=true` の場合のみ typing を開始する（source=`message:<id>`）。
+6. 直近履歴10件を取得し、昇順整形して AI へ渡す。
+7. AI は必要に応じて MCP tools を実行する。
+8. ハンドラ `finally` でメンション起点 typing を停止する。
+9. turn 完了時コールバックで channel 単位の typing を停止し、session を破棄する。
 
-- `channelName: string`
-- `currentMessage: RuntimeMessage`
-- `recentMessages: RuntimeMessage[]`
+### 6.2 同一チャンネル連投
 
-### HeartbeatInput
+1. チャンネル単位で active session を保持する。
+2. 進行中 turn があれば `turn/steer` を試行する。
+3. `turn/steer` が失敗した場合は同一threadで `turn/start` を再実行する。
 
-- `prompt: string`
+### 6.3 履歴追加取得（tool use）
 
-## 5. 主要シーケンス
+1. AI が `read_message_history` を呼ぶ。
+2. `limit` は 1〜100（既定30）に制限する。
+3. Discord API レスポンスを zod で検証し、不正要素はスキップする。
+4. 添付を保存して `<attachment:...>` を追記し、昇順で返す。
 
-### 5.1 通常受信
+### 6.4 heartbeat 実行
 
-1. Discord でメッセージ受信
-2. 返信判定（DM・スレッド・許可外チャンネルは終了）
-3. 現在メッセージを RuntimeMessage に変換（添付マーカー含む）
-4. Bot 直接メンション時のみ typing 表示ループを開始
-5. 直近履歴 10 件を取得し、時系列昇順で整形
-6. AI へ入力（チャンネル名 + 現在メッセージ + 直近履歴）
-7. AI が必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` を tool call（`send_message` は任意で返信先IDを指定可能）
-8. メンション起点の typing ループはハンドラ終了時に停止
-9. `start_typing` 起点の typing ループは Discord turn 完了時に停止
+1. cron（`0 0,30 * * * *`, `Asia/Tokyo`, `waitForCompletion=true`）で起動する。
+2. 固定 heartbeat プロンプトを AI に渡す。
+3. 失敗時はログのみ記録して次周期へ継続する。
 
-### 5.2 同一チャンネル連投時
+## 7. 設定
 
-1. チャンネルごとに active session を保持
-2. 進行中 turn がある場合は `turn/steer` を試行
-3. `turn/steer` が失敗した場合は同一 thread で `turn/start` を再実行
-4. turn 完了時に session を破棄し、`start_typing` で開始した typing を停止
+- `DISCORD_BOT_TOKEN`: 必須
+- `ALLOWED_CHANNEL_IDS`: 必須（カンマ区切り）
+- `LUNA_HOME`: 任意（未設定時 `~/.luna`）
+- 起動時に `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` を自動作成する
 
-### 5.3 履歴追加取得（tool use）
+## 8. エラーハンドリング
 
-1. AI が `read_message_history` を呼ぶ
-2. Discord API で `beforeMessageId` と `limit`（最大 100）を使って取得
-3. 結果を時系列昇順で返す（各メッセージにはリアクションがある場合のみ `reactions` を含める）
-4. 必要に応じて AI が再度呼び出す
+- AI 呼び出し失敗: 無返信で終了しログを記録する。
+- 履歴取得失敗: 警告ログを記録し空履歴で継続する。
+- typing 送信失敗: 警告ログを記録し処理継続する。
+- 設定不備: 起動時に fail-fast する。
 
-### 5.4 heartbeat 実行
+## 9. テスト配置
 
-1. cron（毎時 00 分 / 30 分, JST）で heartbeat を起動
-2. 固定プロンプトを AI に渡す（`HEARTBEAT.md` の確認、古いタスク推測禁止、該当なしは終了）
-3. heartbeat 失敗時はログのみ記録して次周期へ継続
+- テストは実装モジュール近傍に同居配置する（`*.test.ts`）。
+- 主要テスト:
+  - `src/modules/runtime-config/runtime-config.test.ts`
+  - `src/modules/heartbeat/heartbeat-runner.test.ts`
+  - `src/modules/conversation/adapters/inbound/discord-message-create-handler.integration.test.ts`
+  - `src/modules/mcp/inbound/discord-mcp-http-server.test.ts`
+  - `src/ai/prompt-template.test.ts`（スナップショット）
 
-### 5.5 ワークスペースドキュメント運用
+## 10. 設計上の決定
 
-1. `buildInstructions` でワークスペースの `LUNA.md` / `SOUL.md` を読み込む
-2. 読み込み内容を `instructions` 末尾へ連結する
-3. 自動更新フロー（ドキュメント書き換え）は現状未実装
-
-## 6. 設定
-
-- `DISCORD_BOT_TOKEN`: Bot トークン
-- `ALLOWED_CHANNEL_IDS`: 返信対象チャンネル ID（カンマ区切り）
-- `LUNA_HOME`: luna-chat 作業ルート（未設定時は `~/.luna`）
-- `workspace`: 起動時に `$LUNA_HOME/workspace` を自動作成して利用する
-- `codex`: 起動時に `$LUNA_HOME/codex` を自動作成し、Codex 実行時の `CODEX_HOME` として使う
-
-## 7. エラーハンドリング
-
-- AI 呼び出し失敗: 無返信で終了し、ログを記録する
-- 直近履歴取得失敗: 警告ログを出し、空履歴で継続する
-- typing 送信失敗: 警告ログを出し、AI 呼び出しは継続する
-- 設定不備: 起動時 fail-fast
-
-## 8. テスト戦略
-
-- ユニット:
-  - 返信判定
-  - 設定パーサ
-  - heartbeat scheduler
-  - prompt 生成
-- 結合:
-  - Discord message handler（Discord API モック + AI モック）
-  - MCP server の起動・URL
-
-## 9. 設計上の決定
-
-1. 会話ログは永続化しない。
-2. 初期文脈として直近 10 件を付与し、追加は tool use で取得する。
-3. メンション有無は入力に含めるが、ハンドラの優先制御には使わない。
-4. 返信送信・リアクション付与・追加履歴取得・AI主導typing開始は MCP tool 経由で実施し、返信投稿は `send_message.replyToMessageId` で表現する。
-5. ワークスペースドキュメントは読み込み対象だが、自動更新フローは未実装。
+1. 会話ログ本文は永続化しない。
+2. 初期文脈は直近10件、追加文脈は `read_message_history` で取得する。
+3. メンション有無は入力に含めるが優先制御には使わない。
+4. 返信・リアクション・追加履歴取得・AI主導typingは MCP tool 経由で実行する。
+5. `send_message.replyToMessageId` は任意指定とし、返信投稿を表現する。
+6. ワークスペース文書は読み込み対象だが、自動更新フローは未実装。
