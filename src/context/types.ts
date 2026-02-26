@@ -1,3 +1,9 @@
+export type RuntimeReaction = {
+  emoji: string;
+  count: number;
+  selfReacted?: true;
+};
+
 export type RuntimeReplyMessage = {
   id: string;
   authorId: string;
@@ -5,6 +11,7 @@ export type RuntimeReplyMessage = {
   authorIsBot: boolean;
   content: string;
   createdAt: string;
+  reactions?: RuntimeReaction[];
 };
 
 export type RuntimeMessage = {
@@ -16,6 +23,7 @@ export type RuntimeMessage = {
   content: string;
   mentionedBot: boolean;
   createdAt: string;
+  reactions?: RuntimeReaction[];
   replyTo?: RuntimeReplyMessage;
 };
 

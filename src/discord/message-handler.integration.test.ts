@@ -15,6 +15,13 @@ type AttachmentLike = {
   url: string;
 };
 
+type ReactionLike = {
+  count: number;
+  emojiId?: string | null;
+  emojiName?: string | null;
+  me: boolean;
+};
+
 type HistoryMessageLike = {
   attachments?: Collection<string, AttachmentLike>;
   author: {
@@ -32,6 +39,19 @@ type HistoryMessageLike = {
   };
   mentions: {
     has: () => boolean;
+  };
+  reactions: {
+    cache: Collection<
+      string,
+      {
+        count: number;
+        emoji: {
+          id?: string | null;
+          name?: string | null;
+        };
+        me: boolean;
+      }
+    >;
   };
   reference?: {
     messageId?: string | null;
@@ -542,6 +562,99 @@ describe("handleMessageCreate integration", () => {
     );
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it("リアクションがある場合は絵文字別情報を AI 入力に含める", async () => {
+    const message = createMessage({
+      reactions: [
+        {
+          count: 3,
+          emojiName: "👍",
+          me: true,
+        },
+        {
+          count: 1,
+          emojiName: "🎉",
+          me: false,
+        },
+      ],
+      referenceMessage: createFakeHistoryMessage({
+        createdAt: new Date("2025-12-31T23:58:00.000Z"),
+        id: "reply-target-id",
+        reactions: [
+          {
+            count: 2,
+            emojiName: "🔥",
+            me: true,
+          },
+        ],
+      }),
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          reactions: [
+            {
+              count: 1,
+              emoji: "🎉",
+            },
+            {
+              count: 3,
+              emoji: "👍",
+              selfReacted: true,
+            },
+          ],
+          replyTo: expect.objectContaining({
+            reactions: [
+              {
+                count: 2,
+                emoji: "🔥",
+                selfReacted: true,
+              },
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("リアクションがない場合は reactions フィールドを含めない", async () => {
+    const message = createMessage({
+      reactions: [],
+    });
+    const generateReply = vi.fn(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.not.objectContaining({
+          reactions: expect.anything(),
+        }),
+      }),
+    );
+  });
 });
 
 function createMessage(input?: {
@@ -557,6 +670,7 @@ function createMessage(input?: {
   }) => Promise<Collection<string, HistoryMessageLike>>;
   fetchReference?: () => Promise<HistoryMessageLike>;
   mentionBot?: boolean;
+  reactions?: ReactionLike[];
   referenceMessage?: HistoryMessageLike;
   referenceMessageId?: string;
   reply?: MessageLike["reply"];
@@ -617,6 +731,7 @@ function createMessage(input?: {
     attachments: createAttachmentCollection(input?.attachments ?? []),
     ...(reference ? { reference } : {}),
     ...(fetchReference ? { fetchReference } : {}),
+    reactions: createReactionManager(input?.reactions ?? []),
   };
 }
 
@@ -631,6 +746,7 @@ function createFakeHistoryMessage(input: {
   referenceMessage?: HistoryMessageLike;
   referenceMessageId?: string;
   fetchReference?: () => Promise<HistoryMessageLike>;
+  reactions?: ReactionLike[];
 }): HistoryMessageLike {
   const reference = resolveReference(input.referenceMessageId, input.referenceMessage);
   const fallbackReferenceMessage = input.referenceMessage;
@@ -660,6 +776,7 @@ function createFakeHistoryMessage(input: {
       has: () => false,
     },
     attachments: createAttachmentCollection([]),
+    reactions: createReactionManager(input.reactions ?? []),
     ...(reference ? { reference } : {}),
     ...(fetchReference ? { fetchReference } : {}),
   };
@@ -705,6 +822,26 @@ function createAttachmentCollection(
       return [attachment.id, attachment];
     }),
   );
+}
+
+function createReactionManager(reactions: ReactionLike[]) {
+  return {
+    cache: new Collection(
+      reactions.map((reaction, index) => {
+        return [
+          String(index),
+          {
+            count: reaction.count,
+            emoji: {
+              id: reaction.emojiId ?? null,
+              name: reaction.emojiName ?? null,
+            },
+            me: reaction.me,
+          },
+        ];
+      }),
+    ),
+  };
 }
 
 function createAttachmentStore(input?: {

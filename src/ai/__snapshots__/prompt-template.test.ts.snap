@@ -99,6 +99,25 @@ exports[`buildPromptBundle > ファイルが存在しても読み込み失敗す
 SOUL の追加指示"
 `;
 
+exports[`buildPromptBundle > リアクションがある場合は絵文字別に表示し、自分の分だけ自分済みを付ける 1`] = `
+"以下は現在の入力情報です。
+チャンネル名: channel-name (ID: channel-id)
+
+## 直近のメッセージ
+
+[2026-02-23 08:59:00 JST] recent-author-name (Bot) (ID: recent-author-id) (Message ID: recent-message-id):
+直近メッセージ
+
+## 投稿されたメッセージ
+
+> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):
+> 返信先本文
+> リアクション: 🔥 x2 (自分済み)
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文
+リアクション: 👍 x3 (自分済み), 🎉 x1"
+`;
+
 exports[`buildPromptBundle > 片方のファイルだけ存在する場合は存在する内容のみ連結する 1`] = `
 "あなたはLunaで動作しているパーソナルアシスタントです。常に日本語で応答してください。
 
@@ -176,6 +195,14 @@ exports[`buildPromptBundle > 返信先メッセージが複数箇所にある場
 投稿本文1
 投稿本文2
 投稿本文3"
+`;
+
+exports[`buildSteerPrompt > リアクションがある場合は steer prompt にも表示する 1`] = `
+"## 追加メッセージ
+
+[2026-02-23 09:00:00 JST] author-name (ID: author-id) (Message ID: message-id):
+テスト本文
+リアクション: 👍 x3 (自分済み), 🎉 x1"
 `;
 
 exports[`buildSteerPrompt > 返信先がある場合は引用形式を含める 1`] = `

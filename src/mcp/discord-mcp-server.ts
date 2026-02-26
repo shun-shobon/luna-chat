@@ -10,6 +10,8 @@ import {
   type DiscordAttachmentInput,
   type DiscordAttachmentStore,
 } from "../attachments/discord-attachment-store";
+import { toRuntimeReactions } from "../context/runtime-reaction";
+import type { RuntimeReaction } from "../context/types";
 import { logger } from "../logger";
 
 type DiscordMessage = {
@@ -20,6 +22,7 @@ type DiscordMessage = {
   content: string;
   createdAt: string;
   id: string;
+  reactions?: RuntimeReaction[];
 };
 
 export type DiscordMcpServerHandle = {
@@ -87,6 +90,17 @@ const discordApiAttachmentSchema = z.object({
   url: z.string(),
 });
 
+const discordApiReactionEmojiSchema = z.object({
+  id: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+const discordApiReactionSchema = z.object({
+  count: z.number().int().min(0),
+  emoji: discordApiReactionEmojiSchema,
+  me: z.boolean().optional().default(false),
+});
+
 const discordApiMessageSchema = z.object({
   attachments: z.array(discordApiAttachmentSchema).optional().default([]),
   author: z.object({
@@ -96,6 +110,7 @@ const discordApiMessageSchema = z.object({
   }),
   content: z.string(),
   id: z.string(),
+  reactions: z.array(discordApiReactionSchema).optional().default([]),
   timestamp: z.string(),
 });
 
@@ -200,6 +215,7 @@ function createDiscordMcpToolServer(input: {
             content,
             createdAt: message.createdAt,
             id: message.id,
+            ...(message.reactions ? { reactions: message.reactions } : {}),
           };
         }),
       );
@@ -487,7 +503,7 @@ async function stopServer(server: ServerType): Promise<void> {
   });
 }
 
-function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
+export function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
   if (!Array.isArray(rawMessages)) {
     return [];
   }
@@ -499,6 +515,19 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
       continue;
     }
     const message = parsed.data;
+    const reactions = toRuntimeReactions(
+      message.reactions.map((reaction) => {
+        const emojiId = reaction.emoji.id;
+        const emojiName = reaction.emoji.name;
+
+        return {
+          count: reaction.count,
+          selfReacted: reaction.me,
+          ...(emojiId !== undefined ? { emojiId } : {}),
+          ...(emojiName !== undefined ? { emojiName } : {}),
+        };
+      }),
+    );
 
     messages.push({
       attachments: message.attachments.map((attachment) => {
@@ -514,6 +543,7 @@ function parseDiscordMessages(rawMessages: unknown): DiscordMessage[] {
       content: message.content,
       createdAt: message.timestamp,
       id: message.id,
+      ...(reactions ? { reactions } : {}),
     });
   }
 

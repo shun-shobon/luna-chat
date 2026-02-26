@@ -53,6 +53,24 @@
 - `content: string`
 - `mentionedBot: boolean`
 - `createdAt: string`
+- `reactions?: RuntimeReaction[]`（リアクションがある場合のみ）
+- `replyTo?: RuntimeReplyMessage`
+
+### RuntimeReplyMessage
+
+- `id: string`
+- `authorId: string`
+- `authorName: string`
+- `authorIsBot: boolean`
+- `content: string`
+- `createdAt: string`
+- `reactions?: RuntimeReaction[]`（リアクションがある場合のみ）
+
+### RuntimeReaction
+
+- `emoji: string`
+- `count: number`
+- `selfReacted?: true`（Bot自身がその絵文字でリアクション済みのときのみ）
 
 ### ConversationContext
 
@@ -95,7 +113,7 @@
 
 1. AI が `read_message_history` を呼ぶ
 2. Discord API で `beforeMessageId` と `limit`（最大 100）を使って取得
-3. 結果を時系列昇順で返す
+3. 結果を時系列昇順で返す（各メッセージにはリアクションがある場合のみ `reactions` を含める）
 4. 必要に応じて AI が再度呼び出す
 
 ### 5.4 heartbeat 実行

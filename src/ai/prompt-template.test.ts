@@ -177,6 +177,51 @@ describe("buildPromptBundle", () => {
     });
   });
 
+  it("リアクションがある場合は絵文字別に表示し、自分の分だけ自分済みを付ける", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const input = createInput();
+      input.currentMessage.reactions = [
+        {
+          count: 3,
+          emoji: "👍",
+          selfReacted: true,
+        },
+        {
+          count: 1,
+          emoji: "🎉",
+        },
+      ];
+      input.currentMessage.replyTo = {
+        authorId: "reply-author-id",
+        authorIsBot: false,
+        authorName: "reply-author-name",
+        content: "返信先本文",
+        createdAt: "2026-02-23 08:58:00 JST",
+        id: "reply-message-id",
+        reactions: [
+          {
+            count: 2,
+            emoji: "🔥",
+            selfReacted: true,
+          },
+        ],
+      };
+      const promptBundle = await buildPromptBundle(input, workspaceDir);
+
+      expect(promptBundle.userRolePrompt).toContain("リアクション: 👍 x3 (自分済み), 🎉 x1");
+      expect(promptBundle.userRolePrompt).toContain("> リアクション: 🔥 x2 (自分済み)");
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
+    });
+  });
+
+  it("リアクションがない場合はリアクション行を出力しない", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
+
+      expect(promptBundle.userRolePrompt).not.toContain("リアクション:");
+    });
+  });
+
   it("RUNBOOK 由来の文字列を含めない", async () => {
     await withWorkspaceDir(async (workspaceDir) => {
       const promptBundle = await buildPromptBundle(createInput(), workspaceDir);
@@ -282,6 +327,26 @@ describe("buildSteerPrompt", () => {
     );
     expect(steerPrompt).toContain("> 返信先本文");
     expect(steerPrompt).toMatch(/> 返信先本文\n\[2026-02-23 09:00:00 JST]/);
+    expect(steerPrompt).toMatchSnapshot();
+  });
+
+  it("リアクションがある場合は steer prompt にも表示する", () => {
+    const message = createInput().currentMessage;
+    message.reactions = [
+      {
+        count: 3,
+        emoji: "👍",
+        selfReacted: true,
+      },
+      {
+        count: 1,
+        emoji: "🎉",
+      },
+    ];
+
+    const steerPrompt = buildSteerPrompt(message);
+
+    expect(steerPrompt).toContain("リアクション: 👍 x3 (自分済み), 🎉 x1");
     expect(steerPrompt).toMatchSnapshot();
   });
 });

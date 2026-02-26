@@ -11,7 +11,9 @@
 - メンション有無は `mentionedBot` として保持するが、返信優先制御には使っていない。
 - Bot投稿は無視し、許可チャンネル投稿を AI へ渡す。
 - AI 入力には現在メッセージに加えて、同一チャンネルの直近 10 件履歴を初期投入する。
+- AI 入力メッセージには、リアクションが存在する場合のみ絵文字別 `reactions` を含める（`selfReacted` はBot自身が該当絵文字でリアクション済みのときのみ付与）。
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
+- `read_message_history` の返却メッセージにも、リアクションがある場合のみ `reactions` を含める。
 - 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
 - `send_message` は任意で `replyToMessageId` を指定でき、指定時は返信投稿として送信する。

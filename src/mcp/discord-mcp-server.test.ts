@@ -7,6 +7,7 @@ import type { DiscordAttachmentStore } from "../attachments/discord-attachment-s
 import {
   addMessageReaction,
   DISCORD_MCP_PATH,
+  parseDiscordMessages,
   sendMessage,
   startDiscordMcpServer,
   startTypingLoop,
@@ -262,6 +263,78 @@ describe("typing loop helpers", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("parseDiscordMessages", () => {
+  it("リアクションがある場合は絵文字別情報を含める", () => {
+    const parsed = parseDiscordMessages([
+      {
+        attachments: [],
+        author: {
+          bot: false,
+          id: "author-id",
+          username: "author-name",
+        },
+        content: "hello",
+        id: "message-id",
+        reactions: [
+          {
+            count: 3,
+            emoji: {
+              id: null,
+              name: "👍",
+            },
+            me: true,
+          },
+          {
+            count: 1,
+            emoji: {
+              id: null,
+              name: "🎉",
+            },
+            me: false,
+          },
+        ],
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    expect(parsed).toEqual([
+      expect.objectContaining({
+        id: "message-id",
+        reactions: [
+          {
+            count: 1,
+            emoji: "🎉",
+          },
+          {
+            count: 3,
+            emoji: "👍",
+            selfReacted: true,
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("リアクションがない場合は reactions フィールドを省略する", () => {
+    const parsed = parseDiscordMessages([
+      {
+        attachments: [],
+        author: {
+          bot: false,
+          id: "author-id",
+          username: "author-name",
+        },
+        content: "hello",
+        id: "message-id",
+        reactions: [],
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    expect(parsed[0]).not.toHaveProperty("reactions");
   });
 });
 

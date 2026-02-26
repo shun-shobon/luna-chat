@@ -7,6 +7,7 @@ import {
   type DiscordAttachmentStore,
 } from "../attachments/discord-attachment-store";
 import { formatDateTimeJst } from "../context/date-time";
+import { toRuntimeReactions } from "../context/runtime-reaction";
 import type { RuntimeMessage, RuntimeReplyMessage } from "../context/types";
 import { evaluateReplyPolicy } from "../policy/reply-policy";
 
@@ -14,6 +15,19 @@ type AttachmentSource = {
   id: string;
   name?: string | null;
   url: string;
+};
+
+type ReactionSource = {
+  count: number;
+  emoji: {
+    id?: string | null;
+    name?: string | null;
+  };
+  me: boolean;
+};
+
+type ReactionsManagerSource = {
+  cache: Collection<string, ReactionSource>;
 };
 
 type RuntimeMessageSource = {
@@ -34,6 +48,7 @@ type RuntimeMessageSource = {
   member?: {
     displayName: string;
   } | null;
+  reactions?: ReactionsManagerSource;
   reference?: {
     messageId?: string | null | undefined;
   } | null;
@@ -68,6 +83,7 @@ export type MessageLike = {
   member?: {
     displayName: string;
   } | null;
+  reactions?: ReactionsManagerSource;
   reference?: {
     messageId?: string | null | undefined;
   } | null;
@@ -179,6 +195,7 @@ async function toRuntimeMessageFromSource(input: {
     logger: input.logger,
     message: input.message,
   });
+  const reactions = toRuntimeReactionsFromSource(input.message.reactions);
 
   return {
     id: input.message.id,
@@ -189,6 +206,7 @@ async function toRuntimeMessageFromSource(input: {
     content,
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),
+    ...(reactions ? { reactions } : {}),
     ...(replyTo ? { replyTo } : {}),
   };
 }
@@ -307,6 +325,7 @@ async function toRuntimeReplyMessageFromSource(input: {
     logger: input.logger,
     messageId: input.message.id,
   });
+  const reactions = toRuntimeReactionsFromSource(input.message.reactions);
 
   return {
     id: input.message.id,
@@ -315,7 +334,30 @@ async function toRuntimeReplyMessageFromSource(input: {
     authorName: input.message.member?.displayName ?? input.message.author.username,
     content,
     createdAt: formatDateTimeJst(input.message.createdAt),
+    ...(reactions ? { reactions } : {}),
   };
+}
+
+function toRuntimeReactionsFromSource(
+  reactions: ReactionsManagerSource | undefined,
+): RuntimeMessage["reactions"] {
+  if (!reactions) {
+    return undefined;
+  }
+
+  return toRuntimeReactions(
+    Array.from(reactions.cache.values()).map((reaction) => {
+      const emojiId = reaction.emoji.id;
+      const emojiName = reaction.emoji.name;
+
+      return {
+        count: reaction.count,
+        selfReacted: reaction.me,
+        ...(emojiId !== undefined ? { emojiId } : {}),
+        ...(emojiName !== undefined ? { emojiName } : {}),
+      };
+    }),
+  );
 }
 
 function resolveChannelName(channelName: string | null | undefined): string {

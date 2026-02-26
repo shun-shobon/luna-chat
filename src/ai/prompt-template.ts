@@ -62,10 +62,15 @@ export function buildSteerPrompt(message: RuntimeMessage): string {
 function formatRuntimeMessageBlock(
   message: Pick<
     RuntimeMessage,
-    "id" | "authorId" | "authorIsBot" | "authorName" | "content" | "createdAt"
+    "id" | "authorId" | "authorIsBot" | "authorName" | "content" | "createdAt" | "reactions"
   >,
 ): string {
-  return `${formatRuntimeMessageMetaLine(message)}\n${message.content}`;
+  const lines = [formatRuntimeMessageMetaLine(message), message.content];
+  if (message.reactions && message.reactions.length > 0) {
+    lines.push(`リアクション: ${formatRuntimeReactions(message.reactions)}`);
+  }
+
+  return lines.join("\n");
 }
 
 function formatRuntimeMessageMetaLine(
@@ -79,6 +84,14 @@ function toQuotedBlock(block: string): string {
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
+}
+
+function formatRuntimeReactions(reactions: NonNullable<RuntimeMessage["reactions"]>): string {
+  return reactions
+    .map((reaction) => {
+      return `${reaction.emoji} x${reaction.count}${reaction.selfReacted ? " (自分済み)" : ""}`;
+    })
+    .join(", ");
 }
 
 export async function buildHeartbeatPromptBundle(

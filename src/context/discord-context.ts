@@ -1,6 +1,7 @@
 import type { Collection, Message } from "discord.js";
 
 import { formatDateTimeJst } from "./date-time";
+import { toRuntimeReactions } from "./runtime-reaction";
 import type { ConversationContext, RuntimeMessage } from "./types";
 
 type ConversationContextChannel = {
@@ -38,6 +39,17 @@ export async function fetchConversationContext(
 }
 
 export function toRuntimeMessage(message: Message, botUserId: string): RuntimeMessage {
+  const reactions = toRuntimeReactions(
+    Array.from(message.reactions?.cache.values() ?? []).map((reaction) => {
+      return {
+        count: reaction.count,
+        emojiId: reaction.emoji.id,
+        emojiName: reaction.emoji.name,
+        selfReacted: reaction.me,
+      };
+    }),
+  );
+
   return {
     id: message.id,
     channelId: message.channelId,
@@ -47,6 +59,7 @@ export function toRuntimeMessage(message: Message, botUserId: string): RuntimeMe
     content: message.content,
     mentionedBot: message.mentions.has(botUserId),
     createdAt: formatDateTimeJst(message.createdAt),
+    ...(reactions ? { reactions } : {}),
   };
 }
 
