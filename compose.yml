@@ -1,6 +1,8 @@
 services:
   luna-chat:
     image: ghcr.io/shun-shobon/luna-chat:latest
+    environment:
+      TZ: Asia/Tokyo
     env_file:
       - .env
     volumes:
