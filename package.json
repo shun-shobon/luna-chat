@@ -11,6 +11,7 @@
     "dev": "tsx --watch src/index.ts",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
+    "knip": "knip",
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --type-aware --type-check --fix",
     "start": "./dist/index.mjs",
@@ -30,6 +31,8 @@
   "devDependencies": {
     "@tsconfig/node-lts": "24.0.0",
     "@tsconfig/strictest": "2.0.8",
+    "@types/node": "25.3.2",
+    "knip": "5.85.0",
     "oxfmt": "0.34.0",
     "oxlint": "1.49.0",
     "oxlint-tsgolint": "0.14.2",
