@@ -67,6 +67,7 @@ pnpm run start
 - `pnpm run typecheck`
 - `pnpm run lint`
 - `pnpm run lint:fix`
+- `pnpm run knip`
 - `pnpm run format:check`
 - `pnpm run format`
 - `pnpm run test`

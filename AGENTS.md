@@ -18,10 +18,11 @@ Codex CLI app-serverとDiscord.jsを使ったDiscord Chat Botを作成します�
 - `pnpm run typecheck`: TypeScript型チェックを実行する。
 - `pnpm run lint`: lintを実行する。
 - `pnpm run lint:fix`: lintの自動修正を実行する。
+- `pnpm run knip`: 未使用ファイル・未使用export・未使用依存を検出する。
 - `pnpm run format`: フォーマットを実行する。
 - `pnpm run format:check`: フォーマット差分の有無のみを検査する。
 
-ソースコードを更新した場合、型チェック、lint、フォーマットを実行し、問題がないことを確認してからコミットしてください。
+ソースコードを更新した場合、型チェック、lint、knip、フォーマットを実行し、問題がないことを確認してからコミットしてください。
 
 ## コミット
 

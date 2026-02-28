@@ -67,14 +67,14 @@ type ParsedTokenUsageUpdated = {
   tokenUsage: TurnTokenUsage;
 };
 
-export type McpToolCallStartedNotification = {
+type McpToolCallStartedNotification = {
   threadId: string;
   turnId: string;
   server: string;
   tool: string;
 };
 
-export type McpToolCallCompletedNotification = {
+type McpToolCallCompletedNotification = {
   threadId: string;
   turnId: string;
   server: string;
@@ -82,7 +82,7 @@ export type McpToolCallCompletedNotification = {
   status: McpToolCallStatus;
 };
 
-export type TurnNotificationObserver = {
+type TurnNotificationObserver = {
   onMcpToolCallStarted?: (event: McpToolCallStartedNotification) => void;
   onMcpToolCallCompleted?: (event: McpToolCallCompletedNotification) => void;
 };
