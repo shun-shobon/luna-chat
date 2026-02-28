@@ -31,7 +31,7 @@
 1. `DISCORD_BOT_TOKEN` が設定されていることを確認する。
 2. `ALLOWED_CHANNEL_IDS` が 1 件以上設定されていることを確認する。
 3. `LUNA_HOME` 未設定時は `~/.luna` を使用することを確認する。
-4. 起動時に `LUNA_HOME` / `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` が自動作成されることを確認する。
+4. 起動時に `LUNA_HOME` / `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` / `$LUNA_HOME/logs` が自動作成されることを確認する。
 
 ### 3.2 開発時コマンド
 
@@ -47,7 +47,8 @@
 2. 現在メッセージと直近 10 件を AI に渡す。
 3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信する。
 4. AI エラー時は返信せず終了し、失敗ログを確認する。
-5. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。
+5. アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log`（JSONL）にも出力される。
+6. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。
 
 ## 4. プロンプト運用
 

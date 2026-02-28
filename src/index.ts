@@ -23,7 +23,7 @@ import {
 } from "./modules/mcp/inbound/discord-mcp-http-server";
 import { type RuntimeConfig, loadRuntimeConfig } from "./modules/runtime-config/runtime-config";
 import { createTypingLifecycleRegistry } from "./modules/typing/typing-lifecycle-registry";
-import { logger } from "./shared/logger";
+import { closeFileLogging, initializeFileLogging, logger } from "./shared/logger";
 
 const CODEX_APP_SERVER_COMMAND = ["codex", "app-server", "--listen", "stdio://"] as const;
 const CODEX_APP_SERVER_MODEL = "gpt-5.3-codex";
@@ -44,6 +44,7 @@ const client = new Client({
 });
 
 const runtimeConfig = await loadConfigOrExit();
+await initializeFileLoggingOrExit(runtimeConfig.logsDir);
 const typingLifecycleRegistry = createTypingLifecycleRegistry();
 const attachmentStore = new WorkspaceDiscordAttachmentStore(runtimeConfig.codexWorkspaceDir);
 const discordMcpServer = await startDiscordMcpServerOrExit(
@@ -118,10 +119,11 @@ client.on("messageCreate", async (message) => {
   });
 });
 
-await client.login(runtimeConfig.discordBotToken).catch((error: unknown) => {
+await client.login(runtimeConfig.discordBotToken).catch(async (error: unknown) => {
   logger.error("Failed to login:", error);
   heartbeatRunner.stop();
-  void closeDiscordMcpServer(discordMcpServer);
+  await closeDiscordMcpServer(discordMcpServer);
+  await closeFileLogging();
   process.exit(1);
 });
 
@@ -130,6 +132,20 @@ async function loadConfigOrExit(): Promise<RuntimeConfig> {
     return await loadRuntimeConfig();
   } catch (error: unknown) {
     logger.error("Invalid configuration:", error);
+    process.exit(1);
+  }
+}
+
+async function initializeFileLoggingOrExit(logsDir: string): Promise<void> {
+  try {
+    const { logFilePath } = await initializeFileLogging({
+      logsDir,
+    });
+    logger.info("File logging enabled.", {
+      logFilePath,
+    });
+  } catch (error: unknown) {
+    logger.error("Failed to initialize file logging:", error);
     process.exit(1);
   }
 }
@@ -153,6 +169,7 @@ async function startDiscordMcpServerOrExit(
     return mcpServer;
   } catch (error: unknown) {
     logger.error("Failed to start Discord MCP server:", error);
+    await closeFileLogging();
     process.exit(1);
   }
 }
@@ -182,6 +199,7 @@ function registerShutdownHooks(input: {
     input.typingLifecycleRegistry.stopAll();
     await input.client.destroy();
     await closeDiscordMcpServer(input.discordMcpServer);
+    await closeFileLogging();
     process.exit(0);
   };
 

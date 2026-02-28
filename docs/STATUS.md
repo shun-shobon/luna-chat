@@ -26,6 +26,8 @@
 - AI は必要時に MCP tool `get_user_detail` で `userId` と `channelId` から `user`（基本ユーザー情報 + `displayName` / `nickname`）を取得できる。
 - AI turn の開始/終了は `info` ログへ出力し、終了時には `thread/tokenUsage/updated` 由来のトークン使用量（`last`/`total` 内訳）を含める。
 - MCP tool 呼び出しは開始時/終了時の両タイミングで `info` ログを出力する。
+- アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log` へ JSONL でも出力する。
+- ログファイル出力の初期化に失敗した場合は起動を中断する（fail-fast）。
 - `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
@@ -37,7 +39,7 @@
 - メンション起点の typing は message handler の `finally` で停止し、tool 起点の typing は Discord turn 完了時コールバックで停止する。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
 - 設定は `DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
-- 起動時に `LUNA_HOME` / `workspace` / `codex` を自動作成する。
+- 起動時に `LUNA_HOME` / `workspace` / `codex` / `logs` を自動作成する。
 - Codex app-server は `codex app-server --listen stdio://` を使い、JSON-RPC で接続する。
 - `thread/start` は `ephemeral=true` / `personality="friendly"` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
@@ -73,7 +75,7 @@
 ## 6. リスクメモ
 
 1. 履歴取得回数が増えると遅延が伸びる可能性がある。
-2. ログ非永続のため、長期記憶はワークスペース文書運用に依存する。
+2. 会話ログ本文を永続化しないため、長期記憶はワークスペース文書運用に依存する。
 3. ワークスペース文書の品質が返信品質に直結する。
 
 ## 7. 再開時コンテキスト

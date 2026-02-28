@@ -33,9 +33,9 @@
 
 - `src/modules/runtime-config/runtime-config.ts`
   - 環境変数検証（`DISCORD_BOT_TOKEN` / `ALLOWED_CHANNEL_IDS` / `LUNA_HOME`）
-  - `LUNA_HOME` / `workspace` / `codex` の自動作成・書込可否検証
+  - `LUNA_HOME` / `workspace` / `codex` / `logs` の自動作成・書込可否検証
 - `src/shared/logger.ts`
-  - 共通 logger
+  - 共通 logger（標準出力 + `$LUNA_HOME/logs/*.log` JSONL 出力）
 - `src/shared/discord/message-author-label.ts`
   - 表示名ラベル整形（`<name> (ID: <id>)`）
 - `src/shared/discord/runtime-reaction.ts`
@@ -177,7 +177,7 @@
 - `DISCORD_BOT_TOKEN`: 必須
 - `ALLOWED_CHANNEL_IDS`: 必須（カンマ区切り）
 - `LUNA_HOME`: 任意（未設定時 `~/.luna`）
-- 起動時に `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` を自動作成する
+- 起動時に `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` / `$LUNA_HOME/logs` を自動作成する
 
 ## 8. エラーハンドリング
 

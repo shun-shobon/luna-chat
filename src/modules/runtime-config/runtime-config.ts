@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const DEFAULT_LUNA_HOME = "~/.luna";
 const WORKSPACE_DIR_NAME = "workspace";
 const CODEX_HOME_DIR_NAME = "codex";
+const LOGS_DIR_NAME = "logs";
 
 export type RuntimeConfig = {
   discordBotToken: string;
@@ -12,6 +13,7 @@ export type RuntimeConfig = {
   lunaHomeDir: string;
   codexHomeDir: string;
   codexWorkspaceDir: string;
+  logsDir: string;
 };
 
 export class RuntimeConfigError extends Error {
@@ -33,16 +35,19 @@ export async function loadRuntimeConfig(
   const lunaHomeDir = resolveLunaHome(env["LUNA_HOME"]);
   const codexWorkspaceDir = resolve(lunaHomeDir, WORKSPACE_DIR_NAME);
   const codexHomeDir = resolve(lunaHomeDir, CODEX_HOME_DIR_NAME);
+  const logsDir = resolve(lunaHomeDir, LOGS_DIR_NAME);
 
   await ensureDirectoryReady(lunaHomeDir, "LUNA_HOME must be a writable directory.");
   await ensureDirectoryReady(codexWorkspaceDir, "workspace must be a writable directory.");
   await ensureDirectoryReady(codexHomeDir, "codex home must be a writable directory.");
+  await ensureDirectoryReady(logsDir, "logs directory must be a writable directory.");
 
   return {
     allowedChannelIds,
     lunaHomeDir,
     codexHomeDir,
     codexWorkspaceDir,
+    logsDir,
     discordBotToken,
   };
 }

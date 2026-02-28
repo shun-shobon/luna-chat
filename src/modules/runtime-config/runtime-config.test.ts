@@ -20,6 +20,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.lunaHomeDir).toBe(resolve(lunaHomeDir));
     expect(config.codexWorkspaceDir).toBe(resolve(lunaHomeDir, "workspace"));
     expect(config.codexHomeDir).toBe(resolve(lunaHomeDir, "codex"));
+    expect(config.logsDir).toBe(resolve(lunaHomeDir, "logs"));
 
     await rm(config.lunaHomeDir, {
       force: true,
@@ -46,6 +47,7 @@ describe("loadRuntimeConfig", () => {
       expect(config.lunaHomeDir).toBe(resolve(testHome, relativeLunaHome));
       expect(config.codexWorkspaceDir).toBe(resolve(testHome, relativeLunaHome, "workspace"));
       expect(config.codexHomeDir).toBe(resolve(testHome, relativeLunaHome, "codex"));
+      expect(config.logsDir).toBe(resolve(testHome, relativeLunaHome, "logs"));
 
       await rm(config.lunaHomeDir, {
         force: true,
@@ -64,15 +66,20 @@ describe("loadRuntimeConfig", () => {
     }
   });
 
-  it("workspace と codex ディレクトリを自動作成する", async () => {
+  it("workspace と codex と logs ディレクトリを自動作成する", async () => {
     const lunaHomeDir = createTempLunaHomeDir();
     const workspaceDir = resolve(lunaHomeDir, "workspace");
     const codexHomeDir = resolve(lunaHomeDir, "codex");
+    const logsDir = resolve(lunaHomeDir, "logs");
     await rm(workspaceDir, {
       force: true,
       recursive: true,
     });
     await rm(codexHomeDir, {
+      force: true,
+      recursive: true,
+    });
+    await rm(logsDir, {
       force: true,
       recursive: true,
     });
@@ -85,6 +92,7 @@ describe("loadRuntimeConfig", () => {
 
     expect(await exists(workspaceDir)).toBe(true);
     expect(await exists(codexHomeDir)).toBe(true);
+    expect(await exists(logsDir)).toBe(true);
 
     await rm(lunaHomeDir, {
       force: true,

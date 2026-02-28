@@ -27,7 +27,7 @@ ALLOWED_CHANNEL_IDS=123456789012345678,234567890123456789
 LUNA_HOME=~/.luna
 ```
 
-`LUNA_HOME` は起動時に自動作成され、`$LUNA_HOME/workspace` と `$LUNA_HOME/codex` も自動で準備されます。
+`LUNA_HOME` は起動時に自動作成され、`$LUNA_HOME/workspace` / `$LUNA_HOME/codex` / `$LUNA_HOME/logs` も自動で準備されます。
 
 3. Codex の設定・認証を準備
 
@@ -58,6 +58,9 @@ pnpm run dev
 pnpm run build
 pnpm run start
 ```
+
+起動後のアプリケーションログは標準出力に加えて `$LUNA_HOME/logs` にも JSONL で出力されます。  
+ファイル名は起動時刻ベースの `YYYYMMDD-HHmmss-SSS.log` です。
 
 ## 開発で使うコマンド
 
