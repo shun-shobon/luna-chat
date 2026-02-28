@@ -1,6 +1,6 @@
-import type { ReasoningEffort } from "../../../ai/codex-generated/ReasoningEffort";
 import { logger } from "../../../shared/logger";
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
+import type { ReasoningEffort } from "../codex-generated/ReasoningEffort";
 import type { AiRuntimePort, StartedTurn } from "../ports/outbound/ai-runtime-port";
 
 import {

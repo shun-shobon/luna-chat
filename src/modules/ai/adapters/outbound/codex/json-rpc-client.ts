@@ -1,14 +1,14 @@
-import type { ClientNotification } from "../../../../../ai/codex-generated/ClientNotification";
-import type { ClientRequest } from "../../../../../ai/codex-generated/ClientRequest";
-import type { RequestId } from "../../../../../ai/codex-generated/RequestId";
-import type { JsonValue } from "../../../../../ai/codex-generated/serde_json/JsonValue";
-import type { AskForApproval } from "../../../../../ai/codex-generated/v2/AskForApproval";
-import type { CommandExecutionRequestApprovalResponse } from "../../../../../ai/codex-generated/v2/CommandExecutionRequestApprovalResponse";
-import type { FileChangeRequestApprovalResponse } from "../../../../../ai/codex-generated/v2/FileChangeRequestApprovalResponse";
-import type { SandboxMode } from "../../../../../ai/codex-generated/v2/SandboxMode";
-import type { ThreadStartParams } from "../../../../../ai/codex-generated/v2/ThreadStartParams";
-import type { ToolRequestUserInputQuestion } from "../../../../../ai/codex-generated/v2/ToolRequestUserInputQuestion";
-import type { ToolRequestUserInputResponse } from "../../../../../ai/codex-generated/v2/ToolRequestUserInputResponse";
+import type { ClientNotification } from "../../../codex-generated/ClientNotification";
+import type { ClientRequest } from "../../../codex-generated/ClientRequest";
+import type { RequestId } from "../../../codex-generated/RequestId";
+import type { JsonValue } from "../../../codex-generated/serde_json/JsonValue";
+import type { AskForApproval } from "../../../codex-generated/v2/AskForApproval";
+import type { CommandExecutionRequestApprovalResponse } from "../../../codex-generated/v2/CommandExecutionRequestApprovalResponse";
+import type { FileChangeRequestApprovalResponse } from "../../../codex-generated/v2/FileChangeRequestApprovalResponse";
+import type { SandboxMode } from "../../../codex-generated/v2/SandboxMode";
+import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
+import type { ToolRequestUserInputQuestion } from "../../../codex-generated/v2/ToolRequestUserInputQuestion";
+import type { ToolRequestUserInputResponse } from "../../../codex-generated/v2/ToolRequestUserInputResponse";
 
 import type { StdioProcessHandle } from "./stdio-process";
 

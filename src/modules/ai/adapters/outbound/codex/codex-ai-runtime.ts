@@ -1,9 +1,9 @@
-import type { AskForApproval } from "../../../../../ai/codex-generated/v2/AskForApproval";
-import type { SandboxMode } from "../../../../../ai/codex-generated/v2/SandboxMode";
-import type { ThreadStartParams } from "../../../../../ai/codex-generated/v2/ThreadStartParams";
-import type { TurnStartParams } from "../../../../../ai/codex-generated/v2/TurnStartParams";
-import type { TurnSteerParams } from "../../../../../ai/codex-generated/v2/TurnSteerParams";
-import type { UserInput } from "../../../../../ai/codex-generated/v2/UserInput";
+import type { AskForApproval } from "../../../codex-generated/v2/AskForApproval";
+import type { SandboxMode } from "../../../codex-generated/v2/SandboxMode";
+import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
+import type { TurnStartParams } from "../../../codex-generated/v2/TurnStartParams";
+import type { TurnSteerParams } from "../../../codex-generated/v2/TurnSteerParams";
+import type { UserInput } from "../../../codex-generated/v2/UserInput";
 import type { StartedTurn } from "../../../ports/outbound/ai-runtime-port";
 
 import {

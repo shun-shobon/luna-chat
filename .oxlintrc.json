@@ -36,5 +36,5 @@
     "builtin": true
   },
   "globals": {},
-  "ignorePatterns": ["src/ai/codex-generated"]
+  "ignorePatterns": ["src/modules/ai/codex-generated"]
 }

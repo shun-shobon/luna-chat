@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-02-26
+- 2026-02-28
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -26,6 +26,7 @@
 - `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
+- 旧実装（`src/ai` の非生成コード、`src/context/*`、`src/policy/*`）は削除し、生成型は `src/modules/ai/codex-generated/*` へ移設済み。
 - typing 管理は `typing-lifecycle-registry` で一元化している。
 - メンション起点の typing は message handler の `finally` で停止し、tool 起点の typing は Discord turn 完了時コールバックで停止する。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。

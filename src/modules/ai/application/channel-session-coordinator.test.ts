@@ -1,52 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { RuntimeMessage } from "../context/types";
+import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
+import type { TurnResult } from "../adapters/outbound/codex/turn-result-collector";
+import type { StartedTurn } from "../ports/outbound/ai-runtime-port";
 
-import {
-  buildThreadConfig,
-  CodexAppServerAiService,
-  type AiInput,
-  type CodexAppServerAiServiceOptions,
-} from "./ai-service";
-import type { StartedTurn, TurnResult } from "./codex-app-server-client";
+import { ChannelSessionCoordinator } from "./channel-session-coordinator";
+import { buildThreadConfig } from "./thread-config-factory";
 
-describe("CodexAppServerAiService", () => {
+describe("ChannelSessionCoordinator", () => {
   it("同一チャンネルで進行中turnがある場合は steer を送る", async () => {
-    const client = new FakeCodexClient();
+    const runtime = new FakeAiRuntime();
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
     await service.generateReply(createAiInput("m2", "c1", "second"));
 
-    expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
+    expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
+    expect(runtime.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
-    expect(client.close).toHaveBeenCalledTimes(1);
+    expect(runtime.close).toHaveBeenCalledTimes(1);
   });
 
   it("返信付きメッセージでも同一 turn へ steer する", async () => {
-    const client = new FakeCodexClient();
+    const runtime = new FakeAiRuntime();
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
     await service.generateReply(
@@ -62,174 +53,154 @@ describe("CodexAppServerAiService", () => {
       }),
     );
 
-    expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
+    expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
+    expect(runtime.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
   });
 
   it("起動中に到着した後続メッセージも同一セッションに合流する", async () => {
     const initializeGate = createDeferred<void>();
-    const client = new FakeCodexClient({
+    const runtime = new FakeAiRuntime({
       initializeGate,
     });
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     const secondPromise = service.generateReply(createAiInput("m2", "c1", "second"));
 
-    expect(client.startTurn).toHaveBeenCalledTimes(0);
-    expect(client.steerTurn).toHaveBeenCalledTimes(0);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(0);
+    expect(runtime.steerTurn).toHaveBeenCalledTimes(0);
 
     initializeGate.resolve();
 
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
     await secondPromise;
 
-    expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
+    expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
+    expect(runtime.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
   });
 
   it("steer 失敗時は同一threadで turn/start にフォールバックする", async () => {
-    const client = new FakeCodexClient();
-    client.steerTurn.mockRejectedValueOnce(new Error("expected turn mismatch"));
+    const runtime = new FakeAiRuntime();
+    runtime.steerTurn.mockRejectedValueOnce(new Error("expected turn mismatch"));
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
     await service.generateReply(createAiInput("m2", "c1", "second"));
 
-    expect(client.steerTurn).toHaveBeenCalledTimes(1);
-    expect(client.startTurn).toHaveBeenCalledTimes(2);
-    expect(client.startTurn).toHaveBeenNthCalledWith(2, "thread-1", expect.any(String));
+    expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.startTurn).toHaveBeenNthCalledWith(2, "thread-1", expect.any(String));
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
 
-    client.completeTurn("turn-2", createCompletedTurnResult());
+    runtime.completeTurn("turn-2", createCompletedTurnResult());
     await vi.waitFor(() => {
-      expect(client.close).toHaveBeenCalledTimes(1);
+      expect(runtime.close).toHaveBeenCalledTimes(1);
     });
   });
 
   it("turn完了後はセッションを閉じ、次メッセージで新規起動する", async () => {
-    const client1 = new FakeCodexClient();
-    const client2 = new FakeCodexClient();
-    const createClient = vi
-      .fn<() => FakeCodexClient>()
-      .mockReturnValueOnce(client1)
-      .mockReturnValueOnce(client2);
+    const runtime1 = new FakeAiRuntime();
+    const runtime2 = new FakeAiRuntime();
+    const createRuntime = vi
+      .fn<() => FakeAiRuntime>()
+      .mockReturnValueOnce(runtime1)
+      .mockReturnValueOnce(runtime2);
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient,
+      createRuntime,
     });
 
     const firstPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client1.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime1.startTurn).toHaveBeenCalledTimes(1);
     });
-    client1.completeTurn("turn-1", createCompletedTurnResult());
+    runtime1.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
 
     const secondPromise = service.generateReply(createAiInput("m2", "c1", "second"));
     await vi.waitFor(() => {
-      expect(client2.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime2.startTurn).toHaveBeenCalledTimes(1);
     });
 
-    expect(createClient).toHaveBeenCalledTimes(2);
-    expect(client1.steerTurn).toHaveBeenCalledTimes(0);
+    expect(createRuntime).toHaveBeenCalledTimes(2);
+    expect(runtime1.steerTurn).toHaveBeenCalledTimes(0);
 
-    client2.completeTurn("turn-1", createCompletedTurnResult());
+    runtime2.completeTurn("turn-1", createCompletedTurnResult());
     await secondPromise;
   });
 
   it("heartbeat 実行時は専用プロンプトで turn を完了まで待機する", async () => {
-    const client = new FakeCodexClient();
-    const buildHeartbeatPromptBundle = vi.fn(async () => {
-      return createPromptBundle("heartbeat prompt");
-    });
+    const runtime = new FakeAiRuntime();
     const service = createService({
-      buildHeartbeatPromptBundle,
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const runPromise = service.generateHeartbeat({
       prompt: "HEARTBEAT.mdを確認し、作業を行ってください。",
     });
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
-    expect(buildHeartbeatPromptBundle).toHaveBeenCalledWith(
-      "/tmp/workspace",
+    expect(runtime.startTurn).toHaveBeenCalledWith(
+      "thread-1",
       "HEARTBEAT.mdを確認し、作業を行ってください。",
     );
-    expect(client.startTurn).toHaveBeenCalledWith("thread-1", "heartbeat prompt");
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await runPromise;
-    expect(client.close).toHaveBeenCalledTimes(1);
+    expect(runtime.close).toHaveBeenCalledTimes(1);
   });
 
-  it("heartbeat の turn が失敗した場合でも client を close する", async () => {
-    const client = new FakeCodexClient();
+  it("heartbeat の turn が失敗した場合でも runtime を close する", async () => {
+    const runtime = new FakeAiRuntime();
     const service = createService({
-      buildPromptBundle: vi.fn(async () => {
-        return createPromptBundle("初回プロンプト");
-      }),
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
     });
 
     const runPromise = service.generateHeartbeat({
       prompt: "HEARTBEAT.mdを確認し、作業を行ってください。",
     });
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
-    client.completeTurn("turn-1", createFailedTurnResult("heartbeat failed"));
+    runtime.completeTurn("turn-1", createFailedTurnResult("heartbeat failed"));
     await expect(runPromise).rejects.toThrow("heartbeat failed");
-    expect(client.close).toHaveBeenCalledTimes(1);
+    expect(runtime.close).toHaveBeenCalledTimes(1);
   });
 
   it("turn完了時に onDiscordTurnCompleted を呼び出す", async () => {
-    const client = new FakeCodexClient();
+    const runtime = new FakeAiRuntime();
     const onDiscordTurnCompleted = vi.fn();
     const service = createService({
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
       onDiscordTurnCompleted,
     });
 
     const runPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await runPromise;
 
     expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(1);
@@ -237,28 +208,28 @@ describe("CodexAppServerAiService", () => {
   });
 
   it("旧turn完了では onDiscordTurnCompleted を呼び出さない", async () => {
-    const client = new FakeCodexClient();
-    client.steerTurn.mockRejectedValueOnce(new Error("expected turn mismatch"));
+    const runtime = new FakeAiRuntime();
+    runtime.steerTurn.mockRejectedValueOnce(new Error("expected turn mismatch"));
     const onDiscordTurnCompleted = vi.fn();
     const service = createService({
-      createClient: vi.fn(() => client),
+      createRuntime: vi.fn(() => runtime),
       onDiscordTurnCompleted,
     });
 
     const runPromise = service.generateReply(createAiInput("m1", "c1", "first"));
     await vi.waitFor(() => {
-      expect(client.startTurn).toHaveBeenCalledTimes(1);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
     await service.generateReply(createAiInput("m2", "c1", "second"));
-    expect(client.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
 
-    client.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
     await vi.waitFor(() => {
       expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(0);
     });
 
-    client.completeTurn("turn-2", createCompletedTurnResult());
+    runtime.completeTurn("turn-2", createCompletedTurnResult());
     await runPromise;
     expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(1);
     expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c1");
@@ -280,11 +251,11 @@ describe("buildThreadConfig", () => {
   });
 });
 
-type FakeCodexClientOptions = {
+type FakeAiRuntimeOptions = {
   initializeGate?: Deferred<void>;
 };
 
-class FakeCodexClient {
+class FakeAiRuntime {
   readonly initialize;
   readonly startThread;
   readonly startTurn;
@@ -294,7 +265,7 @@ class FakeCodexClient {
   private readonly turns = new Map<string, Deferred<TurnResult>>();
   private nextTurnIndex = 1;
 
-  constructor(private readonly options: FakeCodexClientOptions = {}) {
+  constructor(private readonly options: FakeAiRuntimeOptions = {}) {
     this.initialize = vi.fn(async () => {
       if (this.options.initializeGate) {
         await this.options.initializeGate.promise;
@@ -328,77 +299,20 @@ class FakeCodexClient {
 }
 
 type CreateServiceInput = {
-  buildHeartbeatPromptBundle?: (
-    workspaceDir: string,
-    prompt: string,
-  ) => Promise<{
-    developerRolePrompt: string;
-    instructions: string;
-    userRolePrompt: string;
-  }>;
-  buildPromptBundle?: (
-    input: AiInput,
-    cwd: string,
-  ) => Promise<{
-    developerRolePrompt: string;
-    instructions: string;
-    userRolePrompt: string;
-  }>;
-  createClient: () => FakeCodexClient;
+  createRuntime: () => FakeAiRuntime;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
 };
 
-function createService(input: CreateServiceInput): CodexAppServerAiService {
-  const buildPromptBundle =
-    input.buildPromptBundle ??
-    (async () => {
-      return createPromptBundle("初回プロンプト");
-    });
-  const buildHeartbeatPromptBundle =
-    input.buildHeartbeatPromptBundle ??
-    (async (_workspaceDir, prompt) => {
-      return createPromptBundle(prompt);
-    });
-
-  const optionOverrides: Partial<CodexAppServerAiServiceOptions> = {};
-  if (input.onDiscordTurnCompleted) {
-    optionOverrides.onDiscordTurnCompleted = input.onDiscordTurnCompleted;
-  }
-
-  return new CodexAppServerAiService(createOptions(optionOverrides), {
-    buildHeartbeatPromptBundle,
-    buildPromptBundle,
-    createClient: () => input.createClient(),
-  });
-}
-
-function createOptions(
-  overrides: Partial<CodexAppServerAiServiceOptions> = {},
-): CodexAppServerAiServiceOptions {
-  return {
-    approvalPolicy: "never",
-    codexHomeDir: "/tmp/codex",
-    command: ["codex", "app-server", "--listen", "stdio://"],
-    cwd: "/tmp/workspace",
+function createService(input: CreateServiceInput): ChannelSessionCoordinator {
+  return new ChannelSessionCoordinator({
+    createRuntime: () => input.createRuntime(),
     discordMcpServerUrl: "http://127.0.0.1:43123/mcp",
-    model: "gpt-5.3-codex",
     reasoningEffort: "medium",
-    sandbox: "workspace-write",
-    timeoutMs: 60_000,
-    ...overrides,
-  };
-}
-
-function createPromptBundle(userRolePrompt: string): {
-  developerRolePrompt: string;
-  instructions: string;
-  userRolePrompt: string;
-} {
-  return {
-    developerRolePrompt: "developer",
-    instructions: "instructions",
-    userRolePrompt,
-  };
+    workspaceDir: "/tmp/workspace",
+    ...(input.onDiscordTurnCompleted
+      ? { onDiscordTurnCompleted: input.onDiscordTurnCompleted }
+      : {}),
+  });
 }
 
 function createAiInput(
@@ -408,7 +322,11 @@ function createAiInput(
   options: {
     replyTo?: RuntimeMessage["replyTo"];
   } = {},
-): AiInput {
+): {
+  channelName: string;
+  currentMessage: RuntimeMessage;
+  recentMessages: RuntimeMessage[];
+} {
   const currentMessage: RuntimeMessage = {
     authorId: "author-id",
     authorIsBot: false,

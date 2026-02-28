@@ -1,5 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "project": ["src/**/*.ts"],
-  "ignore": ["src/ai/codex-generated/**"]
+  "ignore": ["src/modules/ai/codex-generated/**"]
 }

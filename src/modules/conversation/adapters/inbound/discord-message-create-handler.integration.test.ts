@@ -191,6 +191,52 @@ describe("handleMessageCreate integration", () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
+  it("DM は無反応", async () => {
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({
+      inGuild: false,
+      sendTyping,
+    });
+    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("スレッド投稿は無反応", async () => {
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({
+      isThread: true,
+      sendTyping,
+    });
+    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const aiService = createAiService(generateReply);
+    const attachmentStore = createAttachmentStore();
+
+    await handleMessageCreate({
+      attachmentStore,
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
   it("メンション投稿で AI が失敗してもフォールバック返信しない", async () => {
     const reply = vi.fn(async () => undefined);
     const logger = createLogger();
@@ -669,6 +715,8 @@ function createMessage(input?: {
     limit: number;
   }) => Promise<Collection<string, HistoryMessageLike>>;
   fetchReference?: () => Promise<HistoryMessageLike>;
+  inGuild?: boolean;
+  isThread?: boolean;
   mentionBot?: boolean;
   reactions?: ReactionLike[];
   referenceMessage?: HistoryMessageLike;
@@ -691,7 +739,7 @@ function createMessage(input?: {
       return new Collection<string, HistoryMessageLike>();
     });
   const channel: MessageLike["channel"] = {
-    isThread: () => false,
+    isThread: () => input?.isThread ?? false,
     messages: {
       fetch: async (options: unknown) => {
         if (!isFetchHistoryOptions(options)) {
@@ -718,7 +766,7 @@ function createMessage(input?: {
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     createdTimestamp: new Date("2026-01-01T00:00:00.000Z").getTime(),
     id: "message",
-    inGuild: () => true,
+    inGuild: () => input?.inGuild ?? true,
     mentions: {
       has: (userId: string) => {
         if (!input?.mentionBot) {

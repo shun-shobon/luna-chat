@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { AiInput } from "./ai-service";
-import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-template";
+import type { AiInput } from "./prompt-composer";
+import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-composer";
 
 describe("buildPromptBundle", () => {
   it("instructions/developer/user role prompt を分離して生成する", async () => {
@@ -380,7 +380,7 @@ function createInput(): AiInput {
 }
 
 async function withWorkspaceDir(run: (workspaceDir: string) => Promise<void>): Promise<void> {
-  const workspaceDir = await mkdtemp(join(tmpdir(), "luna-prompt-template-"));
+  const workspaceDir = await mkdtemp(join(tmpdir(), "luna-prompt-composer-"));
   try {
     await run(workspaceDir);
   } finally {

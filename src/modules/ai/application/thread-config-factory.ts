@@ -1,4 +1,4 @@
-import type { ReasoningEffort } from "../../../ai/codex-generated/ReasoningEffort";
+import type { ReasoningEffort } from "../codex-generated/ReasoningEffort";
 
 export function buildThreadConfig(
   reasoningEffort: ReasoningEffort,

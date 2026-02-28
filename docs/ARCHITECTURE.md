@@ -92,7 +92,7 @@
 - `src/attachments/discord-attachment-store.ts`
   - 添付ファイル保存
   - 本文末尾 `<attachment:...>` マーカー付与
-- `src/ai/codex-generated/*`
+- `src/modules/ai/codex-generated/*`
   - app-server 型定義（自動生成）
 
 ## 5. データモデル
@@ -177,11 +177,12 @@
 
 - テストは実装モジュール近傍に同居配置する（`*.test.ts`）。
 - 主要テスト:
+  - `src/modules/ai/application/channel-session-coordinator.test.ts`
+  - `src/modules/ai/application/prompt-composer.test.ts`（スナップショット）
   - `src/modules/runtime-config/runtime-config.test.ts`
   - `src/modules/heartbeat/heartbeat-runner.test.ts`
   - `src/modules/conversation/adapters/inbound/discord-message-create-handler.integration.test.ts`
   - `src/modules/mcp/inbound/discord-mcp-http-server.test.ts`
-  - `src/ai/prompt-template.test.ts`（スナップショット）
 
 ## 10. 設計上の決定
 
