@@ -26,9 +26,3 @@ export type RuntimeMessage = {
   reactions?: RuntimeReaction[];
   replyTo?: RuntimeReplyMessage;
 };
-
-export type ConversationContext = {
-  channelId: string;
-  recentMessages: RuntimeMessage[];
-  requestedByToolUse: boolean;
-};

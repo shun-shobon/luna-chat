@@ -9,10 +9,6 @@ export type DiscordAttachmentInput = {
   url: string;
 };
 
-export type AttachmentWarnLogger = {
-  warn: (...arguments_: unknown[]) => void;
-};
-
 export interface DiscordAttachmentStore {
   saveAttachment(input: DiscordAttachmentInput): Promise<string>;
 }
@@ -38,33 +34,6 @@ export class WorkspaceDiscordAttachmentStore implements DiscordAttachmentStore {
     await writeFile(filePath, bytes);
     return filePath;
   }
-}
-
-export async function appendAttachmentMarkersFromSources(input: {
-  attachmentStore: DiscordAttachmentStore;
-  attachments: readonly DiscordAttachmentInput[];
-  channelId: string;
-  content: string;
-  logger: AttachmentWarnLogger;
-  messageId: string;
-}): Promise<string> {
-  const attachmentPaths: string[] = [];
-  for (const attachment of input.attachments) {
-    try {
-      const savedPath = await input.attachmentStore.saveAttachment(attachment);
-      attachmentPaths.push(savedPath);
-    } catch (error: unknown) {
-      input.logger.warn("Failed to save Discord attachment:", {
-        attachmentId: attachment.id,
-        channelId: input.channelId,
-        error,
-        messageId: input.messageId,
-        url: attachment.url,
-      });
-    }
-  }
-
-  return appendAttachmentMarkers(input.content, attachmentPaths);
 }
 
 export function appendAttachmentMarkers(

@@ -2,14 +2,8 @@ import { Collection } from "discord.js";
 
 import type { DiscordAttachmentStore } from "../../../../attachments/discord-attachment-store";
 import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
-import type {
-  RuntimeMessage,
-  RuntimeReaction,
-  RuntimeReplyMessage,
-} from "../../domain/runtime-message";
+import type { RuntimeMessage, RuntimeReplyMessage } from "../../domain/runtime-message";
 import { toRuntimeReactions } from "../../domain/runtime-reaction";
-
-export type { RuntimeMessage, RuntimeReaction, RuntimeReplyMessage };
 
 type AttachmentSource = {
   id: string;
@@ -96,7 +90,7 @@ export type MessageLike = {
   fetchReference?: () => Promise<RuntimeMessageSource>;
 };
 
-export type LoggerLike = {
+type LoggerLike = {
   debug?: (...arguments_: unknown[]) => void;
   info: (...arguments_: unknown[]) => void;
   warn: (...arguments_: unknown[]) => void;
@@ -113,7 +107,7 @@ export type ReplyGenerator = {
   generateReply: (input: GenerateReplyInput) => Promise<void>;
 };
 
-export type HandleMessageInput = {
+type HandleMessageInput = {
   attachmentStore: DiscordAttachmentStore;
   message: MessageLike;
   botUserId: string;

@@ -5,7 +5,7 @@ import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
 
 import { formatMessageAuthorLabel } from "./message-author-label";
 
-export type PromptBundle = {
+type PromptBundle = {
   instructions: string;
   developerRolePrompt: string;
   userRolePrompt: string;
@@ -51,7 +51,7 @@ export async function buildPromptBundle(
   };
 }
 
-export function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
+function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
   const messageBlock = formatRuntimeMessageBlock(message);
   if (!message.replyTo) {
     return messageBlock;

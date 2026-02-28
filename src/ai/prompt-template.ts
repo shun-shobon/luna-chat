@@ -6,7 +6,7 @@ import type { RuntimeMessage } from "../context/types";
 import type { AiInput } from "./ai-service";
 import { formatMessageAuthorLabel } from "./message-author-label";
 
-export type PromptBundle = {
+type PromptBundle = {
   instructions: string;
   developerRolePrompt: string;
   userRolePrompt: string;
@@ -46,7 +46,7 @@ export async function buildPromptBundle(
   };
 }
 
-export function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
+function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
   const messageBlock = formatRuntimeMessageBlock(message);
   if (!message.replyTo) {
     return messageBlock;

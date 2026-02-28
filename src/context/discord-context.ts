@@ -11,7 +11,7 @@ type ConversationContextChannel = {
   };
 };
 
-export type FetchConversationContextInput = {
+type FetchConversationContextInput = {
   channel: ConversationContextChannel;
   botUserId: string;
   limit: number;
@@ -38,7 +38,7 @@ export async function fetchConversationContext(
   };
 }
 
-export function toRuntimeMessage(message: Message, botUserId: string): RuntimeMessage {
+function toRuntimeMessage(message: Message, botUserId: string): RuntimeMessage {
   const reactions = toRuntimeReactions(
     Array.from(message.reactions?.cache.values() ?? []).map((reaction) => {
       return {

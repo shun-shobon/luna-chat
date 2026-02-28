@@ -9,12 +9,10 @@ import type { SandboxMode } from "../../../../../ai/codex-generated/v2/SandboxMo
 import type { ThreadStartParams } from "../../../../../ai/codex-generated/v2/ThreadStartParams";
 import type { ToolRequestUserInputQuestion } from "../../../../../ai/codex-generated/v2/ToolRequestUserInputQuestion";
 import type { ToolRequestUserInputResponse } from "../../../../../ai/codex-generated/v2/ToolRequestUserInputResponse";
-import type { TurnStartParams } from "../../../../../ai/codex-generated/v2/TurnStartParams";
-import type { TurnSteerParams } from "../../../../../ai/codex-generated/v2/TurnSteerParams";
 
 import type { StdioProcessHandle } from "./stdio-process";
 
-export type JsonRpcResponseMessage = {
+type JsonRpcResponseMessage = {
   id: RequestId;
   result?: unknown;
   error?: {
@@ -52,7 +50,7 @@ type SupportedClientRequestParams<M extends SupportedClientRequestMethod> = Extr
   { method: M }
 >["params"];
 
-export type JsonRpcClient = {
+type JsonRpcClient = {
   close: () => void;
   notifyInitialized: () => void;
   onNotification: (handler: (notification: JsonRpcNotificationMessage) => void) => () => void;
@@ -229,13 +227,13 @@ async function handleServerRequestAsync(
   });
 }
 
-export const APPROVAL_POLICIES = [
+const APPROVAL_POLICIES = [
   "untrusted",
   "on-failure",
   "on-request",
   "never",
 ] as const satisfies readonly AskForApproval[];
-export const SANDBOX_MODES = [
+const SANDBOX_MODES = [
   "read-only",
   "workspace-write",
   "danger-full-access",
@@ -428,8 +426,3 @@ export const CLIENT_INFO = {
   title: "Luna Chat",
   version: "0.1.0",
 };
-
-export type JsonRpcInitializeParams = Extract<ClientRequest, { method: "initialize" }>["params"];
-
-export type JsonRpcTurnStartParams = TurnStartParams;
-export type JsonRpcTurnSteerParams = TurnSteerParams;

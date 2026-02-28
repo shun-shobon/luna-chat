@@ -20,7 +20,7 @@ export interface AiService {
   generateHeartbeat(input: HeartbeatInput): Promise<void>;
 }
 
-export type ChannelSessionCoordinatorOptions = {
+type ChannelSessionCoordinatorOptions = {
   createRuntime: () => AiRuntimePort;
   discordMcpServerUrl: string;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;

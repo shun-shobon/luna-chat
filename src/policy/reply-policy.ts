@@ -1,11 +1,11 @@
-export type ReplyPolicyInput = {
+type ReplyPolicyInput = {
   allowedChannelIds: ReadonlySet<string>;
   channelId: string;
   isThread: boolean;
   isDm: boolean;
 };
 
-export type ReplyPolicyDecision = {
+type ReplyPolicyDecision = {
   shouldHandle: boolean;
 };
 

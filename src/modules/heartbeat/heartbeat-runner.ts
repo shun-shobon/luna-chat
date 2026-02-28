@@ -24,7 +24,7 @@ export type HeartbeatCronJobOptions = {
 
 type CreateCronJob = (options: HeartbeatCronJobOptions) => CronJobLike;
 
-export type StartHeartbeatRunnerInput = {
+type StartHeartbeatRunnerInput = {
   aiService: AiService;
   logger: HeartbeatLogger;
   prompt: string;

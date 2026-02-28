@@ -93,7 +93,7 @@ type StopTypingLoopInput = {
   clearIntervalFn?: typeof clearInterval;
 };
 
-export type StartDiscordMcpServerOptions = {
+type StartDiscordMcpServerOptions = {
   allowedChannelIds: ReadonlySet<string>;
   attachmentStore: DiscordAttachmentStore;
   hostname?: string;
@@ -293,7 +293,7 @@ export async function startDiscordMcpServer(
   };
 }
 
-export function createDiscordMcpServerUrl(hostname: string, port: number): string {
+function createDiscordMcpServerUrl(hostname: string, port: number): string {
   const formattedHost = hostname.includes(":") ? `[${hostname}]` : hostname;
   return `http://${formattedHost}:${port}${DISCORD_MCP_PATH}`;
 }

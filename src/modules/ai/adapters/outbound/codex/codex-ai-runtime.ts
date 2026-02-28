@@ -22,7 +22,7 @@ import {
   waitForTurnCompletion,
 } from "./turn-result-collector";
 
-export type CodexAiRuntimeOptions = StdioProcessOptions & {
+type CodexAiRuntimeOptions = StdioProcessOptions & {
   approvalPolicy: string;
   model: string;
   sandbox: string;

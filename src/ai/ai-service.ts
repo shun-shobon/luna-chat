@@ -16,11 +16,11 @@ export type AiInput = {
   recentMessages: RuntimeMessage[];
 };
 
-export type HeartbeatInput = {
+type HeartbeatInput = {
   prompt: string;
 };
 
-export interface AiService {
+interface AiService {
   generateReply(input: AiInput): Promise<void>;
   generateHeartbeat(input: HeartbeatInput): Promise<void>;
 }
