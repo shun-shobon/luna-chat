@@ -2,13 +2,13 @@
 
 import { Client, GatewayIntentBits } from "discord.js";
 
-import {
-  WorkspaceDiscordAttachmentStore,
-  type DiscordAttachmentStore,
-} from "./attachments/discord-attachment-store";
 import { CodexAiRuntime } from "./modules/ai/adapters/outbound/codex/codex-ai-runtime";
 import { ChannelSessionCoordinator } from "./modules/ai/application/channel-session-coordinator";
 import type { ReasoningEffort } from "./modules/ai/codex-generated/ReasoningEffort";
+import {
+  WorkspaceDiscordAttachmentStore,
+  type DiscordAttachmentStore,
+} from "./modules/attachments";
 import {
   handleMessageCreate,
   type ReplyGenerator,

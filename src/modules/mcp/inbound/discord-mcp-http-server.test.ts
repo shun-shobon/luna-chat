@@ -2,7 +2,7 @@ import type { REST } from "discord.js";
 import { Routes } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DiscordAttachmentStore } from "../../../attachments/discord-attachment-store";
+import type { DiscordAttachmentStore } from "../../attachments";
 
 import {
   addMessageReaction,

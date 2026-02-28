@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
-import type { TurnResult } from "../adapters/outbound/codex/turn-result-collector";
+import type { TurnResult } from "../domain/turn-result";
 import type { StartedTurn } from "../ports/outbound/ai-runtime-port";
 
 import { ChannelSessionCoordinator } from "./channel-session-coordinator";

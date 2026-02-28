@@ -4,7 +4,8 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { AiInput } from "./prompt-composer";
+import type { AiInput } from "../ports/inbound/ai-service-port";
+
 import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-composer";
 
 describe("buildPromptBundle", () => {

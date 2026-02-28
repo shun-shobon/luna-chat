@@ -1,4 +1,4 @@
-import type { DiscordHistoryGateway } from "../../adapters/outbound/discord/discord-rest-history-gateway";
+import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
 export async function listChannelsTool(input: {
   allowedChannelIds: ReadonlySet<string>;

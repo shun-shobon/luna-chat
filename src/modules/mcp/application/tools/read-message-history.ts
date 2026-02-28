@@ -1,13 +1,10 @@
-import { formatMessageAuthorLabel } from "../../../ai/application/message-author-label";
-import type { RuntimeReaction } from "../../../conversation/domain/runtime-message";
-import type { DiscordHistoryGateway } from "../../adapters/outbound/discord/discord-rest-history-gateway";
+import { formatMessageAuthorLabel } from "../../../../shared/discord/message-author-label";
+import type { RuntimeReaction } from "../../../../shared/discord/runtime-reaction";
+import type { DiscordAttachmentInput } from "../../../attachments";
+import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
 export type AttachmentContentDecorator = (input: {
-  attachments: Array<{
-    id: string;
-    name: string | null;
-    url: string;
-  }>;
+  attachments: DiscordAttachmentInput[];
   channelId: string;
   content: string;
   messageId: string;

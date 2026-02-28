@@ -1,17 +1,12 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 
+import type {
+  DiscordAttachmentInput,
+  DiscordAttachmentStore,
+} from "../../ports/discord-attachment-store";
+
 const ATTACHMENTS_DIR_NAME = "discord-attachments";
-
-export type DiscordAttachmentInput = {
-  id: string;
-  name: string | null;
-  url: string;
-};
-
-export interface DiscordAttachmentStore {
-  saveAttachment(input: DiscordAttachmentInput): Promise<string>;
-}
 
 export class WorkspaceDiscordAttachmentStore implements DiscordAttachmentStore {
   constructor(private readonly workspaceDir: string) {}
@@ -34,22 +29,6 @@ export class WorkspaceDiscordAttachmentStore implements DiscordAttachmentStore {
     await writeFile(filePath, bytes);
     return filePath;
   }
-}
-
-export function appendAttachmentMarkers(
-  content: string,
-  attachmentPaths: readonly string[],
-): string {
-  if (attachmentPaths.length === 0) {
-    return content;
-  }
-
-  const markerLine = attachmentPaths.map((path) => `<attachment:${path}>`).join(" ");
-  if (content.length === 0) {
-    return markerLine;
-  }
-
-  return `${content}\n${markerLine}`;
 }
 
 function buildAttachmentFileName(input: DiscordAttachmentInput): string {

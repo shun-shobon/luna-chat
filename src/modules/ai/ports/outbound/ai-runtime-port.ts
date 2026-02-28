@@ -1,4 +1,4 @@
-import type { TurnResult } from "../../adapters/outbound/codex/turn-result-collector";
+import type { TurnResult } from "../../domain/turn-result";
 
 export type StartedTurn = {
   turnId: string;

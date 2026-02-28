@@ -15,6 +15,7 @@
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件）。
 - `read_message_history` の返却メッセージにも、リアクションがある場合のみ `reactions` を含める。
 - 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
+- 添付処理は `src/modules/attachments`（domain/ports/application/adapters）へ集約し、`conversation` と `mcp` の重複実装を解消している。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
 - `send_message` は任意で `replyToMessageId` を指定でき、指定時は返信投稿として送信する。
 - `send_message` の返信投稿は `fail_if_not_exists=false` で送信し、返信先が見つからない場合も通常投稿として継続する。
@@ -26,6 +27,9 @@
 - `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
+- `mcp` の application 層は adapters 実装へ直接依存せず、`src/modules/mcp/ports/outbound/*` のポートを介して依存している。
+- リアクション正規化と著者ラベル整形は `src/shared/discord/*` に集約している。
+- `ai` の turn 結果型は `src/modules/ai/domain/turn-result.ts`、サービス契約は `src/modules/ai/ports/inbound/ai-service-port.ts` を正本としている。
 - 旧実装（`src/ai` の非生成コード、`src/context/*`、`src/policy/*`）は削除し、生成型は `src/modules/ai/codex-generated/*` へ移設済み。
 - typing 管理は `typing-lifecycle-registry` で一元化している。
 - メンション起点の typing は message handler の `finally` で停止し、tool 起点の typing は Discord turn 完了時コールバックで停止する。
@@ -40,6 +44,7 @@
 - heartbeat プロンプトは以下の固定文を使用する。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
 - プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。
+- `oxlint` では `application`/`ports`/`domain` からの不適切な層依存（adapters/application 直接参照など）を `no-restricted-imports` で検出する。
 - 自己改善ドキュメントの自動更新フローは未実装。
 - GitHub Actions `docker-publish` で `main` push時に `linux/amd64,linux/arm64` のマルチプラットフォームDockerイメージを `ghcr.io/${owner}/${repo}` へpushする（タグ: `latest` と `github.sha`）。
 

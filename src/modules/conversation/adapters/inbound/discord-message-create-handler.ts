@@ -1,19 +1,17 @@
 import { Collection } from "discord.js";
 
-import type { DiscordAttachmentStore } from "../../../../attachments/discord-attachment-store";
+import { toRuntimeReactions } from "../../../../shared/discord/runtime-reaction";
+import {
+  appendAttachmentsToContent,
+  type DiscordAttachmentInput,
+  type DiscordAttachmentStore,
+} from "../../../attachments";
 import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
 import type { RuntimeMessage, RuntimeReplyMessage } from "../../domain/runtime-message";
-import { toRuntimeReactions } from "../../domain/runtime-reaction";
 
 type AttachmentSource = {
   id: string;
   name?: string | null;
-  url: string;
-};
-
-type DiscordAttachmentInput = {
-  id: string;
-  name: string | null;
   url: string;
 };
 
@@ -228,7 +226,7 @@ async function toRuntimeMessageFromSource(input: {
   attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage> {
-  const content = await appendAttachmentMarkersFromSources({
+  const content = await appendAttachmentsToContent({
     attachmentStore: input.attachmentStore,
     attachments: collectAttachments(input.message.attachments),
     channelId: input.message.channelId,
@@ -364,7 +362,7 @@ async function toRuntimeReplyMessageFromSource(input: {
   attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeReplyMessage> {
-  const content = await appendAttachmentMarkersFromSources({
+  const content = await appendAttachmentsToContent({
     attachmentStore: input.attachmentStore,
     attachments: collectAttachments(input.message.attachments),
     channelId: input.message.channelId,
@@ -417,46 +415,6 @@ function formatDateTimeJst(date: Date): string {
   const seconds = String(jstDate.getUTCSeconds()).padStart(2, "0");
 
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} JST`;
-}
-
-async function appendAttachmentMarkersFromSources(input: {
-  attachmentStore: DiscordAttachmentStore;
-  attachments: readonly DiscordAttachmentInput[];
-  channelId: string;
-  content: string;
-  logger: Pick<LoggerLike, "warn">;
-  messageId: string;
-}): Promise<string> {
-  const attachmentPaths: string[] = [];
-  for (const attachment of input.attachments) {
-    try {
-      const savedPath = await input.attachmentStore.saveAttachment(attachment);
-      attachmentPaths.push(savedPath);
-    } catch (error: unknown) {
-      input.logger.warn("Failed to save Discord attachment:", {
-        attachmentId: attachment.id,
-        channelId: input.channelId,
-        error,
-        messageId: input.messageId,
-        url: attachment.url,
-      });
-    }
-  }
-
-  return appendAttachmentMarkers(input.content, attachmentPaths);
-}
-
-function appendAttachmentMarkers(content: string, attachmentPaths: readonly string[]): string {
-  if (attachmentPaths.length === 0) {
-    return content;
-  }
-
-  const markerLine = attachmentPaths.map((path) => `<attachment:${path}>`).join(" ");
-  if (content.length === 0) {
-    return markerLine;
-  }
-
-  return `${content}\n${markerLine}`;
 }
 
 function resolveChannelName(channelName: string | null | undefined): string {

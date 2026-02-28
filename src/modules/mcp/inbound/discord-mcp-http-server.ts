@@ -5,8 +5,8 @@ import { REST, Routes } from "discord.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import type { DiscordAttachmentStore } from "../../../attachments/discord-attachment-store";
 import { logger } from "../../../shared/logger";
+import { appendAttachmentsToContent, type DiscordAttachmentStore } from "../../attachments";
 import type { TypingLifecycleRegistry } from "../../typing/typing-lifecycle-registry";
 import { createTypingLifecycleRegistry } from "../../typing/typing-lifecycle-registry";
 import { createDiscordRestCommandGateway } from "../adapters/outbound/discord/discord-rest-command-gateway";
@@ -134,7 +134,7 @@ export async function startDiscordMcpServer(
         channelId,
         ...(beforeMessageId === undefined ? {} : { beforeMessageId }),
         decorator: async (input) => {
-          return await appendAttachmentMarkersFromSources({
+          return await appendAttachmentsToContent({
             attachmentStore: options.attachmentStore,
             attachments: input.attachments,
             channelId: input.channelId,
@@ -338,46 +338,6 @@ async function stopServer(server: ServerType): Promise<void> {
       resolve();
     });
   });
-}
-
-async function appendAttachmentMarkersFromSources(input: {
-  attachmentStore: DiscordAttachmentStore;
-  attachments: Array<{
-    id: string;
-    name: string | null;
-    url: string;
-  }>;
-  channelId: string;
-  content: string;
-  logger: Pick<typeof logger, "warn">;
-  messageId: string;
-}): Promise<string> {
-  const attachmentPaths: string[] = [];
-  for (const attachment of input.attachments) {
-    try {
-      const savedPath = await input.attachmentStore.saveAttachment(attachment);
-      attachmentPaths.push(savedPath);
-    } catch (error: unknown) {
-      input.logger.warn("Failed to save Discord attachment:", {
-        attachmentId: attachment.id,
-        channelId: input.channelId,
-        error,
-        messageId: input.messageId,
-        url: attachment.url,
-      });
-    }
-  }
-
-  if (attachmentPaths.length === 0) {
-    return input.content;
-  }
-
-  const markerLine = attachmentPaths.map((path) => `<attachment:${path}>`).join(" ");
-  if (input.content.length === 0) {
-    return markerLine;
-  }
-
-  return `${input.content}\n${markerLine}`;
 }
 
 export async function sendMessage(

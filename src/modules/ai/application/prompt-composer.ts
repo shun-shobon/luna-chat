@@ -1,20 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { formatMessageAuthorLabel } from "../../../shared/discord/message-author-label";
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
-
-import { formatMessageAuthorLabel } from "./message-author-label";
+import type { AiInput } from "../ports/inbound/ai-service-port";
 
 type PromptBundle = {
   instructions: string;
   developerRolePrompt: string;
   userRolePrompt: string;
-};
-
-export type AiInput = {
-  channelName: string;
-  currentMessage: RuntimeMessage;
-  recentMessages: RuntimeMessage[];
 };
 
 const WORKSPACE_INSTRUCTION_FILES = ["LUNA.md", "SOUL.md"] as const;

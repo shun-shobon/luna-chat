@@ -1,24 +1,12 @@
 import { logger } from "../../../shared/logger";
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
 import type { ReasoningEffort } from "../codex-generated/ReasoningEffort";
+import type { TurnResult } from "../domain/turn-result";
+import type { AiInput, AiService, HeartbeatInput } from "../ports/inbound/ai-service-port";
 import type { AiRuntimePort, StartedTurn } from "../ports/outbound/ai-runtime-port";
 
-import {
-  buildHeartbeatPromptBundle,
-  buildPromptBundle,
-  buildSteerPrompt,
-  type AiInput,
-} from "./prompt-composer";
+import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-composer";
 import { buildThreadConfig } from "./thread-config-factory";
-
-export type HeartbeatInput = {
-  prompt: string;
-};
-
-export interface AiService {
-  generateReply(input: AiInput): Promise<void>;
-  generateHeartbeat(input: HeartbeatInput): Promise<void>;
-}
 
 type ChannelSessionCoordinatorOptions = {
   createRuntime: () => AiRuntimePort;
@@ -301,21 +289,7 @@ export class ChannelSessionCoordinator implements AiService {
   }
 }
 
-function logTurnResult(
-  threadId: string,
-  turnId: string,
-  turnResult: {
-    assistantText: string;
-    errorMessage?: string;
-    mcpToolCalls: Array<{
-      arguments: unknown;
-      server: string;
-      status: "completed" | "failed" | "inProgress";
-      tool: string;
-    }>;
-    status: "completed" | "failed" | "interrupted";
-  },
-): void {
+function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {
   logger.debug("ai.turn.assistant_output", {
     assistantText: turnResult.assistantText,
     threadId,

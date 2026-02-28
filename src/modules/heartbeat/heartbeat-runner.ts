@@ -1,6 +1,6 @@
 import { CronJob } from "cron";
 
-import type { AiService } from "../ai/application/channel-session-coordinator";
+import type { AiService } from "../ai/ports/inbound/ai-service-port";
 
 const DEFAULT_HEARTBEAT_CRON = "0 0,30 * * * *";
 const DEFAULT_HEARTBEAT_TIME_ZONE = "Asia/Tokyo";

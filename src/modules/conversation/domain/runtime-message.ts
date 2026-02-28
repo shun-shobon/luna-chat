@@ -1,8 +1,6 @@
-export type RuntimeReaction = {
-  emoji: string;
-  count: number;
-  selfReacted?: true;
-};
+import type { RuntimeReaction } from "../../../shared/discord/runtime-reaction";
+
+export type { RuntimeReaction };
 
 export type RuntimeReplyMessage = {
   id: string;

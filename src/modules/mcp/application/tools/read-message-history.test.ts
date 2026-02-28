@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { DiscordHistoryGateway } from "../../adapters/outbound/discord/discord-rest-history-gateway";
+import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
 import { readMessageHistory, type AttachmentContentDecorator } from "./read-message-history";
 

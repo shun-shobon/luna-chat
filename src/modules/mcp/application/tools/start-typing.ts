@@ -1,5 +1,5 @@
 import type { TypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
-import type { DiscordCommandGateway } from "../../adapters/outbound/discord/discord-rest-command-gateway";
+import type { DiscordCommandGateway } from "../../ports/outbound/discord-command-gateway-port";
 
 export async function startTypingTool(input: {
   channelId: string;

@@ -36,5 +36,79 @@
     "builtin": true
   },
   "globals": {},
-  "ignorePatterns": ["src/modules/ai/codex-generated"]
+  "ignorePatterns": ["src/modules/ai/codex-generated"],
+  "overrides": [
+    {
+      "files": ["**/src/modules/*/application/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "application層からadapters層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/application/**"],
+                "message": "他モジュールのapplication層へ直接依存しないこと。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/src/modules/*/ports/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "ports層からadapters層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/inbound/**"],
+                "message": "ports層からinbound層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/application/**"],
+                "message": "ports層からapplication層へ直接依存しないこと。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/src/modules/*/domain/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "domain層からadapters層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/inbound/**"],
+                "message": "domain層からinbound層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/application/**"],
+                "message": "domain層からapplication層へ直接依存しないこと。"
+              },
+              {
+                "group": ["**/ports/**"],
+                "message": "domain層からports層へ直接依存しないこと。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

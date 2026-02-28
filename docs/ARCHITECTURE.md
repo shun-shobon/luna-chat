@@ -36,6 +36,10 @@
   - `LUNA_HOME` / `workspace` / `codex` の自動作成・書込可否検証
 - `src/shared/logger.ts`
   - 共通 logger
+- `src/shared/discord/message-author-label.ts`
+  - 表示名ラベル整形（`<name> (ID: <id>)`）
+- `src/shared/discord/runtime-reaction.ts`
+  - リアクション正規化（`emoji` / `count` / `selfReacted`）
 
 ### 4.3 Conversation
 
@@ -46,8 +50,6 @@
   - 初期履歴10件取得と AI 呼び出し
 - `src/modules/conversation/domain/runtime-message.ts`
   - `RuntimeMessage` / `RuntimeReplyMessage` / `RuntimeReaction` 型
-- `src/modules/conversation/domain/runtime-reaction.ts`
-  - Discord reaction の正規化
 
 ### 4.4 AI
 
@@ -65,6 +67,10 @@
   - `json-rpc-client.ts`: JSON-RPC req/resp・server request 応答
   - `turn-result-collector.ts`: turnイベント集約
   - `stdio-process.ts`: 子プロセス制御
+- `src/modules/ai/domain/turn-result.ts`
+  - turn 完了時の集約結果型
+- `src/modules/ai/ports/inbound/ai-service-port.ts`
+  - AI サービス（`generateReply` / `generateHeartbeat`）の入力/契約
 - `src/modules/ai/ports/outbound/ai-runtime-port.ts`
   - AI runtime のポート定義
 
@@ -77,6 +83,8 @@
   - tool 単位のユースケース実装
 - `src/modules/mcp/adapters/outbound/discord/*`
   - Discord REST 呼び出し（履歴取得・送信・リアクション・チャンネル参照・ユーザー参照）
+- `src/modules/mcp/ports/outbound/*`
+  - MCP application から参照する Discord gateway ポート定義
 
 ### 4.6 Typing / Heartbeat
 
@@ -87,11 +95,16 @@
   - cron（毎時00/30, JST）実行
   - heartbeat 失敗時ログのみで継続
 
-### 4.7 補助モジュール
+### 4.7 Attachments
 
-- `src/attachments/discord-attachment-store.ts`
-  - 添付ファイル保存
+- `src/modules/attachments/domain/attachment-marker.ts`
   - 本文末尾 `<attachment:...>` マーカー付与
+- `src/modules/attachments/ports/discord-attachment-store.ts`
+  - 添付保存ポート定義
+- `src/modules/attachments/application/append-attachments-to-content.ts`
+  - 添付保存 + マーカー追記ユースケース
+- `src/modules/attachments/adapters/outbound/workspace-discord-attachment-store.ts`
+  - ワークスペース保存実装
 - `src/modules/ai/codex-generated/*`
   - app-server 型定義（自動生成）
 
@@ -179,6 +192,7 @@
 - 主要テスト:
   - `src/modules/ai/application/channel-session-coordinator.test.ts`
   - `src/modules/ai/application/prompt-composer.test.ts`（スナップショット）
+  - `src/modules/attachments/index.test.ts`
   - `src/modules/runtime-config/runtime-config.test.ts`
   - `src/modules/heartbeat/heartbeat-runner.test.ts`
   - `src/modules/conversation/adapters/inbound/discord-message-create-handler.integration.test.ts`

@@ -1,4 +1,8 @@
-import type { RuntimeReaction } from "./runtime-message";
+export type RuntimeReaction = {
+  emoji: string;
+  count: number;
+  selfReacted?: true;
+};
 
 type ReactionSource = {
   count: number;

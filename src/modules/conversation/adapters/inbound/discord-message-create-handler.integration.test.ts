@@ -1,13 +1,13 @@
 import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  DiscordAttachmentInput,
-  DiscordAttachmentStore,
-} from "../../../../attachments/discord-attachment-store";
-import type { AiService } from "../../../ai/application/channel-session-coordinator";
+import type { DiscordAttachmentInput, DiscordAttachmentStore } from "../../../attachments";
 
-import { handleMessageCreate, type MessageLike } from "./discord-message-create-handler";
+import {
+  handleMessageCreate,
+  type MessageLike,
+  type ReplyGenerator,
+} from "./discord-message-create-handler";
 
 type AttachmentLike = {
   id: string;
@@ -67,7 +67,7 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       sendTyping,
     });
-    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -90,7 +90,7 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       authorUsername: "other-bot",
     });
-    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -197,7 +197,7 @@ describe("handleMessageCreate integration", () => {
       inGuild: false,
       sendTyping,
     });
-    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -220,7 +220,7 @@ describe("handleMessageCreate integration", () => {
       isThread: true,
       sendTyping,
     });
-    const generateReply = vi.fn<AiService["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
     const attachmentStore = createAttachmentStore();
 
@@ -907,9 +907,8 @@ function createAttachmentStore(input?: {
   };
 }
 
-function createAiService(generateReply: AiService["generateReply"]): AiService {
+function createAiService(generateReply: ReplyGenerator["generateReply"]): ReplyGenerator {
   return {
-    generateHeartbeat: async () => undefined,
     generateReply,
   };
 }
