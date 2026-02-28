@@ -24,6 +24,8 @@
 - `start_typing` で開始した入力中表示は、Discord turn 完了時に自動停止する。
 - AI は必要時に MCP tool `list_channels` で `ALLOWED_CHANNEL_IDS` に含まれるチャンネル一覧を取得できる。
 - AI は必要時に MCP tool `get_user_detail` で `userId` と `channelId` から `user`（基本ユーザー情報 + `displayName` / `nickname`）を取得できる。
+- AI turn の開始/終了は `info` ログへ出力し、終了時には `thread/tokenUsage/updated` 由来のトークン使用量（`last`/`total` 内訳）を含める。
+- MCP tool 呼び出しは開始時/終了時の両タイミングで `info` ログを出力する。
 - `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
 - 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。

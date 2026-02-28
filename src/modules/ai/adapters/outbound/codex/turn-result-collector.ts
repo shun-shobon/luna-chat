@@ -1,8 +1,12 @@
-import type { TurnResult } from "../../../domain/turn-result";
+import type { TokenUsageBreakdown, TurnResult, TurnTokenUsage } from "../../../domain/turn-result";
 
 import type { JsonRpcNotificationMessage } from "./json-rpc-client";
 
+type McpToolCallStatus = "completed" | "failed" | "inProgress";
+
 type TurnTracker = {
+  expectedThreadId?: string;
+  activeTurnId?: string;
   deltaText: string;
   errorMessage?: string;
   latestAgentMessageText?: string;
@@ -10,9 +14,10 @@ type TurnTracker = {
     arguments: unknown;
     result: unknown;
     server: string;
-    status: "completed" | "failed" | "inProgress";
+    status: McpToolCallStatus;
     tool: string;
   }>;
+  tokenUsage?: TurnTokenUsage;
   completedStatus?: "completed" | "failed" | "interrupted";
 };
 
@@ -20,29 +25,84 @@ type ParsedCompletedItem =
   | {
       kind: "agentMessage";
       text: string;
+      threadId?: string;
+      turnId?: string;
     }
   | {
       kind: "mcpToolCall";
       arguments: unknown;
       result: unknown;
       server: string;
-      status: "completed" | "failed" | "inProgress";
+      status: McpToolCallStatus;
       tool: string;
+      threadId?: string;
+      turnId?: string;
     }
   | {
       kind: "other";
     };
 
-export function createTurnTracker(): TurnTracker {
+type ParsedStartedItem =
+  | {
+      kind: "mcpToolCall";
+      server: string;
+      tool: string;
+      threadId?: string;
+      turnId?: string;
+    }
+  | {
+      kind: "other";
+    };
+
+type ParsedTurnCompleted = {
+  turnId?: string;
+  threadId?: string;
+  status: string;
+  errorMessage?: string;
+};
+
+type ParsedTokenUsageUpdated = {
+  threadId?: string;
+  turnId?: string;
+  tokenUsage: TurnTokenUsage;
+};
+
+export type McpToolCallStartedNotification = {
+  threadId: string;
+  turnId: string;
+  server: string;
+  tool: string;
+};
+
+export type McpToolCallCompletedNotification = {
+  threadId: string;
+  turnId: string;
+  server: string;
+  tool: string;
+  status: McpToolCallStatus;
+};
+
+export type TurnNotificationObserver = {
+  onMcpToolCallStarted?: (event: McpToolCallStartedNotification) => void;
+  onMcpToolCallCompleted?: (event: McpToolCallCompletedNotification) => void;
+};
+
+export function createTurnTracker(input: { threadId?: string } = {}): TurnTracker {
   return {
+    ...(input.threadId ? { expectedThreadId: input.threadId } : {}),
     deltaText: "",
     mcpToolCalls: [],
   };
 }
 
+export function bindTrackerToTurn(tracker: TurnTracker, turnId: string): void {
+  tracker.activeTurnId = turnId;
+}
+
 export function handleTurnNotification(
   notification: JsonRpcNotificationMessage,
   tracker: TurnTracker,
+  observer?: TurnNotificationObserver,
 ): void {
   if (notification.method === "item/agentMessage/delta") {
     const params = parseAgentMessageDeltaParams(notification.params);
@@ -52,9 +112,31 @@ export function handleTurnNotification(
     return;
   }
 
+  if (notification.method === "item/started") {
+    const item = parseItemStarted(notification.params);
+    if (
+      item?.kind === "mcpToolCall" &&
+      shouldHandleTurnScopedEvent(tracker, item.threadId, item.turnId)
+    ) {
+      if (item.threadId && item.turnId) {
+        observer?.onMcpToolCallStarted?.({
+          server: item.server,
+          threadId: item.threadId,
+          tool: item.tool,
+          turnId: item.turnId,
+        });
+      }
+    }
+    return;
+  }
+
   if (notification.method === "item/completed") {
     const item = parseItemCompleted(notification.params);
-    if (!item) {
+    if (!item || item.kind === "other") {
+      return;
+    }
+
+    if (!shouldHandleTurnScopedEvent(tracker, item.threadId, item.turnId)) {
       return;
     }
 
@@ -63,15 +145,36 @@ export function handleTurnNotification(
       return;
     }
 
-    if (item.kind === "mcpToolCall") {
-      tracker.mcpToolCalls.push({
-        arguments: item.arguments,
-        result: item.result,
+    tracker.mcpToolCalls.push({
+      arguments: item.arguments,
+      result: item.result,
+      server: item.server,
+      status: item.status,
+      tool: item.tool,
+    });
+
+    if (item.threadId && item.turnId) {
+      observer?.onMcpToolCallCompleted?.({
         server: item.server,
         status: item.status,
+        threadId: item.threadId,
         tool: item.tool,
+        turnId: item.turnId,
       });
     }
+    return;
+  }
+
+  if (notification.method === "thread/tokenUsage/updated") {
+    const params = parseThreadTokenUsageUpdated(notification.params);
+    if (!params) {
+      return;
+    }
+    if (!shouldHandleTurnScopedEvent(tracker, params.threadId, params.turnId)) {
+      return;
+    }
+
+    tracker.tokenUsage = params.tokenUsage;
     return;
   }
 
@@ -86,6 +189,9 @@ export function handleTurnNotification(
   if (notification.method === "turn/completed") {
     const params = parseTurnCompletedParams(notification.params);
     if (!params) {
+      return;
+    }
+    if (!shouldHandleTurnScopedEvent(tracker, params.threadId, params.turnId)) {
       return;
     }
 
@@ -119,6 +225,7 @@ export async function waitForTurnCompletion(input: {
         assistantText,
         mcpToolCalls: input.tracker.mcpToolCalls,
         status: input.tracker.completedStatus,
+        ...(input.tracker.tokenUsage ? { tokenUsage: input.tracker.tokenUsage } : {}),
       };
       if (input.tracker.errorMessage) {
         turnResult.errorMessage = input.tracker.errorMessage;
@@ -135,6 +242,7 @@ export async function waitForTurnCompletion(input: {
     assistantText: input.tracker.latestAgentMessageText ?? input.tracker.deltaText.trim(),
     errorMessage: `turn timed out after ${input.timeoutMs}ms`,
     mcpToolCalls: input.tracker.mcpToolCalls,
+    ...(input.tracker.tokenUsage ? { tokenUsage: input.tracker.tokenUsage } : {}),
     status: "failed",
   };
 }
@@ -153,6 +261,42 @@ function parseAgentMessageDeltaParams(params: unknown): { delta: string } | unde
   };
 }
 
+function parseItemStarted(params: unknown): ParsedStartedItem | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+
+  const item = params["item"];
+  if (!isRecord(item)) {
+    return undefined;
+  }
+
+  if (!isMcpToolCallItemType(item["type"])) {
+    return {
+      kind: "other",
+    };
+  }
+
+  const server = getStringValue(item, ["server"]);
+  const tool = getStringValue(item, ["tool"]);
+  if (!server || !tool) {
+    return {
+      kind: "other",
+    };
+  }
+
+  const threadId = getStringValue(params, ["threadId", "thread_id"]);
+  const turnId = getStringValue(params, ["turnId", "turn_id"]);
+
+  return {
+    kind: "mcpToolCall",
+    server,
+    tool,
+    ...(threadId ? { threadId } : {}),
+    ...(turnId ? { turnId } : {}),
+  };
+}
+
 function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
   if (!isRecord(params)) {
     return undefined;
@@ -163,9 +307,11 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
     return undefined;
   }
 
-  const itemType = item["type"];
-  if (itemType === "agent_message") {
-    const text = parseAgentMessageText(item["message"]);
+  const threadId = getStringValue(params, ["threadId", "thread_id"]);
+  const turnId = getStringValue(params, ["turnId", "turn_id"]);
+
+  if (isAgentMessageItemType(item["type"])) {
+    const text = parseAgentMessageText(item);
     if (text === undefined) {
       return undefined;
     }
@@ -173,19 +319,17 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
     return {
       kind: "agentMessage",
       text,
+      ...(threadId ? { threadId } : {}),
+      ...(turnId ? { turnId } : {}),
     };
   }
 
-  if (itemType === "mcp_tool_call") {
-    const server = item["server"];
-    const tool = item["tool"];
-    const status = item["status"];
+  if (isMcpToolCallItemType(item["type"])) {
+    const server = getStringValue(item, ["server"]);
+    const tool = getStringValue(item, ["tool"]);
+    const status = parseMcpToolCallStatus(item["status"]);
 
-    if (
-      typeof server !== "string" ||
-      typeof tool !== "string" ||
-      (status !== "completed" && status !== "failed" && status !== "in_progress")
-    ) {
+    if (!server || !tool || !status) {
       return {
         kind: "other",
       };
@@ -196,8 +340,10 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
       kind: "mcpToolCall",
       result: item["result"],
       server,
-      status: status === "in_progress" ? "inProgress" : status,
+      status,
       tool,
+      ...(threadId ? { threadId } : {}),
+      ...(turnId ? { turnId } : {}),
     };
   }
 
@@ -206,7 +352,16 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
   };
 }
 
-function parseAgentMessageText(message: unknown): string | undefined {
+function parseAgentMessageText(item: Record<string, unknown>): string | undefined {
+  const directText = item["text"];
+  if (typeof directText === "string") {
+    return directText.trim();
+  }
+
+  return parseLegacyAgentMessageText(item["message"]);
+}
+
+function parseLegacyAgentMessageText(message: unknown): string | undefined {
   if (!isRecord(message)) {
     return undefined;
   }
@@ -235,6 +390,83 @@ function parseAgentMessageText(message: unknown): string | undefined {
   return textChunks.join("").trim();
 }
 
+function parseThreadTokenUsageUpdated(params: unknown): ParsedTokenUsageUpdated | undefined {
+  if (!isRecord(params)) {
+    return undefined;
+  }
+
+  const rawTokenUsage = params["tokenUsage"] ?? params["token_usage"];
+  const tokenUsage = parseTurnTokenUsage(rawTokenUsage);
+  if (!tokenUsage) {
+    return undefined;
+  }
+
+  const threadId = getStringValue(params, ["threadId", "thread_id"]);
+  const turnId = getStringValue(params, ["turnId", "turn_id"]);
+
+  return {
+    tokenUsage,
+    ...(threadId ? { threadId } : {}),
+    ...(turnId ? { turnId } : {}),
+  };
+}
+
+function parseTurnTokenUsage(value: unknown): TurnTokenUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const total = parseTokenUsageBreakdown(value["total"] ?? value["total_token_usage"]);
+  const last = parseTokenUsageBreakdown(value["last"] ?? value["last_token_usage"]);
+  if (!total || !last) {
+    return undefined;
+  }
+
+  const modelContextWindowValue = value["modelContextWindow"] ?? value["model_context_window"];
+  if (modelContextWindowValue !== null && typeof modelContextWindowValue !== "number") {
+    return undefined;
+  }
+
+  return {
+    last,
+    modelContextWindow: modelContextWindowValue ?? null,
+    total,
+  };
+}
+
+function parseTokenUsageBreakdown(value: unknown): TokenUsageBreakdown | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const totalTokens = getNumberValue(value, ["totalTokens", "total_tokens"]);
+  const inputTokens = getNumberValue(value, ["inputTokens", "input_tokens"]);
+  const cachedInputTokens = getNumberValue(value, ["cachedInputTokens", "cached_input_tokens"]);
+  const outputTokens = getNumberValue(value, ["outputTokens", "output_tokens"]);
+  const reasoningOutputTokens = getNumberValue(value, [
+    "reasoningOutputTokens",
+    "reasoning_output_tokens",
+  ]);
+
+  if (
+    totalTokens === undefined ||
+    inputTokens === undefined ||
+    cachedInputTokens === undefined ||
+    outputTokens === undefined ||
+    reasoningOutputTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    cachedInputTokens,
+    inputTokens,
+    outputTokens,
+    reasoningOutputTokens,
+    totalTokens,
+  };
+}
+
 function parseErrorParams(params: unknown): { errorMessage: string } | undefined {
   if (!isRecord(params)) {
     return undefined;
@@ -255,9 +487,7 @@ function parseErrorParams(params: unknown): { errorMessage: string } | undefined
   };
 }
 
-function parseTurnCompletedParams(
-  params: unknown,
-): { status: string; errorMessage?: string } | undefined {
+function parseTurnCompletedParams(params: unknown): ParsedTurnCompleted | undefined {
   if (!isRecord(params)) {
     return undefined;
   }
@@ -272,11 +502,80 @@ function parseTurnCompletedParams(
     return undefined;
   }
 
-  const errorMessage = turn["error_message"];
+  const errorMessage = getStringValue(turn, ["error", "error_message"]);
+  const turnId = getStringValue(turn, ["id", "turn_id"]);
+  const threadId = getStringValue(params, ["threadId", "thread_id"]);
+
   return {
-    ...(typeof errorMessage === "string" ? { errorMessage } : {}),
+    ...(errorMessage ? { errorMessage } : {}),
+    ...(turnId ? { turnId } : {}),
+    ...(threadId ? { threadId } : {}),
     status,
   };
+}
+
+function shouldHandleTurnScopedEvent(
+  tracker: TurnTracker,
+  threadId: string | undefined,
+  turnId: string | undefined,
+): boolean {
+  if (threadId && tracker.expectedThreadId && threadId !== tracker.expectedThreadId) {
+    return false;
+  }
+
+  if (turnId && tracker.activeTurnId && turnId !== tracker.activeTurnId) {
+    return false;
+  }
+
+  return true;
+}
+
+function isAgentMessageItemType(value: unknown): boolean {
+  return value === "agentMessage" || value === "agent_message";
+}
+
+function isMcpToolCallItemType(value: unknown): boolean {
+  return value === "mcpToolCall" || value === "mcp_tool_call";
+}
+
+function parseMcpToolCallStatus(value: unknown): McpToolCallStatus | undefined {
+  if (value === "completed" || value === "failed") {
+    return value;
+  }
+
+  if (value === "in_progress" || value === "inProgress") {
+    return "inProgress";
+  }
+
+  return undefined;
+}
+
+function getStringValue(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function getNumberValue(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): number | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

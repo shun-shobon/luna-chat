@@ -4,7 +4,7 @@ import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartP
 import type { TurnStartParams } from "../../../codex-generated/v2/TurnStartParams";
 import type { TurnSteerParams } from "../../../codex-generated/v2/TurnSteerParams";
 import type { UserInput } from "../../../codex-generated/v2/UserInput";
-import type { StartedTurn } from "../../../ports/outbound/ai-runtime-port";
+import type { StartedTurn, TurnObserver } from "../../../ports/outbound/ai-runtime-port";
 
 import {
   createJsonRpcClient,
@@ -17,6 +17,7 @@ import {
 } from "./json-rpc-client";
 import { startStdioProcess, type StdioProcessOptions } from "./stdio-process";
 import {
+  bindTrackerToTurn,
   createTurnTracker,
   handleTurnNotification,
   waitForTurnCompletion,
@@ -74,10 +75,10 @@ export class CodexAiRuntime {
     return extractThreadId(result);
   }
 
-  async startTurn(threadId: string, prompt: string): Promise<StartedTurn> {
-    const tracker = createTurnTracker();
+  async startTurn(threadId: string, prompt: string, observer?: TurnObserver): Promise<StartedTurn> {
+    const tracker = createTurnTracker({ threadId });
     const unbind = this.rpcClient.onNotification((notification) => {
-      handleTurnNotification(notification, tracker);
+      handleTurnNotification(notification, tracker, observer);
     });
 
     try {
@@ -87,6 +88,7 @@ export class CodexAiRuntime {
       };
       const result = await this.rpcClient.request("turn/start", params);
       const turnId = extractTurnId(result);
+      bindTrackerToTurn(tracker, turnId);
 
       const completion = waitForTurnCompletion({
         onTimeout: async () => {

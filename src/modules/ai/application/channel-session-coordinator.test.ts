@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
 import type { TurnResult } from "../domain/turn-result";
-import type { StartedTurn } from "../ports/outbound/ai-runtime-port";
+import type { StartedTurn, TurnObserver } from "../ports/outbound/ai-runtime-port";
 
 import { ChannelSessionCoordinator } from "./channel-session-coordinator";
 import { buildThreadConfig } from "./thread-config-factory";
@@ -105,7 +105,12 @@ describe("ChannelSessionCoordinator", () => {
 
     expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
     expect(runtime.startTurn).toHaveBeenCalledTimes(2);
-    expect(runtime.startTurn).toHaveBeenNthCalledWith(2, "thread-1", expect.any(String));
+    expect(runtime.startTurn).toHaveBeenNthCalledWith(
+      2,
+      "thread-1",
+      expect.any(String),
+      expect.any(Object),
+    );
 
     runtime.completeTurn("turn-1", createCompletedTurnResult());
     await firstPromise;
@@ -162,6 +167,7 @@ describe("ChannelSessionCoordinator", () => {
     expect(runtime.startTurn).toHaveBeenCalledWith(
       "thread-1",
       "HEARTBEAT.mdを確認し、作業を行ってください。",
+      expect.any(Object),
     );
 
     runtime.completeTurn("turn-1", createCompletedTurnResult());
@@ -274,7 +280,7 @@ class FakeAiRuntime {
     this.startThread = vi.fn(async () => {
       return "thread-1";
     });
-    this.startTurn = vi.fn(async () => {
+    this.startTurn = vi.fn(async (_threadId: string, _prompt: string, _observer?: TurnObserver) => {
       const turnId = `turn-${this.nextTurnIndex++}`;
       const deferred = createDeferred<TurnResult>();
       this.turns.set(turnId, deferred);

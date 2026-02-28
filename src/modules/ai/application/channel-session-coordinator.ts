@@ -3,7 +3,7 @@ import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
 import type { ReasoningEffort } from "../codex-generated/ReasoningEffort";
 import type { TurnResult } from "../domain/turn-result";
 import type { AiInput, AiService, HeartbeatInput } from "../ports/inbound/ai-service-port";
-import type { AiRuntimePort, StartedTurn } from "../ports/outbound/ai-runtime-port";
+import type { AiRuntimePort, StartedTurn, TurnObserver } from "../ports/outbound/ai-runtime-port";
 
 import { buildHeartbeatPromptBundle, buildPromptBundle, buildSteerPrompt } from "./prompt-composer";
 import { buildThreadConfig } from "./thread-config-factory";
@@ -15,6 +15,16 @@ type ChannelSessionCoordinatorOptions = {
   reasoningEffort: ReasoningEffort;
   workspaceDir: string;
 };
+
+type TurnLogContext =
+  | {
+      source: "discord";
+      channelId: string;
+      messageId: string;
+    }
+  | {
+      source: "heartbeat";
+    };
 
 type ActiveChannelSession = {
   channelId: string;
@@ -44,6 +54,9 @@ export class ChannelSessionCoordinator implements AiService {
     const runtime = this.options.createRuntime();
     let threadId: string | undefined;
     let turnId: string | undefined;
+    const context: TurnLogContext = {
+      source: "heartbeat",
+    };
 
     try {
       await runtime.initialize();
@@ -57,10 +70,16 @@ export class ChannelSessionCoordinator implements AiService {
         instructions: promptBundle.instructions,
       });
 
-      const startedTurn = await runtime.startTurn(threadId, promptBundle.userRolePrompt);
+      const startedTurn = await runtime.startTurn(
+        threadId,
+        promptBundle.userRolePrompt,
+        createTurnObserver(context),
+      );
       turnId = startedTurn.turnId;
+      logTurnStarted(context, threadId, turnId);
+
       const turnResult = await startedTurn.completion;
-      logTurnResult(threadId, turnId, turnResult);
+      logTurnResult(context, threadId, turnId, turnResult);
       if (turnResult.status !== "completed") {
         const errorMessage =
           turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
@@ -203,18 +222,24 @@ export class ChannelSessionCoordinator implements AiService {
       throw new Error("Thread is not started yet.");
     }
 
-    const startedTurn = await session.runtime.startTurn(threadId, input.prompt);
+    const context: TurnLogContext = {
+      channelId: session.channelId,
+      messageId: input.messageId,
+      source: "discord",
+    };
+
+    const startedTurn = await session.runtime.startTurn(
+      threadId,
+      input.prompt,
+      createTurnObserver(context),
+    );
     session.phase = "running";
     session.activeTurnId = startedTurn.turnId;
 
-    logger.debug("ai.turn.started", {
-      channelId: session.channelId,
-      messageId: input.messageId,
-      threadId,
-      turnId: startedTurn.turnId,
-    });
+    logTurnStarted(context, threadId, startedTurn.turnId);
 
     const turnCompletion = this.trackTurnCompletion(session, startedTurn, {
+      context,
       threadId,
       turnId: startedTurn.turnId,
     });
@@ -226,13 +251,14 @@ export class ChannelSessionCoordinator implements AiService {
     session: ActiveChannelSession,
     startedTurn: StartedTurn,
     meta: {
+      context: TurnLogContext;
       threadId: string;
       turnId: string;
     },
   ): Promise<void> {
     return startedTurn.completion
       .then((turnResult) => {
-        logTurnResult(meta.threadId, meta.turnId, turnResult);
+        logTurnResult(meta.context, meta.threadId, meta.turnId, turnResult);
         if (turnResult.status !== "completed") {
           const errorMessage =
             turnResult.errorMessage ?? `app-server turn status is ${turnResult.status}`;
@@ -289,7 +315,44 @@ export class ChannelSessionCoordinator implements AiService {
   }
 }
 
-function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult): void {
+function createTurnObserver(context: TurnLogContext): TurnObserver {
+  return {
+    onMcpToolCallStarted: (event) => {
+      logger.info("ai.turn.mcp_tool_call.started", {
+        ...toTurnLogContextFields(context),
+        server: event.server,
+        threadId: event.threadId,
+        tool: event.tool,
+        turnId: event.turnId,
+      });
+    },
+    onMcpToolCallCompleted: (event) => {
+      logger.info("ai.turn.mcp_tool_call.completed", {
+        ...toTurnLogContextFields(context),
+        server: event.server,
+        status: event.status,
+        threadId: event.threadId,
+        tool: event.tool,
+        turnId: event.turnId,
+      });
+    },
+  };
+}
+
+function logTurnStarted(context: TurnLogContext, threadId: string, turnId: string): void {
+  logger.info("ai.turn.started", {
+    ...toTurnLogContextFields(context),
+    threadId,
+    turnId,
+  });
+}
+
+function logTurnResult(
+  context: TurnLogContext,
+  threadId: string,
+  turnId: string,
+  turnResult: TurnResult,
+): void {
   logger.debug("ai.turn.assistant_output", {
     assistantText: turnResult.assistantText,
     threadId,
@@ -305,10 +368,43 @@ function logTurnResult(threadId: string, turnId: string, turnResult: TurnResult)
       turnId,
     });
   }
-  logger.debug("ai.turn.completed", {
+
+  logger.info("ai.turn.completed", {
+    ...toTurnLogContextFields(context),
     errorMessage: turnResult.errorMessage,
+    ...(turnResult.tokenUsage ? { tokenUsage: turnResult.tokenUsage } : {}),
     status: turnResult.status,
     threadId,
     turnId,
   });
+
+  logger.debug("ai.turn.completed", {
+    errorMessage: turnResult.errorMessage,
+    status: turnResult.status,
+    ...(turnResult.tokenUsage ? { tokenUsage: turnResult.tokenUsage } : {}),
+    threadId,
+    turnId,
+  });
+}
+
+function toTurnLogContextFields(context: TurnLogContext):
+  | {
+      source: "heartbeat";
+    }
+  | {
+      source: "discord";
+      channelId: string;
+      messageId: string;
+    } {
+  if (context.source === "heartbeat") {
+    return {
+      source: "heartbeat",
+    };
+  }
+
+  return {
+    channelId: context.channelId,
+    messageId: context.messageId,
+    source: "discord",
+  };
 }
