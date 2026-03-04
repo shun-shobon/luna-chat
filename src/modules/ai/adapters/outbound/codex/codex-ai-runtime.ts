@@ -1,5 +1,3 @@
-import type { AskForApproval } from "../../../codex-generated/v2/AskForApproval";
-import type { SandboxMode } from "../../../codex-generated/v2/SandboxMode";
 import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
 import type { TurnStartParams } from "../../../codex-generated/v2/TurnStartParams";
 import type { TurnSteerParams } from "../../../codex-generated/v2/TurnSteerParams";
@@ -10,8 +8,6 @@ import {
   createJsonRpcClient,
   extractThreadId,
   extractTurnId,
-  isApprovalPolicy,
-  isSandboxMode,
   normalizeThreadStartConfig,
   CLIENT_INFO,
 } from "./json-rpc-client";
@@ -23,10 +19,7 @@ import {
   waitForTurnCompletion,
 } from "./turn-result-collector";
 
-type CodexAiRuntimeOptions = StdioProcessOptions & {
-  approvalPolicy: string;
-  sandbox: string;
-};
+type CodexAiRuntimeOptions = StdioProcessOptions;
 
 export class CodexAiRuntime {
   private readonly processHandle;
@@ -50,18 +43,14 @@ export class CodexAiRuntime {
     developerRolePrompt: string;
     config?: Record<string, unknown>;
   }): Promise<string> {
-    const approvalPolicy = parseApprovalPolicy(this.options.approvalPolicy);
-    const sandbox = parseSandboxMode(this.options.sandbox);
     const threadStartParams: ThreadStartParams = {
-      approvalPolicy,
+      approvalPolicy: "never",
       baseInstructions: input.instructions,
       cwd: this.options.cwd,
       developerInstructions: input.developerRolePrompt,
       ephemeral: true,
       experimentalRawEvents: false,
-      personality: "friendly",
       persistExtendedHistory: false,
-      sandbox,
     };
 
     if (input.config) {
@@ -135,22 +124,6 @@ export class CodexAiRuntime {
 
     await Promise.race([interruptRequest, wait(500)]);
   }
-}
-
-function parseApprovalPolicy(value: unknown): AskForApproval {
-  if (isApprovalPolicy(value)) {
-    return value;
-  }
-
-  throw new Error(`Invalid approvalPolicy: ${String(value)}`);
-}
-
-function parseSandboxMode(value: unknown): SandboxMode {
-  if (isSandboxMode(value)) {
-    return value;
-  }
-
-  throw new Error(`Invalid sandbox mode: ${String(value)}`);
 }
 
 function toTextUserInput(prompt: string): UserInput {

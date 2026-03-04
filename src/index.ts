@@ -33,8 +33,6 @@ import { createTypingLifecycleRegistry } from "./modules/typing/typing-lifecycle
 import { closeFileLogging, initializeFileLogging, logger } from "./shared/logger";
 
 const CODEX_APP_SERVER_COMMAND = ["codex", "app-server", "--listen", "stdio://"] as const;
-const CODEX_APP_SERVER_APPROVAL_POLICY = "never";
-const CODEX_APP_SERVER_SANDBOX = "workspace-write";
 const CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD = 10 * 60_000;
 const CODEX_APP_SERVER_TIMEOUT_MS_FOR_HEARTBEAT = 30 * 60_000;
 const HEARTBEAT_PROMPT =
@@ -65,11 +63,9 @@ const discordMcpServer = await startDiscordMcpServerOrExit(
 const aiService = new ChannelSessionCoordinator({
   createRuntime: () =>
     new CodexAiRuntime({
-      approvalPolicy: CODEX_APP_SERVER_APPROVAL_POLICY,
       codexHomeDir: runtimeConfig.codexHomeDir,
       command: CODEX_APP_SERVER_COMMAND,
       cwd: runtimeConfig.codexWorkspaceDir,
-      sandbox: CODEX_APP_SERVER_SANDBOX,
     }),
   discordTurnTimeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD,
   discordMcpServerUrl: discordMcpServer.url,

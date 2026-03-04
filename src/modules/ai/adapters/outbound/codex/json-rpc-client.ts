@@ -3,10 +3,8 @@ import type { ClientNotification } from "../../../codex-generated/ClientNotifica
 import type { ClientRequest } from "../../../codex-generated/ClientRequest";
 import type { RequestId } from "../../../codex-generated/RequestId";
 import type { JsonValue } from "../../../codex-generated/serde_json/JsonValue";
-import type { AskForApproval } from "../../../codex-generated/v2/AskForApproval";
 import type { CommandExecutionRequestApprovalResponse } from "../../../codex-generated/v2/CommandExecutionRequestApprovalResponse";
 import type { FileChangeRequestApprovalResponse } from "../../../codex-generated/v2/FileChangeRequestApprovalResponse";
-import type { SandboxMode } from "../../../codex-generated/v2/SandboxMode";
 import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
 import type { ToolRequestUserInputQuestion } from "../../../codex-generated/v2/ToolRequestUserInputQuestion";
 import type { ToolRequestUserInputResponse } from "../../../codex-generated/v2/ToolRequestUserInputResponse";
@@ -248,26 +246,6 @@ function writeRpcResponse(
     payload: message,
   });
   processHandle.writeLine(message);
-}
-
-const APPROVAL_POLICIES = [
-  "untrusted",
-  "on-failure",
-  "on-request",
-  "never",
-] as const satisfies readonly AskForApproval[];
-const SANDBOX_MODES = [
-  "read-only",
-  "workspace-write",
-  "danger-full-access",
-] as const satisfies readonly SandboxMode[];
-
-export function isApprovalPolicy(value: unknown): value is AskForApproval {
-  return APPROVAL_POLICIES.some((policy) => policy === value);
-}
-
-export function isSandboxMode(value: unknown): value is SandboxMode {
-  return SANDBOX_MODES.some((mode) => mode === value);
 }
 
 export function normalizeThreadStartConfig(
