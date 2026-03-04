@@ -510,7 +510,7 @@ describe("ChannelSessionCoordinator", () => {
 
 describe("buildThreadConfig", () => {
   it("uses HTTP MCP server url in thread config", () => {
-    const config = buildThreadConfig("medium", "http://127.0.0.1:43123/mcp");
+    const config = buildThreadConfig("http://127.0.0.1:43123/mcp");
 
     expect(config).toEqual({
       mcp_servers: {
@@ -518,7 +518,6 @@ describe("buildThreadConfig", () => {
           url: "http://127.0.0.1:43123/mcp",
         },
       },
-      model_reasoning_effort: "medium",
     });
   });
 });
@@ -586,7 +585,6 @@ function createService(input: CreateServiceInput): ChannelSessionCoordinator {
     discordMcpServerUrl: "http://127.0.0.1:43123/mcp",
     discordTurnTimeoutMs: 10 * 60_000,
     heartbeatTurnTimeoutMs: 30 * 60_000,
-    reasoningEffort: "medium",
     workspaceDir: "/tmp/workspace",
     ...(input.sessionIdleMs === undefined ? {} : { sessionIdleMs: input.sessionIdleMs }),
     ...(input.now ? { now: input.now } : {}),

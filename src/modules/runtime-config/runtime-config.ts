@@ -15,36 +15,19 @@ import { parseTOML, stringifyTOML } from "confbox";
 import { CronTime } from "cron";
 import { z } from "zod";
 
-import type { ReasoningEffort } from "../ai/codex-generated/ReasoningEffort";
-
 const DEFAULT_LUNA_HOME = "~/.luna";
 const WORKSPACE_DIR_NAME = "workspace";
 const CODEX_HOME_DIR_NAME = "codex";
 const LOGS_DIR_NAME = "logs";
 const DEFAULT_TEMPLATES_DIR_NAME = "templates";
 const CONFIG_FILE_NAME = "config.toml";
-const DEFAULT_AI_MODEL = "gpt-5.3-codex";
-const DEFAULT_AI_REASONING_EFFORT: ReasoningEffort = "medium";
 const DEFAULT_HEARTBEAT_CRON_TIME = "0 0,30 * * * *";
-
-const ReasoningEffortSchema = z.union([
-  z.literal("none"),
-  z.literal("minimal"),
-  z.literal("low"),
-  z.literal("medium"),
-  z.literal("high"),
-  z.literal("xhigh"),
-]);
 
 type RuntimeSettings = {
   time_zone?: string;
   discord: {
     allowed_channel_ids: string[];
     allow_dm: boolean;
-  };
-  ai: {
-    model: string;
-    reasoning_effort: ReasoningEffort;
   };
   heartbeat: {
     cron_time: string;
@@ -55,10 +38,6 @@ const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   discord: {
     allowed_channel_ids: [],
     allow_dm: false,
-  },
-  ai: {
-    model: DEFAULT_AI_MODEL,
-    reasoning_effort: DEFAULT_AI_REASONING_EFFORT,
   },
   heartbeat: {
     cron_time: DEFAULT_HEARTBEAT_CRON_TIME,
@@ -71,12 +50,6 @@ const RuntimeSettingsSchema = z.looseObject({
     allowed_channel_ids: z.array(z.string()),
     allow_dm: z.boolean().default(DEFAULT_RUNTIME_SETTINGS.discord.allow_dm),
   }),
-  ai: z
-    .looseObject({
-      model: z.string().trim().min(1).default(DEFAULT_AI_MODEL),
-      reasoning_effort: ReasoningEffortSchema.default(DEFAULT_AI_REASONING_EFFORT),
-    })
-    .default(DEFAULT_RUNTIME_SETTINGS.ai),
   heartbeat: z
     .looseObject({
       cron_time: z.string().trim().min(1).default(DEFAULT_HEARTBEAT_CRON_TIME),
@@ -88,8 +61,6 @@ export type RuntimeConfig = {
   discordBotToken: string;
   allowedChannelIds: ReadonlySet<string>;
   allowDm: boolean;
-  aiModel: string;
-  aiReasoningEffort: ReasoningEffort;
   heartbeatCronTime: string;
   timeZone: string | undefined;
   lunaHomeDir: string;
@@ -138,8 +109,6 @@ export async function loadRuntimeConfig(
   return {
     allowedChannelIds: runtimeSettings.allowedChannelIds,
     allowDm: runtimeSettings.allowDm,
-    aiModel: runtimeSettings.aiModel,
-    aiReasoningEffort: runtimeSettings.aiReasoningEffort,
     heartbeatCronTime: runtimeSettings.heartbeatCronTime,
     timeZone: runtimeSettings.timeZone,
     lunaHomeDir,
@@ -153,15 +122,13 @@ export async function loadRuntimeConfig(
 function parseRuntimeSettingsFromConfig(rawConfig: unknown): {
   allowedChannelIds: ReadonlySet<string>;
   allowDm: boolean;
-  aiModel: string;
-  aiReasoningEffort: ReasoningEffort;
   heartbeatCronTime: string;
   timeZone: string | undefined;
 } {
   const parseResult = RuntimeSettingsSchema.safeParse(rawConfig);
   if (!parseResult.success) {
     throw new RuntimeConfigError(
-      "config.toml must define [discord].allowed_channel_ids as an array of strings, optional [discord].allow_dm as a boolean, optional [ai].model/[ai].reasoning_effort, optional [heartbeat].cron_time, and optional top-level time_zone.",
+      "config.toml must define [discord].allowed_channel_ids as an array of strings, optional [discord].allow_dm as a boolean, optional [heartbeat].cron_time, and optional top-level time_zone.",
     );
   }
   if (hasDeprecatedHeartbeatTimeZone(rawConfig)) {
@@ -180,8 +147,6 @@ function parseRuntimeSettingsFromConfig(rawConfig: unknown): {
   return {
     allowedChannelIds: new Set(allowedChannelIds),
     allowDm: parseResult.data.discord.allow_dm,
-    aiModel: parseResult.data.ai.model,
-    aiReasoningEffort: parseResult.data.ai.reasoning_effort,
     heartbeatCronTime,
     timeZone,
   };

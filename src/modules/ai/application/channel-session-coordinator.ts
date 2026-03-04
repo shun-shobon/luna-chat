@@ -1,5 +1,4 @@
 import { logger } from "../../../shared/logger";
-import type { ReasoningEffort } from "../codex-generated/ReasoningEffort";
 import type { TurnResult } from "../domain/turn-result";
 import type { AiInput, AiService, HeartbeatInput } from "../ports/inbound/ai-service-port";
 import type { AiRuntimePort, StartedTurn, TurnObserver } from "../ports/outbound/ai-runtime-port";
@@ -18,7 +17,6 @@ type ChannelSessionCoordinatorOptions = {
   createRuntime: () => AiRuntimePort;
   discordMcpServerUrl: string;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
-  reasoningEffort: ReasoningEffort;
   workspaceDir: string;
   discordTurnTimeoutMs: number;
   heartbeatTurnTimeoutMs: number;
@@ -127,7 +125,7 @@ export class ChannelSessionCoordinator implements AiService {
         input.prompt,
       );
       const threadId = await runtime.startThread({
-        config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
+        config: buildThreadConfig(this.options.discordMcpServerUrl),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -239,7 +237,7 @@ export class ChannelSessionCoordinator implements AiService {
     const runtime = await this.ensureRuntime();
     const threadPromptBundle = await buildThreadPromptBundle(this.options.workspaceDir);
     const threadId = await runtime.startThread({
-      config: buildThreadConfig(this.options.reasoningEffort, this.options.discordMcpServerUrl),
+      config: buildThreadConfig(this.options.discordMcpServerUrl),
       developerRolePrompt: threadPromptBundle.developerRolePrompt,
       instructions: threadPromptBundle.instructions,
     });

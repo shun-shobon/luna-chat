@@ -30,8 +30,8 @@ LUNA_HOME=~/.luna
 さらに `$LUNA_HOME/config.toml` が存在しない場合は起動時に自動生成されます。  
 許可チャンネルは `config.toml` の `[discord].allowed_channel_ids` で設定します。
 DM 応答可否は `[discord].allow_dm` で設定します。
-AI モデルと推論設定は `[ai].model` / `[ai].reasoning_effort` で設定します。
 heartbeat 実行タイミングは `[heartbeat].cron_time` で設定します（既定値は毎時 00 / 30 分）。
+AI モデルと推論努力値は `config.toml` では設定せず、Codex 側の既定設定を使用します。
 `time_zone` は heartbeat と cron prompt の共通タイムゾーンです（未設定時はシステムのタイムゾーンを使用します）。
 
 ```toml
@@ -41,17 +41,13 @@ time_zone = "Asia/Tokyo"
 allowed_channel_ids = ["123456789012345678", "234567890123456789"]
 allow_dm = false
 
-[ai]
-model = "gpt-5.3-codex"
-reasoning_effort = "medium"
-
 [heartbeat]
 cron_time = "0 0,30 * * * *"
 ```
 
 `allowed_channel_ids = []`（空配列）でも起動は継続し、その場合 Bot はどのチャンネルにも反応しません。  
 `allow_dm = false` では DM に無反応、`allow_dm = true` では DM 投稿も AI 処理対象になります。  
-`[ai]` を省略した場合は `model="gpt-5.3-codex"` / `reasoning_effort="medium"` が使われます。  
+`config.toml` に `[ai]` を書いても読み込まず、Codex 側の既定モデル/既定推論努力値で動作します。  
 さらに `templates` 配下の通常ファイルは再帰的に走査され、`$LUNA_HOME/workspace` に同名ファイルが存在しない場合のみ自動でコピーされます（既存ファイルは上書きしません）。シンボリックリンクが含まれる場合は起動エラーになります。  
 `$LUNA_HOME/workspace/cron.toml` では任意プロンプトの定期実行を設定できます。`[jobs.<id>]` 形式で `cron` / `prompt` / `oneshot` を指定します。`oneshot = true` のジョブは1回試行後に設定ファイルから自動削除されます。`cron.toml` の変更は `chokidar` で監視され、再起動なしで反映されます。
 

@@ -25,7 +25,6 @@ import {
 
 type CodexAiRuntimeOptions = StdioProcessOptions & {
   approvalPolicy: string;
-  model: string;
   sandbox: string;
 };
 
@@ -60,7 +59,6 @@ export class CodexAiRuntime {
       developerInstructions: input.developerRolePrompt,
       ephemeral: true,
       experimentalRawEvents: false,
-      model: this.options.model,
       personality: "friendly",
       persistExtendedHistory: false,
       sandbox,

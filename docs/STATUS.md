@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-03-02
+- 2026-03-04
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -44,11 +44,11 @@
 - 設定は `DISCORD_BOT_TOKEN` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
 - 許可チャンネルは `$LUNA_HOME/config.toml` の `[discord].allowed_channel_ids`（文字列配列）から読み込む。
 - DM 応答可否は `$LUNA_HOME/config.toml` の `[discord].allow_dm`（boolean）から読み込む。
-- AI モデル設定は `$LUNA_HOME/config.toml` の `[ai].model` から読み込む。
-- AI 推論設定は `$LUNA_HOME/config.toml` の `[ai].reasoning_effort` から読み込む。
+- AI モデル/推論努力値は `config.toml` から読み込まず、Codex 側の既定設定を使用する。
+- `config.toml` に `[ai]` セクションが存在しても無視して起動継続する。
 - heartbeat 実行スケジュールは `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` から読み込む。
 - heartbeat と cron prompt のタイムゾーンは `$LUNA_HOME/config.toml` のトップレベル `time_zone` から読み込む（未設定時はシステムタイムゾーン）。
-- `config.toml` が存在しない場合は起動時に自動生成し、`allowed_channel_ids = []`, `allow_dm = false`, `model = "gpt-5.3-codex"`, `reasoning_effort = "medium"`, `heartbeat.cron_time = "0 0,30 * * * *"` で起動継続する。
+- `config.toml` が存在しない場合は起動時に自動生成し、`allowed_channel_ids = []`, `allow_dm = false`, `heartbeat.cron_time = "0 0,30 * * * *"` で起動継続する。
 - 起動時に `LUNA_HOME` / `workspace` / `codex` / `logs` を自動作成する。
 - 起動時に `templates` 配下の通常ファイルを再帰的に `workspace` へ不足分のみコピーし、既存ファイルは上書きしない（空ディレクトリは許容）。
 - 起動時に `templates` 配下にシンボリックリンクが含まれる場合は失敗する。

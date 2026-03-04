@@ -69,7 +69,6 @@ const aiService = new ChannelSessionCoordinator({
       codexHomeDir: runtimeConfig.codexHomeDir,
       command: CODEX_APP_SERVER_COMMAND,
       cwd: runtimeConfig.codexWorkspaceDir,
-      model: runtimeConfig.aiModel,
       sandbox: CODEX_APP_SERVER_SANDBOX,
     }),
   discordTurnTimeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD,
@@ -78,7 +77,6 @@ const aiService = new ChannelSessionCoordinator({
   onDiscordTurnCompleted: (channelId) => {
     typingLifecycleRegistry.stopByChannelId(channelId);
   },
-  reasoningEffort: runtimeConfig.aiReasoningEffort,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
 });
 

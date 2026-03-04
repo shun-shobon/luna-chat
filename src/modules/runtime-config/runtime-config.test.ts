@@ -7,8 +7,6 @@ import { describe, expect, it } from "vitest";
 
 import { loadRuntimeConfig, RuntimeConfigError } from "./runtime-config";
 
-const DEFAULT_AI_MODEL = "gpt-5.3-codex";
-const DEFAULT_AI_REASONING_EFFORT = "medium";
 const DEFAULT_HEARTBEAT_CRON_TIME = "0 0,30 * * * *";
 
 describe("loadRuntimeConfig", () => {
@@ -29,8 +27,6 @@ describe("loadRuntimeConfig", () => {
     expect(config.discordBotToken).toBe("token");
     expect(Array.from(config.allowedChannelIds)).toEqual(["111", "222", "333"]);
     expect(config.allowDm).toBe(false);
-    expect(config.aiModel).toBe(DEFAULT_AI_MODEL);
-    expect(config.aiReasoningEffort).toBe(DEFAULT_AI_REASONING_EFFORT);
     expect(config.heartbeatCronTime).toBe(DEFAULT_HEARTBEAT_CRON_TIME);
     expect(config.timeZone).toBeUndefined();
     expect(config.lunaHomeDir).toBe(resolve(lunaHomeDir));
@@ -83,35 +79,6 @@ describe("loadRuntimeConfig", () => {
         process.env["HOME"] = originalHome;
       }
       await rm(testHome, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
-  it("AIモデルと推論設定を config.toml から読み込む", async () => {
-    const lunaHomeDir = createTempLunaHomeDir();
-    await writeConfigToml(
-      lunaHomeDir,
-      createConfigToml({
-        allowedChannelIds: ["111"],
-        ai: {
-          model: "gpt-5.3",
-          reasoningEffort: "high",
-        },
-      }),
-    );
-
-    try {
-      const config = await loadRuntimeConfig({
-        LUNA_HOME: lunaHomeDir,
-        DISCORD_BOT_TOKEN: "token",
-      });
-
-      expect(config.aiModel).toBe("gpt-5.3");
-      expect(config.aiReasoningEffort).toBe("high");
-    } finally {
-      await rm(lunaHomeDir, {
         force: true,
         recursive: true,
       });
@@ -212,10 +179,6 @@ describe("loadRuntimeConfig", () => {
         discord: {
           allow_dm: false,
           allowed_channel_ids: [],
-        },
-        ai: {
-          model: DEFAULT_AI_MODEL,
-          reasoning_effort: DEFAULT_AI_REASONING_EFFORT,
         },
         heartbeat: {
           cron_time: DEFAULT_HEARTBEAT_CRON_TIME,
@@ -673,7 +636,7 @@ allowed_channel_ids = "111,222"
     }
   });
 
-  it("config.toml の ai.reasoning_effort が不正値なら失敗する", async () => {
+  it("config.toml に [ai] があっても無視して起動継続する", async () => {
     const lunaHomeDir = createTempLunaHomeDir();
     await writeConfigToml(
       lunaHomeDir,
@@ -683,16 +646,21 @@ allowed_channel_ids = ["111"]
 [ai]
 model = "gpt-5.3-codex"
 reasoning_effort = "turbo"
+
+[heartbeat]
+cron_time = "0 0,30 * * * *"
 `,
     );
 
     try {
-      await expect(
-        loadRuntimeConfig({
-          LUNA_HOME: lunaHomeDir,
-          DISCORD_BOT_TOKEN: "token",
-        }),
-      ).rejects.toThrowError(RuntimeConfigError);
+      const config = await loadRuntimeConfig({
+        LUNA_HOME: lunaHomeDir,
+        DISCORD_BOT_TOKEN: "token",
+      });
+
+      expect(config.allowDm).toBe(false);
+      expect(Array.from(config.allowedChannelIds)).toEqual(["111"]);
+      expect(config.heartbeatCronTime).toBe(DEFAULT_HEARTBEAT_CRON_TIME);
     } finally {
       await rm(lunaHomeDir, {
         force: true,
@@ -708,10 +676,6 @@ reasoning_effort = "turbo"
       `[discord]
 allowed_channel_ids = ["111"]
 allow_dm = "true"
-
-[ai]
-model = "gpt-5.3-codex"
-reasoning_effort = "medium"
 `,
     );
 
@@ -765,10 +729,6 @@ cron_time = "invalid-cron"
 
 [discord]
 allowed_channel_ids = ["111"]
-
-[ai]
-model = "gpt-5.3-codex"
-reasoning_effort = "medium"
 
 [heartbeat]
 cron_time = "0 0,30 * * * *"
@@ -868,10 +828,6 @@ function createTempLunaHomeDir(): string {
 function createConfigToml(input: {
   allowedChannelIds: string[];
   allowDm?: boolean;
-  ai?: {
-    model: string;
-    reasoningEffort: string;
-  };
   heartbeat?: {
     cronTime: string;
   };
@@ -879,10 +835,6 @@ function createConfigToml(input: {
 }): string {
   const channelIds = input.allowedChannelIds.map((channelId) => `"${channelId}"`).join(", ");
   const allowDm = input.allowDm ?? false;
-  const ai = input.ai ?? {
-    model: DEFAULT_AI_MODEL,
-    reasoningEffort: DEFAULT_AI_REASONING_EFFORT,
-  };
   const heartbeat = input.heartbeat ?? {
     cronTime: DEFAULT_HEARTBEAT_CRON_TIME,
   };
@@ -891,10 +843,6 @@ function createConfigToml(input: {
     `${timeZoneLine}[discord]
 allowed_channel_ids = [${channelIds}]
 allow_dm = ${allowDm}
-
-[ai]
-model = "${ai.model}"
-reasoning_effort = "${ai.reasoningEffort}"
 
 [heartbeat]
 cron_time = "${heartbeat.cronTime}"

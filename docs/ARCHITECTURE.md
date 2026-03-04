@@ -34,9 +34,9 @@
 - `src/modules/runtime-config/runtime-config.ts`
   - 設定値検証（環境変数: `DISCORD_BOT_TOKEN` / `LUNA_HOME`、設定ファイル: `$LUNA_HOME/config.toml`）
   - `config.toml` の `[discord].allowed_channel_ids`（文字列配列）/ `[discord].allow_dm`（boolean）読み込み（`confbox`）
-  - `config.toml` の `[ai].model` / `[ai].reasoning_effort` 読み込み（`confbox`）
   - `config.toml` の `[heartbeat].cron_time` / トップレベル `time_zone` 読み込み（`confbox`）
-  - `config.toml` 未存在時の自動生成（`allowed_channel_ids = []`, `allow_dm = false`, `model = "gpt-5.3-codex"`, `reasoning_effort = "medium"`, `heartbeat.cron_time = "0 0,30 * * * *"`）
+  - `config.toml` 未存在時の自動生成（`allowed_channel_ids = []`, `allow_dm = false`, `heartbeat.cron_time = "0 0,30 * * * *"`）
+  - `config.toml` の `[ai]` セクションは読み込まず、Codex 側既定のモデル/推論努力値を使用
   - `LUNA_HOME` / `workspace` / `codex` / `logs` の自動作成・書込可否検証
   - `templates` 配下の通常ファイルを再帰的に `workspace` へ不足分のみ自動コピー（既存は非上書き、空ディレクトリは許容、シンボリックリンクは起動エラー）
 - `src/shared/logger.ts`
@@ -69,7 +69,7 @@
   - `instructions` / `developerRolePrompt` / `userRolePrompt` 生成
   - `LUNA.md` / `SOUL.md` 連結
 - `src/modules/ai/application/thread-config-factory.ts`
-  - thread config 生成（`model_reasoning_effort` + MCP URL）
+  - thread config 生成（MCP URL）
 - `src/modules/ai/adapters/outbound/codex/*`
   - `codex-ai-runtime.ts`: app-server 実行ランタイム
   - `json-rpc-client.ts`: JSON-RPC req/resp・server request 応答（req/resp は双方向で debug ログ出力）
@@ -210,8 +210,7 @@
   - `[discord].allowed_channel_ids`: 文字列配列（例: `["123","456"]`）
   - `[discord].allow_dm`: boolean（`false` ならDM無効、`true` ならDM有効。未指定時 `false`）
   - 空配列でも起動継続（Bot は許可チャンネルなし状態で待機）
-  - `[ai].model`: 文字列（未指定時 `gpt-5.3-codex`）
-  - `[ai].reasoning_effort`: `none|minimal|low|medium|high|xhigh`（未指定時 `medium`）
+  - `[ai]` セクションは読み込まない（存在しても無視する）
   - `[heartbeat].cron_time`: cron 文字列（未指定時 `0 0,30 * * * *`）
   - `time_zone`: IANA タイムゾーン（任意、未指定時はシステムタイムゾーン）
 - `$LUNA_HOME/workspace/cron.toml`

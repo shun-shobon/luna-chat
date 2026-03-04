@@ -39,12 +39,11 @@
 3. `$LUNA_HOME/config.toml` が存在しない場合は初回起動で自動生成されることを確認する。
 4. `config.toml` の `[discord].allowed_channel_ids` が文字列配列であることを確認する（空配列は許容）。
 5. `config.toml` の `[discord].allow_dm`（boolean）を必要に応じて設定する（未設定時は `false`）。
-6. `config.toml` の `[ai].model` と `[ai].reasoning_effort`（`none|minimal|low|medium|high|xhigh`）が必要に応じて設定されていることを確認する（未設定時は既定値を使用）。
-7. `config.toml` の `[heartbeat].cron_time`（cron 文字列）を必要に応じて設定する（未設定時は `0 0,30 * * * *`）。
-8. 必要時のみ `time_zone`（IANA タイムゾーン）を設定する（未設定時はシステムタイムゾーン）。
-9. 起動時に `LUNA_HOME` / `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` / `$LUNA_HOME/logs` が自動作成されることを確認する。
-10. 起動時に `templates` 配下の通常ファイルが再帰的に `$LUNA_HOME/workspace` へ不足分のみコピーされ、既存ファイルは上書きされないことを確認する（空ディレクトリは許容、シンボリックリンクは不可）。
-11. `$LUNA_HOME/workspace/cron.toml` が存在することを確認する（初回起動でテンプレート作成される）。
+6. `config.toml` の `[heartbeat].cron_time`（cron 文字列）を必要に応じて設定する（未設定時は `0 0,30 * * * *`）。
+7. 必要時のみ `time_zone`（IANA タイムゾーン）を設定する（未設定時はシステムタイムゾーン）。
+8. 起動時に `LUNA_HOME` / `$LUNA_HOME/workspace` / `$LUNA_HOME/codex` / `$LUNA_HOME/logs` が自動作成されることを確認する。
+9. 起動時に `templates` 配下の通常ファイルが再帰的に `$LUNA_HOME/workspace` へ不足分のみコピーされ、既存ファイルは上書きされないことを確認する（空ディレクトリは許容、シンボリックリンクは不可）。
+10. `$LUNA_HOME/workspace/cron.toml` が存在することを確認する（初回起動でテンプレート作成される）。
 
 ### 3.2 開発時コマンド
 

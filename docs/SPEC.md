@@ -83,8 +83,7 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - 許可チャンネルは `$LUNA_HOME/config.toml` の `[discord].allowed_channel_ids`（文字列配列）で設定する。
 - 例: `allowed_channel_ids = ["1234567890", "2345678901"]`
 - DM 応答可否は `$LUNA_HOME/config.toml` の `[discord].allow_dm`（boolean）で設定する。
-- AI モデルは `$LUNA_HOME/config.toml` の `[ai].model` で設定可能にする。
-- 推論設定は `$LUNA_HOME/config.toml` の `[ai].reasoning_effort`（`none|minimal|low|medium|high|xhigh`）で設定可能にする。
+- AI モデル/推論努力値は `config.toml` では設定せず、Codex 側の既定設定を使用する。
 - heartbeat 実行タイミングは `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` で設定可能にする（未設定時 `0 0,30 * * * *`）。
 - heartbeat と cron prompt の共通タイムゾーンは `$LUNA_HOME/config.toml` のトップレベル `time_zone` で設定可能にする（未設定時はシステムタイムゾーン）。
 - cron prompt は `$LUNA_HOME/workspace/cron.toml` の `[jobs.<id>]` で設定可能にする（`cron` / `prompt` / `oneshot`）。
