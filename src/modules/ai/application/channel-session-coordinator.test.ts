@@ -56,7 +56,7 @@ describe("ChannelSessionCoordinator", () => {
     expect(runtime.startThread).toHaveBeenCalledTimes(1);
     expect(runtime.startThread).toHaveBeenCalledWith({
       config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
-      developerRolePrompt: expect.any(String),
+      developerRolePrompt: expect.stringContaining("bot-user-id"),
       instructions: expect.any(String),
     });
     expect(createRuntime).toHaveBeenCalledTimes(1);
@@ -495,12 +495,12 @@ describe("ChannelSessionCoordinator", () => {
     expect(runtime.initialize).toHaveBeenCalledTimes(1);
     expect(runtime.startThread).toHaveBeenNthCalledWith(1, {
       config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
-      developerRolePrompt: expect.any(String),
+      developerRolePrompt: expect.stringContaining("bot-user-id"),
       instructions: expect.any(String),
     });
     expect(runtime.startThread).toHaveBeenNthCalledWith(2, {
       config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
-      developerRolePrompt: expect.any(String),
+      developerRolePrompt: expect.stringContaining("bot-user-id"),
       instructions: expect.any(String),
     });
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
@@ -640,6 +640,7 @@ type CreateServiceInput = {
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
   sessionIdleMs?: number;
   now?: () => number;
+  botUserId?: string;
 };
 
 function createService(input: CreateServiceInput): ChannelSessionCoordinator {
@@ -648,6 +649,7 @@ function createService(input: CreateServiceInput): ChannelSessionCoordinator {
     discordMcpServerUrl: "http://127.0.0.1:43123/mcp",
     discordTurnTimeoutMs: 10 * 60_000,
     heartbeatTurnTimeoutMs: 30 * 60_000,
+    botUserId: input.botUserId ?? "bot-user-id",
     codexHomeDir: "/tmp/codex",
     workspaceDir: "/tmp/workspace",
     sessionIdleMs: input.sessionIdleMs,

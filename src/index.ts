@@ -60,6 +60,26 @@ const discordMcpServer = await startDiscordMcpServerOrExit(
   typingLifecycleRegistry,
 );
 
+client.on("clientReady", () => {
+  logger.info("Bot is ready!");
+});
+
+await client.login(runtimeConfig.discordBotToken).catch(async (error: unknown) => {
+  logger.error("Failed to login:", error);
+  await closeDiscordMcpServer(discordMcpServer);
+  await closeFileLogging();
+  process.exit(1);
+});
+
+const botUserId = client.user?.id;
+if (!botUserId) {
+  logger.error("Bot user is unavailable after login.");
+  await client.destroy();
+  await closeDiscordMcpServer(discordMcpServer);
+  await closeFileLogging();
+  process.exit(1);
+}
+
 const aiService = new ChannelSessionCoordinator({
   createRuntime: () =>
     new CodexAiRuntime({
@@ -73,12 +93,14 @@ const aiService = new ChannelSessionCoordinator({
   onDiscordTurnCompleted: (channelId) => {
     typingLifecycleRegistry.stopByChannelId(channelId);
   },
+  botUserId,
   codexHomeDir: runtimeConfig.codexHomeDir,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
 });
 
 await aiService.initializeRuntime().catch(async (error: unknown) => {
   logger.error("Failed to initialize Codex app-server runtime:", error);
+  await client.destroy();
   await closeDiscordMcpServer(discordMcpServer);
   await closeFileLogging();
   process.exit(1);
@@ -98,27 +120,17 @@ const cronPromptScheduler = await startCronPromptScheduler({
   logger,
   timeZone: runtimeConfig.timeZone,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
-});
-
-registerShutdownHooks({
-  client,
-  cronPromptScheduler,
-  discordMcpServer,
-  heartbeatRunner,
-  aiService,
-  typingLifecycleRegistry,
-});
-
-client.on("clientReady", () => {
-  logger.info("Bot is ready!");
+}).catch(async (error: unknown) => {
+  logger.error("Failed to start cron prompt scheduler:", error);
+  heartbeatRunner.stop();
+  await client.destroy();
+  await closeDiscordMcpServer(discordMcpServer);
+  await aiService.close();
+  await closeFileLogging();
+  process.exit(1);
 });
 
 client.on("messageCreate", async (message) => {
-  if (!client.user) {
-    return;
-  }
-  const botUserId = client.user.id;
-
   await handleMessageCreate({
     attachmentStore,
     aiService: discordAiService,
@@ -133,14 +145,13 @@ client.on("messageCreate", async (message) => {
   });
 });
 
-await client.login(runtimeConfig.discordBotToken).catch(async (error: unknown) => {
-  logger.error("Failed to login:", error);
-  await cronPromptScheduler.stop();
-  heartbeatRunner.stop();
-  await closeDiscordMcpServer(discordMcpServer);
-  await aiService.close();
-  await closeFileLogging();
-  process.exit(1);
+registerShutdownHooks({
+  client,
+  cronPromptScheduler,
+  discordMcpServer,
+  heartbeatRunner,
+  aiService,
+  typingLifecycleRegistry,
 });
 
 async function loadConfigOrExit(): Promise<RuntimeConfig> {

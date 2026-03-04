@@ -17,6 +17,7 @@ type ChannelSessionCoordinatorOptions = {
   createRuntime: () => AiRuntimePort;
   discordMcpServerUrl: string;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
+  botUserId: string;
   workspaceDir: string;
   codexHomeDir: string;
   discordTurnTimeoutMs: number;
@@ -124,6 +125,7 @@ export class ChannelSessionCoordinator implements AiService {
       const promptBundle = await buildHeartbeatPromptBundle(
         this.options.workspaceDir,
         input.prompt,
+        this.options.botUserId,
       );
       const threadId = await runtime.startThread({
         config: buildThreadConfig(
@@ -240,7 +242,10 @@ export class ChannelSessionCoordinator implements AiService {
 
   private async createDiscordSession(key: DiscordSessionKey): Promise<DiscordSession> {
     const runtime = await this.ensureRuntime();
-    const threadPromptBundle = await buildThreadPromptBundle(this.options.workspaceDir);
+    const threadPromptBundle = await buildThreadPromptBundle(
+      this.options.workspaceDir,
+      this.options.botUserId,
+    );
     const threadId = await runtime.startThread({
       config: buildThreadConfig(
         this.options.discordMcpServerUrl,

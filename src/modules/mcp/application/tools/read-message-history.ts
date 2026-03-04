@@ -61,7 +61,7 @@ export async function readMessageHistory(input: {
         content,
         createdAt: message.createdAt,
         id: message.id,
-        reactions: message.reactions,
+        ...(message.reactions ? { reactions: message.reactions } : {}),
       };
     }),
   );

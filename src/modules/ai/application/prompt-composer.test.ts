@@ -13,6 +13,8 @@ import {
   buildUserRolePrompt,
 } from "./prompt-composer";
 
+const TEST_BOT_USER_ID = "123456789012345678";
+
 describe("buildUserRolePrompt", () => {
   it("通常ケースで user role prompt を生成する", () => {
     const userRolePrompt = buildUserRolePrompt(createInput());
@@ -238,9 +240,11 @@ describe("buildUserRolePrompt", () => {
 describe("buildThreadPromptBundle", () => {
   it("instructions/developer role prompt を生成する", async () => {
     await withWorkspaceDir(async (workspaceDir) => {
-      const promptBundle = await buildThreadPromptBundle(workspaceDir);
+      const promptBundle = await buildThreadPromptBundle(workspaceDir, TEST_BOT_USER_ID);
 
       expect(promptBundle.instructions).toMatchSnapshot();
+      expect(promptBundle.developerRolePrompt).toContain(`あなたのIDは\`${TEST_BOT_USER_ID}\``);
+      expect(promptBundle.developerRolePrompt).toContain(`<@${TEST_BOT_USER_ID}>`);
       expect(promptBundle.developerRolePrompt).toMatchSnapshot();
       expect(promptBundle).toMatchSnapshot();
     });
@@ -251,7 +255,7 @@ describe("buildThreadPromptBundle", () => {
       await writeFile(resolve(workspaceDir, "LUNA.md"), "LUNA の追加指示");
       await writeFile(resolve(workspaceDir, "SOUL.md"), "SOUL の追加指示");
 
-      const promptBundle = await buildThreadPromptBundle(workspaceDir);
+      const promptBundle = await buildThreadPromptBundle(workspaceDir, TEST_BOT_USER_ID);
       const baseIndex = promptBundle.instructions.indexOf(
         "セーフティガードを決して回避してはいけません。",
       );
@@ -269,7 +273,7 @@ describe("buildThreadPromptBundle", () => {
     await withWorkspaceDir(async (workspaceDir) => {
       await writeFile(resolve(workspaceDir, "SOUL.md"), "SOUL の追加指示");
 
-      const promptBundle = await buildThreadPromptBundle(workspaceDir);
+      const promptBundle = await buildThreadPromptBundle(workspaceDir, TEST_BOT_USER_ID);
 
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
       expect(promptBundle.instructions).not.toContain("LUNA の追加指示");
@@ -282,11 +286,9 @@ describe("buildThreadPromptBundle", () => {
       await mkdir(resolve(workspaceDir, "LUNA.md"));
       await writeFile(resolve(workspaceDir, "SOUL.md"), "SOUL の追加指示");
 
-      const promptBundle = await buildThreadPromptBundle(workspaceDir);
+      const promptBundle = await buildThreadPromptBundle(workspaceDir, TEST_BOT_USER_ID);
 
-      expect(promptBundle.instructions).toContain(
-        "あなたはLunaで動作しているパーソナルアシスタント",
-      );
+      expect(promptBundle.instructions).toContain("あなたはDiscord上で動作しているチャットAI");
       expect(promptBundle.instructions).toContain("SOUL の追加指示");
       expect(promptBundle.instructions).toMatchSnapshot();
     });
@@ -294,7 +296,7 @@ describe("buildThreadPromptBundle", () => {
 
   it("RUNBOOK 由来の文字列を含めない", async () => {
     await withWorkspaceDir(async (workspaceDir) => {
-      const threadPromptBundle = await buildThreadPromptBundle(workspaceDir);
+      const threadPromptBundle = await buildThreadPromptBundle(workspaceDir, TEST_BOT_USER_ID);
       const userRolePrompt = buildUserRolePrompt(createInput());
       const merged = [
         threadPromptBundle.instructions,
@@ -314,6 +316,7 @@ describe("buildHeartbeatPromptBundle", () => {
       const promptBundle = await buildHeartbeatPromptBundle(
         workspaceDir,
         "HEARTBEAT.mdを確認し、作業を行ってください。",
+        TEST_BOT_USER_ID,
       );
 
       expect(promptBundle).toMatchSnapshot();
