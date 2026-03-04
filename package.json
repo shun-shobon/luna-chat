@@ -12,7 +12,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "gen": "pnpm run /^gen:.*$/",
-    "gen:app-server": "codex app-server generate-ts --out src/modules/ai/codex-generated",
+    "gen:app-server": "codex app-server generate-ts --out src/generated/codex",
     "knip": "knip",
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --type-aware --type-check --fix",

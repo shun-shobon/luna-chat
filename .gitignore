@@ -1,4 +1,4 @@
 node_modules
 dist
-src/modules/ai/codex-generated
+src/generated
 .env

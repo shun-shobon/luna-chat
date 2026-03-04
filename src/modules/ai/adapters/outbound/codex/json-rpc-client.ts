@@ -1,13 +1,13 @@
+import type { ClientNotification } from "../../../../../generated/codex/ClientNotification";
+import type { ClientRequest } from "../../../../../generated/codex/ClientRequest";
+import type { RequestId } from "../../../../../generated/codex/RequestId";
+import type { JsonValue } from "../../../../../generated/codex/serde_json/JsonValue";
+import type { CommandExecutionRequestApprovalResponse } from "../../../../../generated/codex/v2/CommandExecutionRequestApprovalResponse";
+import type { FileChangeRequestApprovalResponse } from "../../../../../generated/codex/v2/FileChangeRequestApprovalResponse";
+import type { ThreadStartParams } from "../../../../../generated/codex/v2/ThreadStartParams";
+import type { ToolRequestUserInputQuestion } from "../../../../../generated/codex/v2/ToolRequestUserInputQuestion";
+import type { ToolRequestUserInputResponse } from "../../../../../generated/codex/v2/ToolRequestUserInputResponse";
 import { logger } from "../../../../../shared/logger";
-import type { ClientNotification } from "../../../codex-generated/ClientNotification";
-import type { ClientRequest } from "../../../codex-generated/ClientRequest";
-import type { RequestId } from "../../../codex-generated/RequestId";
-import type { JsonValue } from "../../../codex-generated/serde_json/JsonValue";
-import type { CommandExecutionRequestApprovalResponse } from "../../../codex-generated/v2/CommandExecutionRequestApprovalResponse";
-import type { FileChangeRequestApprovalResponse } from "../../../codex-generated/v2/FileChangeRequestApprovalResponse";
-import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
-import type { ToolRequestUserInputQuestion } from "../../../codex-generated/v2/ToolRequestUserInputQuestion";
-import type { ToolRequestUserInputResponse } from "../../../codex-generated/v2/ToolRequestUserInputResponse";
 
 import type { StdioProcessHandle } from "./stdio-process";
 

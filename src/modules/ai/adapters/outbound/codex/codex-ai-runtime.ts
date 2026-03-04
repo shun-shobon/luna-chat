@@ -1,7 +1,7 @@
-import type { ThreadStartParams } from "../../../codex-generated/v2/ThreadStartParams";
-import type { TurnStartParams } from "../../../codex-generated/v2/TurnStartParams";
-import type { TurnSteerParams } from "../../../codex-generated/v2/TurnSteerParams";
-import type { UserInput } from "../../../codex-generated/v2/UserInput";
+import type { ThreadStartParams } from "../../../../../generated/codex/v2/ThreadStartParams";
+import type { TurnStartParams } from "../../../../../generated/codex/v2/TurnStartParams";
+import type { TurnSteerParams } from "../../../../../generated/codex/v2/TurnSteerParams";
+import type { UserInput } from "../../../../../generated/codex/v2/UserInput";
 import type { StartedTurn, TurnObserver } from "../../../ports/outbound/ai-runtime-port";
 
 import {
