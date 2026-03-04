@@ -28,12 +28,10 @@ RUN --mount=type=cache,target=/pnpm/store pnpm install --prod --frozen-lockfile
 FROM node:24.13.1-trixie AS runtime
 
 ENV NODE_ENV=production
+ENV PATH=/app/node_modules/.bin:$PATH
 ENV LUNA_HOME=/home/node/.luna
 
 WORKDIR /app
-
-RUN git config --global user.name "Luna" && git config --global user.email "luna@s2n.tech"
-RUN npm install --global @openai/codex@0.106.0
 
 COPY --from=build /app/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
