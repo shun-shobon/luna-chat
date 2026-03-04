@@ -69,7 +69,7 @@
   - `instructions` / `developerRolePrompt` / `userRolePrompt` 生成
   - `LUNA.md` / `SOUL.md` 連結
 - `src/modules/ai/application/thread-config-factory.ts`
-  - thread config 生成（MCP URL）
+  - thread config 生成（MCP URL + `projects["<resolved workspace>"].trust_level = "trusted"`）
 - `src/modules/ai/adapters/outbound/codex/*`
   - `codex-ai-runtime.ts`: app-server 実行ランタイム
   - `json-rpc-client.ts`: JSON-RPC req/resp・server request 応答（req/resp は双方向で debug ログ出力）

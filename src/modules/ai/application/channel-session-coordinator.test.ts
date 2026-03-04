@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeMessage } from "../../conversation/domain/runtime-message";
@@ -52,6 +54,11 @@ describe("ChannelSessionCoordinator", () => {
     await secondPromise;
 
     expect(runtime.startThread).toHaveBeenCalledTimes(1);
+    expect(runtime.startThread).toHaveBeenCalledWith({
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      developerRolePrompt: expect.any(String),
+      instructions: expect.any(String),
+    });
     expect(createRuntime).toHaveBeenCalledTimes(1);
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
       1,
@@ -486,6 +493,16 @@ describe("ChannelSessionCoordinator", () => {
 
     expect(createRuntime).toHaveBeenCalledTimes(1);
     expect(runtime.initialize).toHaveBeenCalledTimes(1);
+    expect(runtime.startThread).toHaveBeenNthCalledWith(1, {
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      developerRolePrompt: expect.any(String),
+      instructions: expect.any(String),
+    });
+    expect(runtime.startThread).toHaveBeenNthCalledWith(2, {
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      developerRolePrompt: expect.any(String),
+      instructions: expect.any(String),
+    });
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
       1,
       "thread-1",
@@ -510,12 +527,34 @@ describe("ChannelSessionCoordinator", () => {
 
 describe("buildThreadConfig", () => {
   it("uses HTTP MCP server url in thread config", () => {
-    const config = buildThreadConfig("http://127.0.0.1:43123/mcp");
+    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace");
 
     expect(config).toEqual({
       mcp_servers: {
         discord: {
           url: "http://127.0.0.1:43123/mcp",
+        },
+      },
+      projects: {
+        "/tmp/workspace": {
+          trust_level: "trusted",
+        },
+      },
+    });
+  });
+
+  it("workspace path is resolved to absolute path in thread config", () => {
+    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "../workspace");
+
+    expect(config).toEqual({
+      mcp_servers: {
+        discord: {
+          url: "http://127.0.0.1:43123/mcp",
+        },
+      },
+      projects: {
+        [resolve("../workspace")]: {
+          trust_level: "trusted",
         },
       },
     });

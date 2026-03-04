@@ -125,7 +125,7 @@ export class ChannelSessionCoordinator implements AiService {
         input.prompt,
       );
       const threadId = await runtime.startThread({
-        config: buildThreadConfig(this.options.discordMcpServerUrl),
+        config: buildThreadConfig(this.options.discordMcpServerUrl, this.options.workspaceDir),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -237,7 +237,7 @@ export class ChannelSessionCoordinator implements AiService {
     const runtime = await this.ensureRuntime();
     const threadPromptBundle = await buildThreadPromptBundle(this.options.workspaceDir);
     const threadId = await runtime.startThread({
-      config: buildThreadConfig(this.options.discordMcpServerUrl),
+      config: buildThreadConfig(this.options.discordMcpServerUrl, this.options.workspaceDir),
       developerRolePrompt: threadPromptBundle.developerRolePrompt,
       instructions: threadPromptBundle.instructions,
     });
