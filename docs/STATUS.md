@@ -37,7 +37,7 @@
 - `mcp` の application 層は adapters 実装へ直接依存せず、`src/modules/mcp/ports/outbound/*` のポートを介して依存している。
 - リアクション正規化と著者ラベル整形は `src/shared/discord/*` に集約している。
 - `ai` の turn 結果型は `src/modules/ai/domain/turn-result.ts`、サービス契約は `src/modules/ai/ports/inbound/ai-service-port.ts` を正本としている。
-- 旧実装（`src/ai` の非生成コード、`src/context/*`、`src/policy/*`）は削除し、生成型は `src/modules/ai/codex-generated/*` へ移設済み。
+- 旧実装（`src/ai` の非生成コード、`src/context/*`、`src/policy/*`）は削除し、app-server 生成型は `src/generated/codex/*` を正本として運用している（`pnpm run gen:app-server` で再生成）。
 - typing 管理は `typing-lifecycle-registry` で一元化している。
 - メンション起点の typing は message handler の `finally` で停止し、tool 起点の typing は `send_message` 成功時または Discord turn 完了時コールバックで停止する。
 - AI 呼び出し失敗時はフォールバック返信せず、ログ記録のみで終了する。
@@ -71,6 +71,7 @@
 - `oneshot = true` の cron prompt は1回試行後に `cron.toml` から削除する（成功/失敗問わず）。
 - プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。
 - `oxlint` では `application`/`ports`/`domain` からの不適切な層依存（adapters/application 直接参照など）を `no-restricted-imports` で検出する。
+- CI（lint/format/knip/typecheck/test）と Docker build は、事前に `pnpm run gen` を実行してから検証・ビルドする。
 - 自己改善ドキュメントの自動更新フローは未実装。
 - GitHub Actions `docker-publish` で `main` push時に `linux/amd64,linux/arm64` のマルチプラットフォームDockerイメージを `ghcr.io/${owner}/${repo}` へpushする（タグ: `latest` と `github.sha`）。
 

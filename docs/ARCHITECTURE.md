@@ -123,8 +123,8 @@
   - 添付保存 + マーカー追記ユースケース
 - `src/modules/attachments/adapters/outbound/workspace-discord-attachment-store.ts`
   - ワークスペース保存実装
-- `src/modules/ai/codex-generated/*`
-  - app-server 型定義（自動生成）
+- `src/generated/codex/*`
+  - app-server 型定義（自動生成、`pnpm run gen:app-server` で更新）
 
 ## 5. データモデル
 

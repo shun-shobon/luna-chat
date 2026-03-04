@@ -47,11 +47,13 @@
 
 ### 3.2 開発時コマンド
 
-1. `pnpm run dev`
-2. `pnpm run typecheck`
-3. `pnpm run lint`
-4. `pnpm run format:check`
-5. `pnpm run build`
+1. `pnpm run gen`
+2. `pnpm run dev`
+3. `pnpm run typecheck`
+4. `pnpm run lint`
+5. `pnpm run knip`
+6. `pnpm run format:check`
+7. `pnpm run build`
 
 ### 3.3 運用時の基本挙動
 
