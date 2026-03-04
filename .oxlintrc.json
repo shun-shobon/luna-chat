@@ -38,7 +38,7 @@
     "builtin": true
   },
   "globals": {},
-  "ignorePatterns": ["src/modules/ai/codex-generated"],
+  "ignorePatterns": [],
   "overrides": [
     {
       "files": ["**/src/modules/*/application/**/*.ts"],

@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["src/modules/ai/codex-generated"],
+  "ignorePatterns": [],
   "experimentalSortImports": {
     "groups": ["builtin", "external", "internal", "parent", "sibling", "index"]
   },
