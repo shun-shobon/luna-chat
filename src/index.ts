@@ -73,6 +73,7 @@ const aiService = new ChannelSessionCoordinator({
   onDiscordTurnCompleted: (channelId) => {
     typingLifecycleRegistry.stopByChannelId(channelId);
   },
+  codexHomeDir: runtimeConfig.codexHomeDir,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
 });
 

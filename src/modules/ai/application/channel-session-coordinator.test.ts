@@ -55,7 +55,7 @@ describe("ChannelSessionCoordinator", () => {
 
     expect(runtime.startThread).toHaveBeenCalledTimes(1);
     expect(runtime.startThread).toHaveBeenCalledWith({
-      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
       developerRolePrompt: expect.any(String),
       instructions: expect.any(String),
     });
@@ -494,12 +494,12 @@ describe("ChannelSessionCoordinator", () => {
     expect(createRuntime).toHaveBeenCalledTimes(1);
     expect(runtime.initialize).toHaveBeenCalledTimes(1);
     expect(runtime.startThread).toHaveBeenNthCalledWith(1, {
-      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
       developerRolePrompt: expect.any(String),
       instructions: expect.any(String),
     });
     expect(runtime.startThread).toHaveBeenNthCalledWith(2, {
-      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace"),
+      config: buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex"),
       developerRolePrompt: expect.any(String),
       instructions: expect.any(String),
     });
@@ -527,7 +527,7 @@ describe("ChannelSessionCoordinator", () => {
 
 describe("buildThreadConfig", () => {
   it("uses HTTP MCP server url in thread config", () => {
-    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace");
+    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "/tmp/workspace", "/tmp/codex");
 
     expect(config).toEqual({
       mcp_servers: {
@@ -540,11 +540,23 @@ describe("buildThreadConfig", () => {
           trust_level: "trusted",
         },
       },
+      skills: {
+        config: [
+          {
+            enabled: false,
+            path: "/tmp/codex/skills/.system/skill-creator/SKILL.md",
+          },
+          {
+            enabled: false,
+            path: "/tmp/codex/skills/.system/skill-installer/SKILL.md",
+          },
+        ],
+      },
     });
   });
 
-  it("workspace path is resolved to absolute path in thread config", () => {
-    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "../workspace");
+  it("workspace/codex path is resolved to absolute path in thread config", () => {
+    const config = buildThreadConfig("http://127.0.0.1:43123/mcp", "../workspace", "../codex");
 
     expect(config).toEqual({
       mcp_servers: {
@@ -556,6 +568,18 @@ describe("buildThreadConfig", () => {
         [resolve("../workspace")]: {
           trust_level: "trusted",
         },
+      },
+      skills: {
+        config: [
+          {
+            enabled: false,
+            path: resolve("../codex/skills/.system/skill-creator/SKILL.md"),
+          },
+          {
+            enabled: false,
+            path: resolve("../codex/skills/.system/skill-installer/SKILL.md"),
+          },
+        ],
       },
     });
   });
@@ -624,6 +648,7 @@ function createService(input: CreateServiceInput): ChannelSessionCoordinator {
     discordMcpServerUrl: "http://127.0.0.1:43123/mcp",
     discordTurnTimeoutMs: 10 * 60_000,
     heartbeatTurnTimeoutMs: 30 * 60_000,
+    codexHomeDir: "/tmp/codex",
     workspaceDir: "/tmp/workspace",
     ...(input.sessionIdleMs === undefined ? {} : { sessionIdleMs: input.sessionIdleMs }),
     ...(input.now ? { now: input.now } : {}),

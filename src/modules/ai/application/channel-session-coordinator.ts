@@ -18,6 +18,7 @@ type ChannelSessionCoordinatorOptions = {
   discordMcpServerUrl: string;
   onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
   workspaceDir: string;
+  codexHomeDir: string;
   discordTurnTimeoutMs: number;
   heartbeatTurnTimeoutMs: number;
   sessionIdleMs?: number;
@@ -125,7 +126,11 @@ export class ChannelSessionCoordinator implements AiService {
         input.prompt,
       );
       const threadId = await runtime.startThread({
-        config: buildThreadConfig(this.options.discordMcpServerUrl, this.options.workspaceDir),
+        config: buildThreadConfig(
+          this.options.discordMcpServerUrl,
+          this.options.workspaceDir,
+          this.options.codexHomeDir,
+        ),
         developerRolePrompt: promptBundle.developerRolePrompt,
         instructions: promptBundle.instructions,
       });
@@ -237,7 +242,11 @@ export class ChannelSessionCoordinator implements AiService {
     const runtime = await this.ensureRuntime();
     const threadPromptBundle = await buildThreadPromptBundle(this.options.workspaceDir);
     const threadId = await runtime.startThread({
-      config: buildThreadConfig(this.options.discordMcpServerUrl, this.options.workspaceDir),
+      config: buildThreadConfig(
+        this.options.discordMcpServerUrl,
+        this.options.workspaceDir,
+        this.options.codexHomeDir,
+      ),
       developerRolePrompt: threadPromptBundle.developerRolePrompt,
       instructions: threadPromptBundle.instructions,
     });
