@@ -79,17 +79,15 @@ export function createDiscordRestCommandGateway(
       await channel.send({
         allowedMentions: {
           parse: [],
-          ...(trimmedReplyToMessageId ? { repliedUser: true } : {}),
+          repliedUser: trimmedReplyToMessageId ? true : undefined,
         },
         content: trimmedText,
-        ...(trimmedReplyToMessageId
+        reply: trimmedReplyToMessageId
           ? {
-              reply: {
-                failIfNotExists: false,
-                messageReference: trimmedReplyToMessageId,
-              },
+              failIfNotExists: false,
+              messageReference: trimmedReplyToMessageId,
             }
-          : {}),
+          : undefined,
       });
 
       return {

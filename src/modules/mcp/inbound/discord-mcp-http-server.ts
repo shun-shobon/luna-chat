@@ -159,10 +159,10 @@ export async function startDiscordMcpServer(
     async ({ afterMessageId, aroundMessageId, beforeMessageId, channelId, limit }) => {
       const boundedLimit = Math.min(limit ?? DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT);
       const payload = await readMessageHistory({
-        ...(afterMessageId === undefined ? {} : { afterMessageId }),
-        ...(aroundMessageId === undefined ? {} : { aroundMessageId }),
+        afterMessageId,
+        aroundMessageId,
         channelId,
-        ...(beforeMessageId === undefined ? {} : { beforeMessageId }),
+        beforeMessageId,
         decorator: async (input) => {
           return await appendAttachmentsToContent({
             attachmentStore: options.attachmentStore,
@@ -199,16 +199,16 @@ export async function startDiscordMcpServer(
         }),
         text,
         typingRegistry,
-        ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
+        replyToMessageId,
       });
 
       return {
         content: [
           {
             text: formatSendMessageContent({
-              ...(channelId === undefined ? {} : { channelId }),
-              ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
-              ...(userId === undefined ? {} : { userId }),
+              channelId,
+              replyToMessageId,
+              userId,
             }),
             type: "text",
           },
@@ -239,10 +239,10 @@ export async function startDiscordMcpServer(
         content: [
           {
             text: formatAddReactionContent({
-              ...(channelId === undefined ? {} : { channelId }),
+              channelId,
               emoji,
               messageId,
-              ...(userId === undefined ? {} : { userId }),
+              userId,
             }),
             type: "text",
           },
@@ -273,8 +273,8 @@ export async function startDiscordMcpServer(
           {
             text: formatStartTypingContent({
               alreadyRunning: payload.alreadyRunning,
-              ...(channelId === undefined ? {} : { channelId }),
-              ...(userId === undefined ? {} : { userId }),
+              channelId,
+              userId,
             }),
             type: "text",
           },

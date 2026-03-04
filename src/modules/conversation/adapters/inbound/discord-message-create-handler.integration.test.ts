@@ -836,8 +836,8 @@ function createMessage(input?: {
     },
     reply: input?.reply ?? (async () => undefined),
     attachments: createAttachmentCollection(input?.attachments ?? []),
-    ...(reference ? { reference } : {}),
-    ...(fetchReference ? { fetchReference } : {}),
+    reference,
+    fetchReference,
     reactions: createReactionManager(input?.reactions ?? []),
   };
 }
@@ -884,8 +884,8 @@ function createFakeHistoryMessage(input: {
     },
     attachments: createAttachmentCollection([]),
     reactions: createReactionManager(input.reactions ?? []),
-    ...(reference ? { reference } : {}),
-    ...(fetchReference ? { fetchReference } : {}),
+    reference,
+    fetchReference,
   };
 }
 

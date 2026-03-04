@@ -91,12 +91,12 @@ const heartbeatRunner = startHeartbeatRunner({
   cronTime: runtimeConfig.heartbeatCronTime,
   logger,
   prompt: HEARTBEAT_PROMPT,
-  ...(runtimeConfig.timeZone === undefined ? {} : { timeZone: runtimeConfig.timeZone }),
+  timeZone: runtimeConfig.timeZone,
 });
 const cronPromptScheduler = await startCronPromptScheduler({
   aiService,
   logger,
-  ...(runtimeConfig.timeZone === undefined ? {} : { timeZone: runtimeConfig.timeZone }),
+  timeZone: runtimeConfig.timeZone,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
 });
 

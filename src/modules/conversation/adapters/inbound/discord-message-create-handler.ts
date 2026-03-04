@@ -260,8 +260,8 @@ async function toRuntimeMessageFromSource(input: {
     content,
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),
-    ...(reactions ? { reactions } : {}),
-    ...(replyTo ? { replyTo } : {}),
+    reactions,
+    replyTo,
   };
 }
 
@@ -389,7 +389,7 @@ async function toRuntimeReplyMessageFromSource(input: {
     authorName: input.message.member?.displayName ?? input.message.author.username,
     content,
     createdAt: formatDateTimeJst(input.message.createdAt),
-    ...(reactions ? { reactions } : {}),
+    reactions,
   };
 }
 
@@ -408,8 +408,8 @@ function toRuntimeReactionsFromSource(
       return {
         count: reaction.count,
         selfReacted: reaction.me,
-        ...(emojiId !== undefined ? { emojiId } : {}),
-        ...(emojiName !== undefined ? { emojiName } : {}),
+        emojiId,
+        emojiName,
       };
     }),
   );

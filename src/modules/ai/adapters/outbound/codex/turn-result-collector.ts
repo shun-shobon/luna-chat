@@ -89,7 +89,7 @@ type TurnNotificationObserver = {
 
 export function createTurnTracker(input: { threadId?: string } = {}): TurnTracker {
   return {
-    ...(input.threadId ? { expectedThreadId: input.threadId } : {}),
+    expectedThreadId: input.threadId,
     deltaText: "",
     mcpToolCalls: [],
   };
@@ -235,7 +235,7 @@ export async function waitForTurnCompletion(input: {
         assistantText,
         mcpToolCalls: input.tracker.mcpToolCalls,
         status: input.tracker.completedStatus,
-        ...(input.tracker.tokenUsage ? { tokenUsage: input.tracker.tokenUsage } : {}),
+        tokenUsage: input.tracker.tokenUsage,
       };
       if (input.tracker.errorMessage) {
         turnResult.errorMessage = input.tracker.errorMessage;
@@ -252,7 +252,7 @@ export async function waitForTurnCompletion(input: {
     assistantText: input.tracker.latestAgentMessageText ?? input.tracker.deltaText.trim(),
     errorMessage: `turn timed out after ${input.timeoutMs}ms`,
     mcpToolCalls: input.tracker.mcpToolCalls,
-    ...(input.tracker.tokenUsage ? { tokenUsage: input.tracker.tokenUsage } : {}),
+    tokenUsage: input.tracker.tokenUsage,
     status: "failed",
   };
 }
@@ -276,8 +276,8 @@ function parseAgentMessageDeltaParams(params: unknown):
 
   return {
     delta,
-    ...(threadId ? { threadId } : {}),
-    ...(turnId ? { turnId } : {}),
+    threadId: threadId ? threadId : undefined,
+    turnId: turnId ? turnId : undefined,
   };
 }
 
@@ -312,8 +312,8 @@ function parseItemStarted(params: unknown): ParsedStartedItem | undefined {
     kind: "mcpToolCall",
     server,
     tool,
-    ...(threadId ? { threadId } : {}),
-    ...(turnId ? { turnId } : {}),
+    threadId: threadId ? threadId : undefined,
+    turnId: turnId ? turnId : undefined,
   };
 }
 
@@ -339,8 +339,8 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
     return {
       kind: "agentMessage",
       text,
-      ...(threadId ? { threadId } : {}),
-      ...(turnId ? { turnId } : {}),
+      threadId: threadId ? threadId : undefined,
+      turnId: turnId ? turnId : undefined,
     };
   }
 
@@ -362,8 +362,8 @@ function parseItemCompleted(params: unknown): ParsedCompletedItem | undefined {
       server,
       status,
       tool,
-      ...(threadId ? { threadId } : {}),
-      ...(turnId ? { turnId } : {}),
+      threadId: threadId ? threadId : undefined,
+      turnId: turnId ? turnId : undefined,
     };
   }
 
@@ -426,8 +426,8 @@ function parseThreadTokenUsageUpdated(params: unknown): ParsedTokenUsageUpdated 
 
   return {
     tokenUsage,
-    ...(threadId ? { threadId } : {}),
-    ...(turnId ? { turnId } : {}),
+    threadId: threadId ? threadId : undefined,
+    turnId: turnId ? turnId : undefined,
   };
 }
 
@@ -512,8 +512,8 @@ function parseErrorParams(params: unknown):
 
   return {
     errorMessage: message,
-    ...(threadId ? { threadId } : {}),
-    ...(turnId ? { turnId } : {}),
+    threadId: threadId ? threadId : undefined,
+    turnId: turnId ? turnId : undefined,
   };
 }
 
@@ -537,9 +537,9 @@ function parseTurnCompletedParams(params: unknown): ParsedTurnCompleted | undefi
   const threadId = getStringValue(params, ["threadId", "thread_id"]);
 
   return {
-    ...(errorMessage ? { errorMessage } : {}),
-    ...(turnId ? { turnId } : {}),
-    ...(threadId ? { threadId } : {}),
+    errorMessage: errorMessage ? errorMessage : undefined,
+    turnId: turnId ? turnId : undefined,
+    threadId: threadId ? threadId : undefined,
     status,
   };
 }

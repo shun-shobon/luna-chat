@@ -562,7 +562,7 @@ function logTurnResult(
   logger.info("ai.turn.completed", {
     ...toTurnLogContextFields(context),
     errorMessage: turnResult.errorMessage,
-    ...(turnResult.tokenUsage ? { tokenUsage: turnResult.tokenUsage } : {}),
+    tokenUsage: turnResult.tokenUsage,
     status: turnResult.status,
     threadId,
     turnId,

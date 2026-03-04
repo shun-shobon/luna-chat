@@ -20,7 +20,7 @@ export function toRuntimeReactions(
       return {
         count: source.count,
         emoji: formatReactionEmoji(source),
-        ...(source.selfReacted ? { selfReacted: true as const } : {}),
+        selfReacted: source.selfReacted ? (true as const) : undefined,
       };
     })
     .sort((left, right) => left.emoji.localeCompare(right.emoji, "ja"));

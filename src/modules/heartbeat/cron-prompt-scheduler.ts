@@ -221,7 +221,7 @@ class CronPromptScheduler {
           await this.runJob(nextJob.id);
         },
         start: true,
-        ...(this.timeZone === undefined ? {} : { timeZone: this.timeZone }),
+        timeZone: this.timeZone,
         waitForCompletion: true,
       });
       this.jobs.set(nextJob.id, {

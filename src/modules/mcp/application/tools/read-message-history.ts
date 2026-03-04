@@ -38,11 +38,11 @@ export async function readMessageHistory(input: {
   }
 
   const fetched = await input.gateway.fetchMessages({
-    ...(input.afterMessageId === undefined ? {} : { afterMessageId: input.afterMessageId }),
-    ...(input.aroundMessageId === undefined ? {} : { aroundMessageId: input.aroundMessageId }),
+    afterMessageId: input.afterMessageId,
+    aroundMessageId: input.aroundMessageId,
     channelId: input.channelId,
     limit: input.limit,
-    ...(input.beforeMessageId === undefined ? {} : { beforeMessageId: input.beforeMessageId }),
+    beforeMessageId: input.beforeMessageId,
   });
 
   const messages = await Promise.all(
@@ -61,7 +61,7 @@ export async function readMessageHistory(input: {
         content,
         createdAt: message.createdAt,
         id: message.id,
-        ...(message.reactions ? { reactions: message.reactions } : {}),
+        reactions: message.reactions,
       };
     }),
   );

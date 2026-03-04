@@ -48,7 +48,7 @@ export function startHeartbeatRunner(input: StartHeartbeatRunnerInput): Heartbea
       });
     },
     start: true,
-    ...(timeZone === undefined ? {} : { timeZone }),
+    timeZone,
     waitForCompletion: true,
   });
 

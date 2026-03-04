@@ -650,11 +650,9 @@ function createService(input: CreateServiceInput): ChannelSessionCoordinator {
     heartbeatTurnTimeoutMs: 30 * 60_000,
     codexHomeDir: "/tmp/codex",
     workspaceDir: "/tmp/workspace",
-    ...(input.sessionIdleMs === undefined ? {} : { sessionIdleMs: input.sessionIdleMs }),
-    ...(input.now ? { now: input.now } : {}),
-    ...(input.onDiscordTurnCompleted
-      ? { onDiscordTurnCompleted: input.onDiscordTurnCompleted }
-      : {}),
+    sessionIdleMs: input.sessionIdleMs,
+    now: input.now,
+    onDiscordTurnCompleted: input.onDiscordTurnCompleted,
   });
 }
 
@@ -682,7 +680,7 @@ function createAiInput(
     createdAt: "2026-01-01 09:00:00 JST",
     id: messageId,
     mentionedBot: false,
-    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+    replyTo: options.replyTo,
   };
 
   return {

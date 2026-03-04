@@ -14,8 +14,8 @@ export async function sendMessageTool(input: {
   const channelId = await input.gateway.resolveChannelId(input.target);
   const payload = await input.gateway.sendMessage({
     channelId,
+    replyToMessageId: input.replyToMessageId,
     text: input.text,
-    ...(input.replyToMessageId === undefined ? {} : { replyToMessageId: input.replyToMessageId }),
   });
   input.typingRegistry.stopByChannelId(channelId);
   return payload;

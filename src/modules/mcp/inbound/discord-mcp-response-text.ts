@@ -45,7 +45,7 @@ export function formatReadMessageHistoryContent(payload: ReadMessageHistoryResul
       content: message.content,
       createdAt: message.createdAt,
       id: message.id,
-      ...(message.reactions ? { reactions: message.reactions } : {}),
+      reactions: message.reactions,
     });
   });
 

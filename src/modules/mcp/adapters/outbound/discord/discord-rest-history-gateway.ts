@@ -108,9 +108,9 @@ export function createDiscordRestHistoryGateway(
       const fetchedMessages = await channel.messages.fetch({
         cache: false,
         limit,
-        ...(beforeMessageId === undefined ? {} : { before: beforeMessageId }),
-        ...(afterMessageId === undefined ? {} : { after: afterMessageId }),
-        ...(aroundMessageId === undefined ? {} : { around: aroundMessageId }),
+        before: beforeMessageId,
+        after: afterMessageId,
+        around: aroundMessageId,
       });
       const rawMessages = toCollectionValues(fetchedMessages);
       const normalizedMessages = rawMessages
@@ -250,7 +250,7 @@ function toDiscordGuildMemberDetail(input: {
     guildId: input.guildId,
     joinedAt: joinedAt instanceof Date ? joinedAt.toISOString() : null,
     nickname: typeof nickname === "string" ? nickname : null,
-    ...(user ? { user } : {}),
+    user: user ?? undefined,
   };
 }
 
@@ -325,7 +325,7 @@ function toDiscordHistoryMessage(rawMessage: unknown): DiscordHistoryMessageWith
       content,
       createdAt: formatDateTimeJst(createdAt),
       id,
-      ...(reactions ? { reactions } : {}),
+      reactions,
     },
   };
 }
@@ -375,23 +375,25 @@ function toDiscordReactions(rawReactions: unknown): RuntimeReaction[] | undefine
       const emojiId = Reflect.get(emoji, "id");
       const emojiName = Reflect.get(emoji, "name");
 
-      return {
-        count,
-        selfReacted: me === true,
-        ...(typeof emojiId === "string" ? { emojiId } : {}),
-        ...(typeof emojiName === "string" ? { emojiName } : {}),
-      };
-    })
-    .filter(
-      (
-        reaction,
-      ): reaction is {
+      const normalizedReaction: {
         count: number;
         emojiId?: string;
         emojiName?: string;
         selfReacted: boolean;
-      } => reaction !== null,
-    );
+      } = {
+        count,
+        selfReacted: me === true,
+      };
+      if (typeof emojiId === "string") {
+        normalizedReaction.emojiId = emojiId;
+      }
+      if (typeof emojiName === "string") {
+        normalizedReaction.emojiName = emojiName;
+      }
+
+      return normalizedReaction;
+    })
+    .filter((reaction): reaction is NonNullable<typeof reaction> => reaction !== null);
 
   return toRuntimeReactions(normalizedInput);
 }

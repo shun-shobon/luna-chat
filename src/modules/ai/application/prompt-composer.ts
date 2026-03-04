@@ -46,19 +46,17 @@ function formatRuntimeMessageForPrompt(message: RuntimeMessage): string {
       content: message.content,
       createdAt: message.createdAt,
       id: message.id,
-      ...(message.reactions ? { reactions: message.reactions } : {}),
+      reactions: message.reactions,
     },
-    ...(message.replyTo
+    replyTo: message.replyTo
       ? {
-          replyTo: {
-            authorLabel: formatMessageAuthorLabel(message.replyTo),
-            content: message.replyTo.content,
-            createdAt: message.replyTo.createdAt,
-            id: message.replyTo.id,
-            ...(message.replyTo.reactions ? { reactions: message.replyTo.reactions } : {}),
-          },
+          authorLabel: formatMessageAuthorLabel(message.replyTo),
+          content: message.replyTo.content,
+          createdAt: message.replyTo.createdAt,
+          id: message.replyTo.id,
+          reactions: message.replyTo.reactions,
         }
-      : {}),
+      : undefined,
   });
 }
 
