@@ -10,16 +10,16 @@ importers:
     dependencies:
       '@hono/mcp':
         specifier: 0.2.4
-        version: 0.2.4(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(hono-rate-limiter@0.4.2(hono@4.12.4))(hono@4.12.4)(zod@4.3.6)
+        version: 0.2.4(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(hono-rate-limiter@0.4.2(hono@4.12.5))(hono@4.12.5)(zod@4.3.6)
       '@hono/node-server':
-        specifier: 1.19.10
-        version: 1.19.10(hono@4.12.4)
+        specifier: 1.19.11
+        version: 1.19.11(hono@4.12.5)
       '@modelcontextprotocol/sdk':
         specifier: 1.27.1
         version: 1.27.1(zod@4.3.6)
       '@openai/codex':
-        specifier: 0.107.0
-        version: 0.107.0
+        specifier: 0.111.0
+        version: 0.111.0
       chokidar:
         specifier: 5.0.0
         version: 5.0.0
@@ -36,8 +36,8 @@ importers:
         specifier: 14.25.1
         version: 14.25.1
       hono:
-        specifier: 4.12.4
-        version: 4.12.4
+        specifier: 4.12.5
+        version: 4.12.5
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -59,10 +59,10 @@ importers:
         version: 0.36.0
       oxlint:
         specifier: 1.51.0
-        version: 1.51.0(oxlint-tsgolint@0.15.0)
+        version: 1.51.0(oxlint-tsgolint@0.16.0)
       oxlint-tsgolint:
-        specifier: 0.15.0
-        version: 0.15.0
+        specifier: 0.16.0
+        version: 0.16.0
       tsdown:
         specifier: 0.20.3
         version: 0.20.3(oxc-resolver@11.19.0)(typescript@5.9.3)
@@ -300,8 +300,8 @@ packages:
       hono-rate-limiter: ^0.4.2
       zod: ^3.25.0 || ^4.0.0
 
-  '@hono/node-server@1.19.10':
-    resolution: {integrity: sha512-hZ7nOssGqRgyV3FVVQdfi+U4q02uB23bpnYpdvNXkYTRRyWx84b7yf1ans+dnJ/7h41sGL3CeQTfO+ZGxuO+Iw==}
+  '@hono/node-server@1.19.11':
+    resolution: {integrity: sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g==}
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
@@ -344,43 +344,43 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@openai/codex@0.107.0':
-    resolution: {integrity: sha512-bAHmp4I3YNEqeR5U+LA5yViecDTlLVAJ+EGo8h647f0DClEWxFtyKXzyBJQ/kcL1G3bzstOTcuVpTdjhvJoe6g==}
+  '@openai/codex@0.111.0':
+    resolution: {integrity: sha512-69Mw8//xBEHIgQ11tlYbz7HI2kndOs9GNnMVGzmTgsR48x2ZyYiZR1n4z2M+aR0A9BoarGxPIcbu2aEzVP/L0g==}
     engines: {node: '>=16'}
     hasBin: true
 
-  '@openai/codex@0.107.0-darwin-arm64':
-    resolution: {integrity: sha512-g8u0nsns9JaHNYehVuw1eSL/83BSuBsmdOo2rrEU0D1rKI/QoIQSv6S6offZnQFerCHeqj0LabxYzqUTBzEh0g==}
+  '@openai/codex@0.111.0-darwin-arm64':
+    resolution: {integrity: sha512-g8QkNUqacCUs7aU/Yd+gtiDlVV6sYyQl9tjBGgwjdfHCdmSKD47tD2tWRugXZ4D/uEe/6RxlUv65JnU5V0PW8A==}
     engines: {node: '>=16'}
     cpu: [arm64]
     os: [darwin]
 
-  '@openai/codex@0.107.0-darwin-x64':
-    resolution: {integrity: sha512-uDCfszYS/9RL6fMBqnLyFloBCa/Lgvqjt/P2izrByRANlHZG4Nwn1Sayn7v2TugvOJ5fBPZMRcaloqfjowmdEQ==}
+  '@openai/codex@0.111.0-darwin-x64':
+    resolution: {integrity: sha512-WfjErI0IWMSu17XoiPstvph6MX2wFZd9zrwKCWkYLrN68mNYKfBgZE7pSCb9Z3nxVMbaphq8jhf0kImCWCsatQ==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [darwin]
 
-  '@openai/codex@0.107.0-linux-arm64':
-    resolution: {integrity: sha512-iAPYuXfACBSjVf4DPkN8YFawFGXPORzm7hDJhkzqqQvXRSyeZDaVkdT81FhaNIjm1rcaMnMDGJn2M+tOwmGy0w==}
+  '@openai/codex@0.111.0-linux-arm64':
+    resolution: {integrity: sha512-/ABn3UhcbnJEhRNUH/BUcG/lr2n/CeacyXORWpHScNkkjMPUOkyNudUOyuoZjwybHU2PAmbpLIf5exXVNRvu2g==}
     engines: {node: '>=16'}
     cpu: [arm64]
     os: [linux]
 
-  '@openai/codex@0.107.0-linux-x64':
-    resolution: {integrity: sha512-h9SG15CrNihjHwSiYBU3dxMWH2r9fQIBPxFIpWnSUnjE5/YaXusbJQEvC+5u+g6CzUXX40fFsm3gVWV9uzX7Og==}
+  '@openai/codex@0.111.0-linux-x64':
+    resolution: {integrity: sha512-Cj82IUWtHkqMw3JpODGnkL9lyHhGLIAMHU9+3CosKLtOHUB4A9W3zKEBJrrlsi6QruvYVWrb/7t/xGb82fna0Q==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [linux]
 
-  '@openai/codex@0.107.0-win32-arm64':
-    resolution: {integrity: sha512-LHGQA2h/L72NRFcdIjKN/+V2nFXfuHDSQcI1Qdt9/7fUdcpb/pqN1n7U5rujccuTCf0ihk4XhGywAwiwPsjmWA==}
+  '@openai/codex@0.111.0-win32-arm64':
+    resolution: {integrity: sha512-h6WaA/ixD9ucwcmSUbXpjmhyfptD6Yk3N2IynNjOCvqgXS3V7uaNTm6qHFgkvA9S2IbkS9gA+ydgxFVyU6w7eQ==}
     engines: {node: '>=16'}
     cpu: [arm64]
     os: [win32]
 
-  '@openai/codex@0.107.0-win32-x64':
-    resolution: {integrity: sha512-Iq1UOxj2El/syo8abN0/7Z6ICIVTW7tY9DJbdx01wjQYbi6Ecb8e66iTNFq65Mingq7vG7QWvYGyLycVztHFuw==}
+  '@openai/codex@0.111.0-win32-x64':
+    resolution: {integrity: sha512-jWCcI8Nv8kpr29VWmTrNpRw9zMGAc4sqy94mw13OgOcFcDtnuqdjtaJAswKHrZZbdT+kqDDZmi7Gvi/vsahvDA==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
@@ -618,33 +618,33 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@oxlint-tsgolint/darwin-arm64@0.15.0':
-    resolution: {integrity: sha512-d7Ch+A6hic+RYrm32+Gh1o4lOrQqnFsHi721ORdHUDBiQPea+dssKUEMwIbA6MKmCy6TVJ02sQyi24OEfCiGzw==}
+  '@oxlint-tsgolint/darwin-arm64@0.16.0':
+    resolution: {integrity: sha512-WQt5lGwRPJBw7q2KNR0mSPDAaMmZmVvDlEEti96xLO7ONhyomQc6fBZxxwZ4qTFedjJnrHX94sFelZ4OKzS7UQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@oxlint-tsgolint/darwin-x64@0.15.0':
-    resolution: {integrity: sha512-Aoai2wAkaUJqp/uEs1gml6TbaPW4YmyO5Ai/vOSkiizgHqVctjhjKqmRiWTX2xuPY94VkwOLqp+Qr3y/0qSpWQ==}
+  '@oxlint-tsgolint/darwin-x64@0.16.0':
+    resolution: {integrity: sha512-VJo29XOzdkalvCTiE2v6FU3qZlgHaM8x8hUEVJGPU2i5W+FlocPpmn00+Ld2n7Q0pqIjyD5EyvZ5UmoIEJMfqg==}
     cpu: [x64]
     os: [darwin]
 
-  '@oxlint-tsgolint/linux-arm64@0.15.0':
-    resolution: {integrity: sha512-4og13a7ec4Vku5t2Y7s3zx6YJP6IKadb1uA9fOoRH6lm/wHWoCnxjcfJmKHXRZJII81WmbdJMSPxaBfwN/S68Q==}
+  '@oxlint-tsgolint/linux-arm64@0.16.0':
+    resolution: {integrity: sha512-MPfqRt1+XRHv9oHomcBMQ3KpTE+CSkZz14wUxDQoqTNdUlV0HWdzwIE9q65I3D9YyxEnqpM7j4qtDQ3apqVvbQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@oxlint-tsgolint/linux-x64@0.15.0':
-    resolution: {integrity: sha512-9b9xzh/1Harn3a+XiKTK/8LrWw3VcqLfYp/vhV5/zAVR2Mt0d63WSp4FL+wG7DKnI2T/CbMFUFHwc7kCQjDMzQ==}
+  '@oxlint-tsgolint/linux-x64@0.16.0':
+    resolution: {integrity: sha512-XQSwVUsnwLokMhe1TD6IjgvW5WMTPzOGGkdFDtXWQmlN2YeTw94s/NN0KgDrn2agM1WIgAenEkvnm0u7NgwEyw==}
     cpu: [x64]
     os: [linux]
 
-  '@oxlint-tsgolint/win32-arm64@0.15.0':
-    resolution: {integrity: sha512-nNac5hewHdkk5mowOwTqB1ZD76zB/FsUiyUvdCyupq5cG54XyKqSLEp9QGbx7wFJkWCkeWmuwRed4sfpAlKaeA==}
+  '@oxlint-tsgolint/win32-arm64@0.16.0':
+    resolution: {integrity: sha512-EWdlspQiiFGsP2AiCYdhg5dTYyAlj6y1nRyNI2dQWq4Q/LITFHiSRVPe+7m7K7lcsZCEz2icN/bCeSkZaORqIg==}
     cpu: [arm64]
     os: [win32]
 
-  '@oxlint-tsgolint/win32-x64@0.15.0':
-    resolution: {integrity: sha512-ioAY2XLpy83E2EqOLH9p1cEgj0G2qB1lmAn0a3yFV1jHQB29LIPIKGNsu/tYCClpwmHN79pT5KZAHZOgWxxqNg==}
+  '@oxlint-tsgolint/win32-x64@0.16.0':
+    resolution: {integrity: sha512-1ufk8cgktXJuJZHKF63zCHAkaLMwZrEXnZ89H2y6NO85PtOXqu4zbdNl0VBpPP3fCUuUBu9RvNqMFiv0VsbXWA==}
     cpu: [x64]
     os: [win32]
 
@@ -1358,8 +1358,8 @@ packages:
     peerDependencies:
       hono: ^4.1.1
 
-  hono@4.12.4:
-    resolution: {integrity: sha512-ooiZW1Xy8rQ4oELQ++otI2T9DsKpV0M6c6cO6JGx4RTfav9poFFLlet9UMXHZnoM1yG0HWGlQLswBGX3RZmHtg==}
+  hono@4.12.5:
+    resolution: {integrity: sha512-3qq+FUBtlTHhtYxbxheZgY8NIFnkkC/MR8u5TTsr7YZ3wixryQ3cCwn3iZbg8p8B88iDBBAYSfZDS75t8MN7Vg==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.0.1:
@@ -1521,8 +1521,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  oxlint-tsgolint@0.15.0:
-    resolution: {integrity: sha512-iwvFmhKQVZzVTFygUVI4t2S/VKEm+Mqkw3jQRJwfDuTcUYI5LCIYzdO5Dbuv4mFOkXZCcXaRRh0m+uydB5xdqw==}
+  oxlint-tsgolint@0.16.0:
+    resolution: {integrity: sha512-4RuJK2jP08XwqtUu+5yhCbxEauCm6tv2MFHKEMsjbosK2+vy5us82oI3VLuHwbNyZG7ekZA26U2LLHnGR4frIA==}
     hasBin: true
 
   oxlint@1.51.0:
@@ -2091,17 +2091,17 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
-  '@hono/mcp@0.2.4(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(hono-rate-limiter@0.4.2(hono@4.12.4))(hono@4.12.4)(zod@4.3.6)':
+  '@hono/mcp@0.2.4(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(hono-rate-limiter@0.4.2(hono@4.12.5))(hono@4.12.5)(zod@4.3.6)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.27.1(zod@4.3.6)
-      hono: 4.12.4
-      hono-rate-limiter: 0.4.2(hono@4.12.4)
+      hono: 4.12.5
+      hono-rate-limiter: 0.4.2(hono@4.12.5)
       pkce-challenge: 5.0.1
       zod: 4.3.6
 
-  '@hono/node-server@1.19.10(hono@4.12.4)':
+  '@hono/node-server@1.19.11(hono@4.12.5)':
     dependencies:
-      hono: 4.12.4
+      hono: 4.12.5
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -2119,7 +2119,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.27.1(zod@4.3.6)':
     dependencies:
-      '@hono/node-server': 1.19.10(hono@4.12.4)
+      '@hono/node-server': 1.19.11(hono@4.12.5)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       content-type: 1.0.5
@@ -2129,7 +2129,7 @@ snapshots:
       eventsource-parser: 3.0.6
       express: 5.2.1
       express-rate-limit: 8.2.1(express@5.2.1)
-      hono: 4.12.4
+      hono: 4.12.5
       jose: 6.1.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -2158,31 +2158,31 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@openai/codex@0.107.0':
+  '@openai/codex@0.111.0':
     optionalDependencies:
-      '@openai/codex-darwin-arm64': '@openai/codex@0.107.0-darwin-arm64'
-      '@openai/codex-darwin-x64': '@openai/codex@0.107.0-darwin-x64'
-      '@openai/codex-linux-arm64': '@openai/codex@0.107.0-linux-arm64'
-      '@openai/codex-linux-x64': '@openai/codex@0.107.0-linux-x64'
-      '@openai/codex-win32-arm64': '@openai/codex@0.107.0-win32-arm64'
-      '@openai/codex-win32-x64': '@openai/codex@0.107.0-win32-x64'
+      '@openai/codex-darwin-arm64': '@openai/codex@0.111.0-darwin-arm64'
+      '@openai/codex-darwin-x64': '@openai/codex@0.111.0-darwin-x64'
+      '@openai/codex-linux-arm64': '@openai/codex@0.111.0-linux-arm64'
+      '@openai/codex-linux-x64': '@openai/codex@0.111.0-linux-x64'
+      '@openai/codex-win32-arm64': '@openai/codex@0.111.0-win32-arm64'
+      '@openai/codex-win32-x64': '@openai/codex@0.111.0-win32-x64'
 
-  '@openai/codex@0.107.0-darwin-arm64':
+  '@openai/codex@0.111.0-darwin-arm64':
     optional: true
 
-  '@openai/codex@0.107.0-darwin-x64':
+  '@openai/codex@0.111.0-darwin-x64':
     optional: true
 
-  '@openai/codex@0.107.0-linux-arm64':
+  '@openai/codex@0.111.0-linux-arm64':
     optional: true
 
-  '@openai/codex@0.107.0-linux-x64':
+  '@openai/codex@0.111.0-linux-x64':
     optional: true
 
-  '@openai/codex@0.107.0-win32-arm64':
+  '@openai/codex@0.111.0-win32-arm64':
     optional: true
 
-  '@openai/codex@0.107.0-win32-x64':
+  '@openai/codex@0.111.0-win32-x64':
     optional: true
 
   '@oxc-project/types@0.112.0': {}
@@ -2306,22 +2306,22 @@ snapshots:
   '@oxfmt/binding-win32-x64-msvc@0.36.0':
     optional: true
 
-  '@oxlint-tsgolint/darwin-arm64@0.15.0':
+  '@oxlint-tsgolint/darwin-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/darwin-x64@0.15.0':
+  '@oxlint-tsgolint/darwin-x64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/linux-arm64@0.15.0':
+  '@oxlint-tsgolint/linux-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/linux-x64@0.15.0':
+  '@oxlint-tsgolint/linux-x64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/win32-arm64@0.15.0':
+  '@oxlint-tsgolint/win32-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/win32-x64@0.15.0':
+  '@oxlint-tsgolint/win32-x64@0.16.0':
     optional: true
 
   '@oxlint/binding-android-arm-eabi@1.51.0':
@@ -2905,11 +2905,11 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono-rate-limiter@0.4.2(hono@4.12.4):
+  hono-rate-limiter@0.4.2(hono@4.12.5):
     dependencies:
-      hono: 4.12.4
+      hono: 4.12.5
 
-  hono@4.12.4: {}
+  hono@4.12.5: {}
 
   hookable@6.0.1: {}
 
@@ -3076,16 +3076,16 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.36.0
       '@oxfmt/binding-win32-x64-msvc': 0.36.0
 
-  oxlint-tsgolint@0.15.0:
+  oxlint-tsgolint@0.16.0:
     optionalDependencies:
-      '@oxlint-tsgolint/darwin-arm64': 0.15.0
-      '@oxlint-tsgolint/darwin-x64': 0.15.0
-      '@oxlint-tsgolint/linux-arm64': 0.15.0
-      '@oxlint-tsgolint/linux-x64': 0.15.0
-      '@oxlint-tsgolint/win32-arm64': 0.15.0
-      '@oxlint-tsgolint/win32-x64': 0.15.0
+      '@oxlint-tsgolint/darwin-arm64': 0.16.0
+      '@oxlint-tsgolint/darwin-x64': 0.16.0
+      '@oxlint-tsgolint/linux-arm64': 0.16.0
+      '@oxlint-tsgolint/linux-x64': 0.16.0
+      '@oxlint-tsgolint/win32-arm64': 0.16.0
+      '@oxlint-tsgolint/win32-x64': 0.16.0
 
-  oxlint@1.51.0(oxlint-tsgolint@0.15.0):
+  oxlint@1.51.0(oxlint-tsgolint@0.16.0):
     optionalDependencies:
       '@oxlint/binding-android-arm-eabi': 1.51.0
       '@oxlint/binding-android-arm64': 1.51.0
@@ -3106,7 +3106,7 @@ snapshots:
       '@oxlint/binding-win32-arm64-msvc': 1.51.0
       '@oxlint/binding-win32-ia32-msvc': 1.51.0
       '@oxlint/binding-win32-x64-msvc': 1.51.0
-      oxlint-tsgolint: 0.15.0
+      oxlint-tsgolint: 0.16.0
 
   parseurl@1.3.3: {}
 
