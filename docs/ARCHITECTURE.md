@@ -60,9 +60,9 @@
 
 - `src/modules/ai/application/channel-session-coordinator.ts`
   - app-server 共有ランタイム管理（Discord / heartbeat / cron prompt）
-  - Discord セッション再利用（通常チャンネル投稿は許可チャンネル全体で 1 thread、DM 投稿は `userId` ごとに thread）
+  - Discord セッション再利用（通常チャンネル投稿は `channelId` ごとに 1 thread、DM 投稿は `userId` ごとに thread）
   - セッションキー単位の注入済み履歴スコープ管理（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）
-  - Discord セッションの 1 時間アイドル TTL 管理（turn 実行中は完了後クローズ）
+  - Discord セッションの 30 分アイドル TTL 管理（turn 実行中は完了後クローズ）
   - `turn/steer` 優先、失敗時 `turn/start` フォールバック
   - turn完了時の channel 単位コールバック実行
 - `src/modules/ai/application/prompt-composer.ts`
@@ -169,11 +169,11 @@
 6. セッションキー内で未注入の履歴スコープの場合のみ直近履歴10件を遅延取得し、昇順整形して AI へ渡す（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
 7. AI は必要に応じて MCP tools を実行する。
 8. ハンドラ `finally` でメンション起点 typing を停止する。
-9. `send_message` 成功時と turn 完了時コールバックで channel 単位の typing を停止する。Discord セッションは継続し、1時間アイドル時に破棄する（turn 実行中は完了後にクローズ）。
+9. `send_message` 成功時と turn 完了時コールバックで channel 単位の typing を停止する。Discord セッションは継続し、30分アイドル時に破棄する（turn 実行中は完了後にクローズ）。
 
 ### 6.2 連投時のセッション制御
 
-1. 通常チャンネル投稿は許可チャンネル全体で 1 つの active session を共有し、DM 投稿は `userId` ごとに active session を保持する。
+1. 通常チャンネル投稿は `channelId` ごとに active session を保持し、DM 投稿は `userId` ごとに active session を保持する。
 2. 進行中 turn があれば `turn/steer` を試行する。
 3. `turn/steer` が失敗した場合は `turn/interrupt` 後に同一セッションキーの thread で `turn/start` を再実行する。
 

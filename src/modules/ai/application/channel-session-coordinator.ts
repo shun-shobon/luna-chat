@@ -54,7 +54,7 @@ type DiscordSession = {
   idleTimer: TimeoutHandle | undefined;
 };
 
-const DEFAULT_SESSION_IDLE_MS = 60 * 60_000;
+const DEFAULT_SESSION_IDLE_MS = 30 * 60_000;
 
 class TurnFailedError extends Error {
   constructor(message: string) {
@@ -515,7 +515,7 @@ function resolveDiscordSessionKey(input: AiInput): DiscordSessionKey {
     return `dm-user:${input.currentMessage.authorId}`;
   }
 
-  return "channel:global";
+  return `channel:${input.currentMessage.channelId}`;
 }
 
 function resolveInitialHistoryScope(input: AiInput): string {

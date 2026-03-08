@@ -76,7 +76,7 @@ describe("ChannelSessionCoordinator", () => {
     );
   });
 
-  it("別チャンネルも同一セッションに合流し turn 完了時コールバックを全チャンネルへ送る", async () => {
+  it("別チャンネルは別セッションを使い turn 完了時コールバックは該当チャンネルだけへ送る", async () => {
     const runtime = new FakeAiRuntime();
     const onDiscordTurnCompleted = vi.fn();
     const service = createService({
@@ -89,14 +89,25 @@ describe("ChannelSessionCoordinator", () => {
       expect(runtime.startTurn).toHaveBeenCalledTimes(1);
     });
 
-    await service.generateReply(createAiInput("m2", "c2", "second"));
+    const secondPromise = service.generateReply(createAiInput("m2", "c2", "second"));
+    await vi.waitFor(() => {
+      expect(runtime.startThread).toHaveBeenCalledTimes(2);
+      expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    });
 
-    expect(runtime.steerTurn).toHaveBeenCalledTimes(1);
-    expect(runtime.steerTurn).toHaveBeenCalledWith("thread-1", "turn-1", expect.any(String));
-    expect(runtime.steerTurn.mock.calls[0]?.[2]).toContain("チャンネル名: channel-c2");
+    expect(runtime.steerTurn).not.toHaveBeenCalled();
+    expect(runtime.startTurn).toHaveBeenNthCalledWith(
+      2,
+      "thread-2",
+      expect.any(String),
+      expect.any(Object),
+      { timeoutMs: 10 * 60_000 },
+    );
 
     runtime.completeTurn("turn-1", createCompletedTurnResult());
+    runtime.completeTurn("turn-2", createCompletedTurnResult());
     await firstPromise;
+    await secondPromise;
 
     expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(2);
     expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c1");
@@ -229,7 +240,7 @@ describe("ChannelSessionCoordinator", () => {
     runtime.completeTurn("turn-3", createCompletedTurnResult());
     await thirdPromise;
 
-    expect(runtime.startThread).toHaveBeenCalledTimes(2);
+    expect(runtime.startThread).toHaveBeenCalledTimes(3);
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
       1,
       "thread-1",
@@ -246,7 +257,7 @@ describe("ChannelSessionCoordinator", () => {
     );
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
       3,
-      "thread-1",
+      "thread-3",
       expect.any(String),
       expect.any(Object),
       { timeoutMs: 10 * 60_000 },
@@ -354,17 +365,17 @@ describe("ChannelSessionCoordinator", () => {
       runtime.completeTurn("turn-5", createCompletedTurnResult());
       await channelThird;
 
-      expect(runtime.startThread).toHaveBeenCalledTimes(3);
+      expect(runtime.startThread).toHaveBeenCalledTimes(5);
       expect(runtime.startTurn).toHaveBeenNthCalledWith(
         4,
-        "thread-3",
+        "thread-4",
         expect.any(String),
         expect.any(Object),
         { timeoutMs: 10 * 60_000 },
       );
       expect(runtime.startTurn).toHaveBeenNthCalledWith(
         5,
-        "thread-1",
+        "thread-5",
         expect.any(String),
         expect.any(Object),
         { timeoutMs: 10 * 60_000 },
@@ -374,7 +385,7 @@ describe("ChannelSessionCoordinator", () => {
     }
   });
 
-  it("1時間アイドルでセッションを閉じる", async () => {
+  it("30分相当のアイドルでセッションを閉じる", async () => {
     vi.useFakeTimers();
     try {
       let now = 0;

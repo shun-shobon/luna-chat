@@ -50,9 +50,9 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 
 - 推論、tool use、ワークフロー制御は Codex CLI app-server を中心に実行する。
 - Codex CLI app-server はアプリケーション起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有する。
-- Discord 受信時は新規メッセージごとにセッションを作り直さず、通常チャンネル投稿では許可チャンネル全体で 1 つのセッション（thread）を再利用する。
+- Discord 受信時は新規メッセージごとにセッションを作り直さず、通常チャンネル投稿では `channelId` ごとに 1 つのセッション（thread）を再利用する。
 - DM 投稿では `userId` ごとに別セッション（thread）を再利用する。
-- Discord セッションは最終メッセージから 1 時間新規メッセージがなければ閉じる（turn 実行中の場合は完了後に閉じる）。
+- Discord セッションは最終メッセージから 30 分新規メッセージがなければ閉じる（turn 実行中の場合は完了後に閉じる）。
 - 現時点で外部サービス連携は必須にしない（Codex CLI 既定機能の利用は可）。
 
 ### 3.4 ワークスペース運用
@@ -104,5 +104,5 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 12. `workspace/cron.toml` の cron prompt ジョブが定期実行され、`oneshot = true` ジョブは1回試行後に設定ファイルから削除される。
 13. `cron.toml` の変更が再起動なしで反映される。不正設定時は前回有効スケジュールを維持する。
 14. Codex app-server が起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有される。
-15. Discord セッションは turn 完了後も再利用され、通常チャンネル投稿は許可チャンネル全体で 1 セッション、DM 投稿は `userId` ごとのセッションで運用され、各セッションは 1 時間アイドルで閉じる。
+15. Discord セッションは turn 完了後も再利用され、通常チャンネル投稿は `channelId` ごとに 1 セッション、DM 投稿は `userId` ごとのセッションで運用され、各セッションは 30 分アイドルで閉じる。
 16. Discord MCP の各 tool はレスポンスをプレーンテキストで返す。
