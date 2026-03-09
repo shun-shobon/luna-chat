@@ -9,8 +9,9 @@ export type DiscordCommandGateway = {
   }) => Promise<{ ok: true }>;
   sendMessage: (input: {
     channelId: string;
+    filePaths?: string[];
     replyToMessageId?: string;
-    text: string;
+    text?: string;
   }) => Promise<{ ok: true }>;
   sendTyping: (channelId: string) => Promise<void>;
 };

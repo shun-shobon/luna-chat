@@ -58,6 +58,7 @@ const discordMcpServer = await startDiscordMcpServerOrExit(
   attachmentStore,
   client,
   typingLifecycleRegistry,
+  runtimeConfig.codexWorkspaceDir,
 );
 
 client.on("clientReady", () => {
@@ -186,6 +187,7 @@ async function startDiscordMcpServerOrExit(
   attachmentStore: DiscordAttachmentStore,
   client: Client,
   typingRegistry: ReturnType<typeof createTypingLifecycleRegistry>,
+  workspaceDir: string,
 ): Promise<DiscordMcpServerHandle> {
   try {
     const mcpServer = await startDiscordMcpServer({
@@ -193,6 +195,7 @@ async function startDiscordMcpServerOrExit(
       attachmentStore,
       client,
       typingLifecycleRegistry: typingRegistry,
+      workspaceDir,
     });
     logger.info("Discord MCP server started.", {
       url: mcpServer.url,

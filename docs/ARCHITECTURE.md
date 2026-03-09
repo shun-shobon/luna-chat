@@ -250,4 +250,5 @@
 4. 返信・リアクション・追加履歴取得・AI主導typing・許可チャンネル一覧取得・ユーザー詳細取得は MCP tool 経由で実行する。
 5. `send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）で対象を指定できる。
 6. `send_message.replyToMessageId` は任意指定とし、返信投稿を表現する。
-7. ワークスペース文書は読み込み対象だが、自動更新フローは未実装。
+7. `send_message.filePaths` は複数ファイル対応の `string[]` とし、各要素は絶対パスまたは AI ワークスペース基準の相対パスを受け付ける。相対パスのワークスペース外脱出は拒否し、`text` または `filePaths` の少なくとも一方を必須とする。
+8. ワークスペース文書は読み込み対象だが、自動更新フローは未実装。

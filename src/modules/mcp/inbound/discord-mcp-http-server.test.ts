@@ -18,6 +18,7 @@ describe("startDiscordMcpServer", () => {
       allowedChannelIds: new Set(["channel-id"]),
       attachmentStore: createAttachmentStoreStub(),
       client: createDiscordClientStub(),
+      workspaceDir: "/tmp/workspace",
     });
     startedServers.push(server);
 

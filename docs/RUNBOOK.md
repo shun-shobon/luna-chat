@@ -59,7 +59,7 @@
 
 1. 受信イベントでチャンネル判定（スレッド除外、DMは`allow_dm`で判定、Guildは許可外除外）を実施する。
 2. 現在メッセージを AI に渡し、セッションキー内で未注入の履歴スコープの場合のみ直近 10 件を初回注入する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
-3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信する。MCP tool の応答はプレーンテキストで返る。
+3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信し、任意の `filePaths` で複数ファイルを添付できる。`text` は任意だが、`text` または `filePaths` の少なくとも一方が必要である。`filePaths` の相対パスは AI ワークスペース基準で解決し、ワークスペース外への脱出は拒否する。MCP tool の応答はプレーンテキストで返る。
 4. AI エラー時は返信せず終了し、失敗ログを確認する。
 5. アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log`（JSONL）にも出力される。
 6. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。

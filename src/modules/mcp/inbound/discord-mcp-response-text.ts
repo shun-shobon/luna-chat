@@ -54,6 +54,7 @@ export function formatReadMessageHistoryContent(payload: ReadMessageHistoryResul
 
 export function formatSendMessageContent(_input: {
   channelId?: string;
+  filePaths?: readonly string[];
   replyToMessageId?: string;
   userId?: string;
 }): string {

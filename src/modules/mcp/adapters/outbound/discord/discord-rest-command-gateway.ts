@@ -1,4 +1,6 @@
-import type { MessageCreateOptions } from "discord.js";
+import { basename } from "node:path";
+
+import { AttachmentBuilder, type MessageCreateOptions } from "discord.js";
 import { z } from "zod";
 
 import type {
@@ -61,34 +63,48 @@ export function createDiscordRestCommandGateway(
         ok: true,
       };
     },
-    sendMessage: async ({ channelId, replyToMessageId, text }) => {
-      const trimmedText = text.trim();
-      if (trimmedText.length === 0) {
+    sendMessage: async ({ channelId, filePaths, replyToMessageId, text }) => {
+      const trimmedText = text?.trim();
+      if (text !== undefined && !trimmedText) {
         throw new Error("text must not be empty.");
       }
 
+      const normalizedFilePaths = normalizeFilePaths(filePaths);
       const trimmedReplyToMessageId = replyToMessageId?.trim();
       if (replyToMessageId !== undefined && !trimmedReplyToMessageId) {
         throw new Error("replyToMessageId must not be empty.");
+      }
+      if (!trimmedText && normalizedFilePaths === undefined) {
+        throw new Error("text or filePaths must be provided.");
       }
 
       const channel = await fetchTextChannel(client, channelId);
       if (!isSendableChannel(channel)) {
         throw new Error("channel does not support sending messages.");
       }
-      await channel.send({
+      const options: MessageCreateOptions = {
         allowedMentions: {
           parse: [],
           repliedUser: trimmedReplyToMessageId ? true : undefined,
         },
-        content: trimmedText,
         reply: trimmedReplyToMessageId
           ? {
               failIfNotExists: false,
               messageReference: trimmedReplyToMessageId,
             }
           : undefined,
-      });
+      };
+      if (trimmedText) {
+        options.content = trimmedText;
+      }
+      if (normalizedFilePaths) {
+        options.files = normalizedFilePaths.map((filePath) => {
+          return new AttachmentBuilder(filePath, {
+            name: basename(filePath),
+          });
+        });
+      }
+      await channel.send(options);
 
       return {
         ok: true,
@@ -183,4 +199,23 @@ function isTypableChannel(channel: unknown): channel is TypableChannel {
   }
 
   return typeof Reflect.get(channel, "sendTyping") === "function";
+}
+
+function normalizeFilePaths(filePaths: readonly string[] | undefined): string[] | undefined {
+  if (filePaths === undefined) {
+    return undefined;
+  }
+  if (filePaths.length === 0) {
+    throw new Error("filePaths must not be empty.");
+  }
+
+  const normalized = filePaths.map((filePath) => {
+    const trimmedFilePath = filePath.trim();
+    if (trimmedFilePath.length === 0) {
+      throw new Error("filePaths must not contain empty values.");
+    }
+    return trimmedFilePath;
+  });
+
+  return normalized;
 }

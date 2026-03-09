@@ -30,7 +30,8 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - `cron.toml` の変更は監視し、再起動なしで反映する。
 - `oneshot = true` の cron prompt は1回試行後（成功/失敗を問わず）`cron.toml` から削除する。
 - AI は必要に応じて tool use（`send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail`）を使う。
-- `send_message` は `channelId` または `userId`（DM）のどちらか一方を受け取り、任意で `replyToMessageId` を指定できる。`replyToMessageId` 指定時は該当メッセージへの返信として投稿する。
+- `send_message` は `channelId` または `userId`（DM）のどちらか一方を受け取り、任意で `replyToMessageId` と `filePaths` を指定できる。`text` は任意とし、`text` または `filePaths` の少なくとも一方を必須とする。`replyToMessageId` 指定時は該当メッセージへの返信として投稿する。
+- `send_message.filePaths` は `string[]` で複数ファイルを受け付け、各要素は絶対パスまたは AI ワークスペース基準の相対パスを指定できる。相対パスがワークスペース外へ脱出する場合は拒否する。
 - `add_reaction` は `channelId` または `userId`（DM）のどちらか一方と `messageId` / `emoji` を受け取る。
 - `start_typing` は `channelId` または `userId`（DM）のどちらか一方を受け取る。
 - `start_typing` で開始した入力中表示は Discord turn 完了時、または `send_message` 成功時に自動停止する。
@@ -97,7 +98,7 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 5. 必要時に `read_message_history` で追加履歴取得できる（`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他）。
 6. AI 失敗時は返信せず終了し、失敗ログを確認できる。
 7. ワークスペース運用（`$LUNA_HOME/workspace`）で `LUNA.md` / `SOUL.md` を読み込める。
-8. `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を tool use で実行できる。`send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）のどちらか一方で対象を指定でき、`send_message` は任意で返信先IDを指定できる。
+8. `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を tool use で実行できる。`send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）のどちらか一方で対象を指定でき、`send_message` は任意で返信先IDと複数添付ファイルパスを指定でき、`text` または `filePaths` の少なくとも一方が必要である。
 9. heartbeat は `[heartbeat].cron_time` で設定したスケジュールで実行される（未設定時は毎時 00 分 / 30 分、タイムゾーン未設定時はシステムタイムゾーン）。
 10. heartbeat 実行時は実装済みの固定プロンプトが渡される。
 11. `allow_dm = false` では DM を処理せず、`allow_dm = true` では DM 投稿を AI へ渡せる。

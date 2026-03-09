@@ -19,7 +19,10 @@
 - 添付処理は `src/modules/attachments`（domain/ports/application/adapters）へ集約し、`conversation` と `mcp` の重複実装を解消している。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
 - `send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）のどちらか一方で対象を指定できる。
+- `send_message` は `text` を任意入力とし、`text` または `filePaths` の少なくとも一方が必要である。
 - `send_message` は任意で `replyToMessageId` を指定でき、指定時は返信投稿として送信する。
+- `send_message.filePaths` は `string[]` で複数ファイル添付に対応し、各要素は絶対パスまたは AI ワークスペース基準の相対パスを指定できる。
+- `send_message` の相対 `filePaths` は AI ワークスペース外へ脱出できない。
 - `send_message` の返信投稿は `fail_if_not_exists=false` で送信し、返信先が見つからない場合も通常投稿として継続する。
 - `send_message` の返信投稿では `allowed_mentions.replied_user=true` として返信先ユーザーへ通知する。
 - AI は必要時に MCP tool `start_typing` で入力中表示を開始できる（8 秒間隔）。
@@ -59,7 +62,7 @@
 - Discord セッションは各セッション単位で最終メッセージから 30 分新規メッセージがない場合に閉じる（turn 実行中は完了後に閉じる）。
 - `thread/start` は `approvalPolicy="never"` / `ephemeral=true` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。加えて `config.projects["<resolved $LUNA_HOME/workspace>"].trust_level = "trusted"` と `config.skills.config = [{ path = "<resolved $LUNA_HOME/codex/skills/.system/skill-creator/SKILL.md>", enabled = false }, { path = "<resolved $LUNA_HOME/codex/skills/.system/skill-installer/SKILL.md>", enabled = false }]` を注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
-- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（`channelId` または `userId` + 任意 `replyToMessageId`） / `add_reaction`（`channelId` または `userId`） / `start_typing`（`channelId` または `userId`） / `list_channels` / `get_user_detail` を提供する。
+- Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（`channelId` または `userId` + 任意 `replyToMessageId` + 任意 `filePaths`、ただし `text` または `filePaths` の少なくとも一方が必要） / `add_reaction`（`channelId` または `userId`） / `start_typing`（`channelId` または `userId`） / `list_channels` / `get_user_detail` を提供する。
 - MCP の Discord 呼び出しは `discord.js` の `Client` 経由に統一し、command/history gateway で共通利用する。
 - heartbeat は `cron` で `[heartbeat].cron_time`（未設定時 `0 0,30 * * * *`）に従って実行し、`waitForCompletion=true` で重複実行を抑止する。
 - `time_zone` 未設定時は heartbeat / cron prompt ともにシステムタイムゾーンで実行する。

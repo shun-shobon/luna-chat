@@ -21,6 +21,7 @@ describe("sendMessageTool", () => {
 
     await expect(
       sendMessageTool({
+        filePaths: ["/tmp/file-1.txt", "/tmp/file-2.txt"],
         gateway,
         target: { channelId: "channel-1" },
         text: "hello",
@@ -31,6 +32,7 @@ describe("sendMessageTool", () => {
     expect(resolveChannelId).toHaveBeenCalledWith({ channelId: "channel-1" });
     expect(sendMessage).toHaveBeenCalledWith({
       channelId: "channel-1",
+      filePaths: ["/tmp/file-1.txt", "/tmp/file-2.txt"],
       text: "hello",
     });
     expect(typingRegistry.stopByChannelId).toHaveBeenCalledWith("channel-1");
@@ -58,6 +60,54 @@ describe("sendMessageTool", () => {
 
     expect(resolveChannelId).toHaveBeenCalledWith({ userId: "user-1" });
     expect(typingRegistry.stopByChannelId).toHaveBeenCalledWith("dm-channel-1");
+  });
+
+  it("本文なしでも filePaths を渡せる", async () => {
+    const sendMessage: DiscordCommandGateway["sendMessage"] = vi.fn(async () => ({
+      ok: true as const,
+    }));
+    const gateway = createGatewayStub({
+      sendMessage,
+    });
+    const typingRegistry = createTypingRegistryStub();
+
+    await expect(
+      sendMessageTool({
+        filePaths: ["/tmp/file-1.txt", "/tmp/file-2.txt"],
+        gateway,
+        target: { channelId: "channel-1" },
+        typingRegistry,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      channelId: "channel-1",
+      filePaths: ["/tmp/file-1.txt", "/tmp/file-2.txt"],
+      text: undefined,
+    });
+  });
+
+  it("複数ファイル添付を gateway へそのまま渡す", async () => {
+    const sendMessage: DiscordCommandGateway["sendMessage"] = vi.fn(async () => ({
+      ok: true as const,
+    }));
+    const gateway = createGatewayStub({
+      sendMessage,
+    });
+    const typingRegistry = createTypingRegistryStub();
+
+    await sendMessageTool({
+      filePaths: ["/tmp/a.txt", "/tmp/b.txt"],
+      gateway,
+      target: { channelId: "channel-1" },
+      typingRegistry,
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      channelId: "channel-1",
+      filePaths: ["/tmp/a.txt", "/tmp/b.txt"],
+      text: undefined,
+    });
   });
 
   it("送信失敗時は typing を停止しない", async () => {

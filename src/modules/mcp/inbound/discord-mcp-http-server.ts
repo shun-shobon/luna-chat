@@ -26,6 +26,7 @@ import {
   formatSendMessageContent,
   formatStartTypingContent,
 } from "./discord-mcp-response-text";
+import { resolveDiscordSendFilePaths as resolveSendFilePaths } from "./resolve-discord-send-file-paths";
 
 const DEFAULT_HISTORY_LIMIT = 10;
 const MAX_HISTORY_LIMIT = 50;
@@ -34,6 +35,8 @@ const DISCORD_MCP_PATH = "/mcp";
 const HISTORY_CURSOR_INPUT_ERROR_MESSAGE =
   "beforeMessageId / afterMessageId / aroundMessageId は同時に指定できません。";
 const TARGET_INPUT_ERROR_MESSAGE = "channelId と userId のどちらか一方のみ指定してください。";
+const SEND_MESSAGE_PAYLOAD_INPUT_ERROR_MESSAGE =
+  "text または filePaths の少なくとも一方を指定してください。";
 
 const fetchHistoryInputSchema = z
   .object({
@@ -68,16 +71,31 @@ const fetchHistoryInputSchema = z
 const sendReplyInputSchema = z
   .object({
     channelId: z.string().min(1).optional().describe("送信先のDiscordチャンネルID。"),
+    filePaths: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .optional()
+      .describe(
+        "Discord に添付するファイルパスの配列。絶対パスを直接指定でき、相対パスは AI ワークスペースから解決する。",
+      ),
     userId: z.string().min(1).optional().describe("送信先ユーザーのDiscordユーザーID（DM）。"),
     replyToMessageId: z
       .string()
       .min(1)
       .optional()
       .describe("返信先メッセージID。指定した場合は返信として投稿する。"),
-    text: z.string().min(1).describe("チャンネルに投稿するメッセージ本文。"),
+    text: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe("チャンネルに投稿するメッセージ本文。省略時は添付ファイルのみ送信する。"),
   })
   .refine(hasExclusiveTarget, {
     message: TARGET_INPUT_ERROR_MESSAGE,
+  })
+  .refine(hasSendMessagePayload, {
+    message: SEND_MESSAGE_PAYLOAD_INPUT_ERROR_MESSAGE,
   });
 
 const addReactionInputSchema = z
@@ -131,6 +149,7 @@ type StartDiscordMcpServerOptions = {
   hostname?: string;
   port?: number;
   typingLifecycleRegistry?: TypingLifecycleRegistry;
+  workspaceDir: string;
 };
 
 type DiscordMcpClient = Parameters<typeof createDiscordRestCommandGateway>[0] &
@@ -190,8 +209,13 @@ export async function startDiscordMcpServer(
       inputSchema: sendReplyInputSchema,
       title: "Discord送信",
     },
-    async ({ channelId, replyToMessageId, text, userId }) => {
+    async ({ channelId, filePaths, replyToMessageId, text, userId }) => {
+      const resolvedFilePaths = await resolveSendFilePaths({
+        filePaths,
+        workspaceDir: options.workspaceDir,
+      });
       await sendMessageTool({
+        filePaths: resolvedFilePaths,
         gateway: commandGateway,
         target: toCommandTarget({
           channelId,
@@ -207,6 +231,7 @@ export async function startDiscordMcpServer(
           {
             text: formatSendMessageContent({
               channelId,
+              filePaths,
               replyToMessageId,
               userId,
             }),
@@ -360,6 +385,13 @@ function hasExclusiveTarget(input: {
   userId?: string | undefined;
 }): boolean {
   return (input.channelId === undefined) !== (input.userId === undefined);
+}
+
+function hasSendMessagePayload(input: {
+  filePaths?: readonly string[] | undefined;
+  text?: string | undefined;
+}): boolean {
+  return input.text !== undefined || input.filePaths !== undefined;
 }
 
 function hasExclusiveHistoryCursor(input: {
