@@ -1,5 +1,4 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "project": ["src/**/*.ts!"],
-  "ignore": ["src/generated/**"]
+  "project": ["src/**/*.ts!"]
 }
