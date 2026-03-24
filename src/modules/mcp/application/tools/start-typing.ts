@@ -8,13 +8,18 @@ export async function startTypingTool(input: {
   gateway: DiscordCommandGateway;
   target: DiscordCommandTarget;
   typingRegistry: TypingLifecycleRegistry;
-}): Promise<{ alreadyRunning: boolean; ok: true }> {
+}): Promise<{ alreadyRunning: boolean; channelId: string; ok: true }> {
   const channelId = await input.gateway.resolveChannelId(input.target);
-  return input.typingRegistry.start({
+  const payload = input.typingRegistry.start({
     channelId,
     sendTyping: async () => {
       await input.gateway.sendTyping(channelId);
     },
     source: "tool",
   });
+
+  return {
+    ...payload,
+    channelId,
+  };
 }

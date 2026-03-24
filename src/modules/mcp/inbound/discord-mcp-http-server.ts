@@ -304,6 +304,10 @@ export async function startDiscordMcpServer(
             type: "text",
           },
         ],
+        structuredContent: {
+          alreadyRunning: payload.alreadyRunning,
+          channelId: payload.channelId,
+        },
       };
     },
   );

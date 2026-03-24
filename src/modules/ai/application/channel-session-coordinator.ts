@@ -16,7 +16,7 @@ type DiscordSessionKey = string;
 type ChannelSessionCoordinatorOptions = {
   createRuntime: () => AiRuntimePort;
   discordMcpServerUrl: string;
-  onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
+  onDiscordTurnCompleted?: (channelIds: string[]) => void | Promise<void>;
   botUserId: string;
   workspaceDir: string;
   codexHomeDir: string;
@@ -149,6 +149,7 @@ export class ChannelSessionCoordinator implements AiService {
 
       const turnResult = await startedTurn.completion;
       logTurnResult(context, threadId, startedTurn.turnId, turnResult);
+      this.runOnDiscordTurnCompleted(extractTypingChannelIds(turnResult));
       throwIfTurnFailed(turnResult);
     } catch (error: unknown) {
       if (!(error instanceof TurnFailedError)) {
@@ -363,10 +364,12 @@ export class ChannelSessionCoordinator implements AiService {
     },
   ): Promise<void> {
     let shouldDisposeSession = false;
+    let completedTypingChannelIds: string[] = [];
 
     return startedTurn.completion
       .then((turnResult) => {
         logTurnResult(meta.context, meta.threadId, meta.turnId, turnResult);
+        completedTypingChannelIds = extractTypingChannelIds(turnResult);
 
         if (turnResult.status !== "completed") {
           shouldDisposeSession = true;
@@ -381,14 +384,16 @@ export class ChannelSessionCoordinator implements AiService {
           return;
         }
 
-        const completedChannels = Array.from(session.activeTurnChannelIds);
+        const completedChannels = new Set(session.activeTurnChannelIds);
         session.activeTurnId = undefined;
         session.turnCompletion = undefined;
         session.activeTurnChannelIds.clear();
 
-        for (const channelId of completedChannels) {
-          this.runOnDiscordTurnCompleted(channelId);
+        for (const channelId of completedTypingChannelIds) {
+          completedChannels.add(channelId);
         }
+
+        this.runOnDiscordTurnCompleted(Array.from(completedChannels));
 
         if (shouldDisposeSession || session.closeAfterTurn || this.isSessionIdleExpired(session)) {
           this.disposeDiscordSession(session);
@@ -396,13 +401,13 @@ export class ChannelSessionCoordinator implements AiService {
       });
   }
 
-  private runOnDiscordTurnCompleted(channelId: string): void {
+  private runOnDiscordTurnCompleted(channelIds: string[]): void {
     const callback = this.options.onDiscordTurnCompleted;
-    if (!callback) {
+    if (!callback || channelIds.length === 0) {
       return;
     }
 
-    void Promise.resolve(callback(channelId)).catch((error: unknown) => {
+    void Promise.resolve(callback(channelIds)).catch((error: unknown) => {
       logger.warn("Failed to run onDiscordTurnCompleted callback:", error);
     });
   }
@@ -499,6 +504,41 @@ export class ChannelSessionCoordinator implements AiService {
 
     return await chained;
   }
+}
+
+function extractTypingChannelIds(turnResult: TurnResult): string[] {
+  const channelIds = new Set<string>();
+
+  for (const toolCall of turnResult.mcpToolCalls) {
+    if (toolCall.server !== "discord" || toolCall.tool !== "start_typing") {
+      continue;
+    }
+
+    const channelId = extractChannelIdFromToolResult(toolCall.result);
+    if (channelId) {
+      channelIds.add(channelId);
+    }
+  }
+
+  return Array.from(channelIds);
+}
+
+function extractChannelIdFromToolResult(result: unknown): string | undefined {
+  if (!isRecord(result)) {
+    return undefined;
+  }
+
+  const structuredContent = result["structuredContent"];
+  if (!isRecord(structuredContent)) {
+    return undefined;
+  }
+
+  const channelId = structuredContent["channelId"];
+  return typeof channelId === "string" && channelId.length > 0 ? channelId : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function throwIfTurnFailed(turnResult: TurnResult): void {

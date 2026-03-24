@@ -91,8 +91,10 @@ const aiService = new ChannelSessionCoordinator({
   discordTurnTimeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_DISCORD,
   discordMcpServerUrl: discordMcpServer.url,
   heartbeatTurnTimeoutMs: CODEX_APP_SERVER_TIMEOUT_MS_FOR_HEARTBEAT,
-  onDiscordTurnCompleted: (channelId) => {
-    typingLifecycleRegistry.stopByChannelId(channelId);
+  onDiscordTurnCompleted: (channelIds) => {
+    for (const channelId of channelIds) {
+      typingLifecycleRegistry.stopByChannelId(channelId);
+    }
   },
   botUserId,
   codexHomeDir: runtimeConfig.codexHomeDir,
