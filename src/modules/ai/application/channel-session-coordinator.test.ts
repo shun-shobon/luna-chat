@@ -110,8 +110,8 @@ describe("ChannelSessionCoordinator", () => {
     await secondPromise;
 
     expect(onDiscordTurnCompleted).toHaveBeenCalledTimes(2);
-    expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c1");
-    expect(onDiscordTurnCompleted).toHaveBeenCalledWith("c2");
+    expect(onDiscordTurnCompleted).toHaveBeenCalledWith(["c1"]);
+    expect(onDiscordTurnCompleted).toHaveBeenCalledWith(["c2"]);
   });
 
   it("DM は同一ユーザーなら同一threadを再利用する", async () => {
@@ -523,6 +523,47 @@ describe("ChannelSessionCoordinator", () => {
     );
   });
 
+  it("heartbeat で start_typing したチャンネルは turn 完了時に停止コールバックへ渡す", async () => {
+    const runtime = new FakeAiRuntime();
+    const onDiscordTurnCompleted = vi.fn();
+    const service = createService({
+      createRuntime: vi.fn(() => runtime),
+      onDiscordTurnCompleted,
+    });
+
+    const runPromise = service.generateHeartbeat({
+      prompt: "HEARTBEAT.mdを確認し、作業を行ってください。",
+    });
+    await vi.waitFor(() => {
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    runtime.completeTurn(
+      "turn-1",
+      createCompletedTurnResult({
+        mcpToolCalls: [
+          {
+            arguments: {
+              channelId: "channel-1",
+            },
+            result: {
+              structuredContent: {
+                alreadyRunning: false,
+                channelId: "channel-1",
+              },
+            },
+            server: "discord",
+            status: "completed",
+            tool: "start_typing",
+          },
+        ],
+      }),
+    );
+    await runPromise;
+
+    expect(onDiscordTurnCompleted).toHaveBeenCalledWith(["channel-1"]);
+  });
+
   it("close で runtime をクローズする", async () => {
     const runtime = new FakeAiRuntime();
     const service = createService({
@@ -648,7 +689,7 @@ class FakeAiRuntime {
 
 type CreateServiceInput = {
   createRuntime: () => FakeAiRuntime;
-  onDiscordTurnCompleted?: (channelId: string) => void | Promise<void>;
+  onDiscordTurnCompleted?: (channelIds: string[]) => void | Promise<void>;
   sessionIdleMs?: number;
   now?: () => number;
   botUserId?: string;
@@ -710,11 +751,12 @@ function createAiInput(
   };
 }
 
-function createCompletedTurnResult(): TurnResult {
+function createCompletedTurnResult(overrides: Partial<TurnResult> = {}): TurnResult {
   return {
     assistantText: "ok",
     mcpToolCalls: [],
     status: "completed",
+    ...overrides,
   };
 }
 
