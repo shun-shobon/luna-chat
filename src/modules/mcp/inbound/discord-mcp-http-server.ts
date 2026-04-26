@@ -4,8 +4,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { logger } from "../../../shared/logger";
-import { appendAttachmentsToContent, type DiscordAttachmentStore } from "../../attachments";
 import type { TypingLifecycleRegistry } from "../../typing/typing-lifecycle-registry";
 import { createTypingLifecycleRegistry } from "../../typing/typing-lifecycle-registry";
 import { createDiscordRestCommandGateway } from "../adapters/outbound/discord/discord-rest-command-gateway";
@@ -144,7 +142,6 @@ export type DiscordMcpServerHandle = {
 
 type StartDiscordMcpServerOptions = {
   allowedChannelIds: ReadonlySet<string>;
-  attachmentStore: DiscordAttachmentStore;
   client: DiscordMcpClient;
   hostname?: string;
   port?: number;
@@ -182,16 +179,6 @@ export async function startDiscordMcpServer(
         aroundMessageId,
         channelId,
         beforeMessageId,
-        decorator: async (input) => {
-          return await appendAttachmentsToContent({
-            attachmentStore: options.attachmentStore,
-            attachments: input.attachments,
-            channelId: input.channelId,
-            content: input.content,
-            logger,
-            messageId: input.messageId,
-          });
-        },
         gateway: historyGateway,
         limit: boundedLimit,
       });

@@ -126,6 +126,7 @@ export class ChannelSessionCoordinator implements AiService {
         this.options.workspaceDir,
         input.prompt,
         this.options.botUserId,
+        input.source,
       );
       const threadId = await runtime.startThread({
         config: buildThreadConfig(

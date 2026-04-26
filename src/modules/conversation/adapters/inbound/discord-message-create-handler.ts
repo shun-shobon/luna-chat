@@ -2,13 +2,12 @@ import { Collection } from "discord.js";
 
 import { formatDateTimeJst } from "../../../../shared/discord/format-date-time-jst";
 import { toRuntimeReactions } from "../../../../shared/discord/runtime-reaction";
-import {
-  appendAttachmentsToContent,
-  type DiscordAttachmentInput,
-  type DiscordAttachmentStore,
-} from "../../../attachments";
 import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
-import type { RuntimeMessage, RuntimeReplyMessage } from "../../domain/runtime-message";
+import type {
+  RuntimeAttachment,
+  RuntimeMessage,
+  RuntimeReplyMessage,
+} from "../../domain/runtime-message";
 
 type AttachmentSource = {
   id: string;
@@ -113,7 +112,6 @@ export type ReplyGenerator = {
 };
 
 type HandleMessageInput = {
-  attachmentStore: DiscordAttachmentStore;
   message: MessageLike;
   botUserId: string;
   allowedChannelIds: ReadonlySet<string>;
@@ -153,7 +151,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
   }
 
   const currentMessage = await toRuntimeMessage({
-    attachmentStore: input.attachmentStore,
     botUserId: input.botUserId,
     logger: input.logger,
     message,
@@ -176,7 +173,6 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
       currentMessage,
       loadRecentMessages: async () => {
         return await fetchRecentMessages({
-          attachmentStore: input.attachmentStore,
           botUserId: input.botUserId,
           logger: input.logger,
           message,
@@ -219,11 +215,9 @@ function evaluateReplyPolicy(input: ReplyPolicyInput): { shouldHandle: boolean }
 async function toRuntimeMessage(input: {
   message: MessageLike;
   botUserId: string;
-  attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage> {
   return toRuntimeMessageFromSource({
-    attachmentStore: input.attachmentStore,
     botUserId: input.botUserId,
     logger: input.logger,
     message: input.message,
@@ -233,19 +227,9 @@ async function toRuntimeMessage(input: {
 async function toRuntimeMessageFromSource(input: {
   message: RuntimeMessageSource;
   botUserId: string;
-  attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage> {
-  const content = await appendAttachmentsToContent({
-    attachmentStore: input.attachmentStore,
-    attachments: collectAttachments(input.message.attachments),
-    channelId: input.message.channelId,
-    content: input.message.content,
-    logger: input.logger,
-    messageId: input.message.id,
-  });
   const replyTo = await resolveReplyToMessage({
-    attachmentStore: input.attachmentStore,
     logger: input.logger,
     message: input.message,
   });
@@ -257,18 +241,18 @@ async function toRuntimeMessageFromSource(input: {
     authorId: input.message.author.id,
     authorName: input.message.member?.displayName ?? input.message.author.username,
     authorIsBot: input.message.author.bot,
-    content,
+    content: input.message.content,
+    attachments: collectAttachments(input.message.attachments),
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),
-    reactions,
-    replyTo,
+    ...(reactions ? { reactions } : {}),
+    ...(replyTo ? { replyTo } : {}),
   };
 }
 
 async function fetchRecentMessages(input: {
   message: MessageLike;
   botUserId: string;
-  attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeMessage[]> {
   const fetchMessages = toMessageFetcher(input.message.channel.messages);
@@ -292,7 +276,6 @@ async function fetchRecentMessages(input: {
     return Promise.all(
       sortedMessages.map(async (message) => {
         return toRuntimeMessageFromSource({
-          attachmentStore: input.attachmentStore,
           botUserId: input.botUserId,
           logger: input.logger,
           message,
@@ -326,7 +309,7 @@ function toMessageFetcher(
 
 function collectAttachments(
   attachments: Collection<string, AttachmentSource> | undefined,
-): DiscordAttachmentInput[] {
+): RuntimeAttachment[] {
   if (!attachments) {
     return [];
   }
@@ -342,7 +325,6 @@ function collectAttachments(
 
 async function resolveReplyToMessage(input: {
   message: RuntimeMessageSource;
-  attachmentStore: DiscordAttachmentStore;
   logger: LoggerLike;
 }): Promise<RuntimeReplyMessage | undefined> {
   const referencedMessageId = input.message.reference?.messageId;
@@ -353,8 +335,6 @@ async function resolveReplyToMessage(input: {
   try {
     const referencedMessage = await input.message.fetchReference();
     return await toRuntimeReplyMessageFromSource({
-      attachmentStore: input.attachmentStore,
-      logger: input.logger,
       message: referencedMessage,
     });
   } catch (error: unknown) {
@@ -369,17 +349,7 @@ async function resolveReplyToMessage(input: {
 
 async function toRuntimeReplyMessageFromSource(input: {
   message: RuntimeMessageSource;
-  attachmentStore: DiscordAttachmentStore;
-  logger: LoggerLike;
 }): Promise<RuntimeReplyMessage> {
-  const content = await appendAttachmentsToContent({
-    attachmentStore: input.attachmentStore,
-    attachments: collectAttachments(input.message.attachments),
-    channelId: input.message.channelId,
-    content: input.message.content,
-    logger: input.logger,
-    messageId: input.message.id,
-  });
   const reactions = toRuntimeReactionsFromSource(input.message.reactions);
 
   return {
@@ -387,9 +357,10 @@ async function toRuntimeReplyMessageFromSource(input: {
     authorId: input.message.author.id,
     authorIsBot: input.message.author.bot,
     authorName: input.message.member?.displayName ?? input.message.author.username,
-    content,
+    content: input.message.content,
+    attachments: collectAttachments(input.message.attachments),
     createdAt: formatDateTimeJst(input.message.createdAt),
-    reactions,
+    ...(reactions ? { reactions } : {}),
   };
 }
 

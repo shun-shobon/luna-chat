@@ -1,14 +1,5 @@
-import { formatMessageAuthorLabel } from "../../../../shared/discord/message-author-label";
 import type { RuntimeReaction } from "../../../../shared/discord/runtime-reaction";
-import type { DiscordAttachmentInput } from "../../../attachments";
 import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
-
-export type AttachmentContentDecorator = (input: {
-  attachments: DiscordAttachmentInput[];
-  channelId: string;
-  content: string;
-  messageId: string;
-}) => Promise<string>;
 
 const HISTORY_CURSOR_INPUT_ERROR_MESSAGE =
   "beforeMessageId / afterMessageId / aroundMessageId は同時に指定できません。";
@@ -18,12 +9,16 @@ export async function readMessageHistory(input: {
   aroundMessageId?: string;
   beforeMessageId?: string;
   channelId: string;
-  decorator: AttachmentContentDecorator;
   gateway: DiscordHistoryGateway;
   limit: number;
 }): Promise<{
   channelId: string;
   messages: Array<{
+    attachments: Array<{
+      id: string;
+      name: string | null;
+      url: string;
+    }>;
     authorId: string;
     authorIsBot: boolean;
     authorName: string;
@@ -47,18 +42,12 @@ export async function readMessageHistory(input: {
 
   const messages = await Promise.all(
     fetched.reverse().map(async (message) => {
-      const content = await input.decorator({
-        attachments: message.attachments,
-        channelId: input.channelId,
-        content: message.content,
-        messageId: message.id,
-      });
-
       return {
+        attachments: message.attachments,
         authorId: message.authorId,
         authorIsBot: message.authorIsBot,
-        authorName: formatMessageAuthorLabel(message),
-        content,
+        authorName: message.authorName,
+        content: message.content,
         createdAt: message.createdAt,
         id: message.id,
         ...(message.reactions ? { reactions: message.reactions } : {}),

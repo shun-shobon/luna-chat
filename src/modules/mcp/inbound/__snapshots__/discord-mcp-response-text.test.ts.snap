@@ -1,12 +1,26 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`discord-mcp-response-text > read_message_history のレスポンスを整形する 1`] = `
-"[2026-01-01 09:00:00 JST] Alice (ID: user-1) (Message ID: message-1):
+"<luna_input source="read_message_history" channel_id="channel-1">
+  <messages count="2">
+    <message id="message-1" channel_id="channel-1" author_id="user-1" author_name="Alice" author_is_bot="false" created_at="2026-01-01 09:00:00 JST">
+      <content>
 old
-
-[2026-01-01 09:01:00 JST] Bob (ID: user-2) (Message ID: message-2):
+      </content>
+      <attachments>
+        <attachment id="att-1" name="memo.txt" url="https://example.com/memo.txt" />
+      </attachments>
+    </message>
+    <message id="message-2" channel_id="channel-1" author_id="user-2" author_name="Bob" author_is_bot="false" created_at="2026-01-01 09:01:00 JST">
+      <content>
 new
-リアクション: 👍 x1 (自分済み)"
+      </content>
+      <reactions>
+        <reaction emoji="👍" count="1" self_reacted="true" />
+      </reactions>
+    </message>
+  </messages>
+</luna_input>"
 `;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > add_reaction 1`] = `"OK"`;

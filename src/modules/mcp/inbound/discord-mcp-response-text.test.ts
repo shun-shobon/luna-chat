@@ -15,13 +15,25 @@ describe("discord-mcp-response-text", () => {
       channelId: "channel-1",
       messages: [
         {
-          authorName: "Alice (ID: user-1)",
+          attachments: [
+            {
+              id: "att-1",
+              name: "memo.txt",
+              url: "https://example.com/memo.txt",
+            },
+          ],
+          authorId: "user-1",
+          authorIsBot: false,
+          authorName: "Alice",
           content: "old",
           createdAt: "2026-01-01 09:00:00 JST",
           id: "message-1",
         },
         {
-          authorName: "Bob (ID: user-2)",
+          attachments: [],
+          authorId: "user-2",
+          authorIsBot: false,
+          authorName: "Bob",
           content: "new",
           createdAt: "2026-01-01 09:01:00 JST",
           id: "message-2",

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
-import { readMessageHistory, type AttachmentContentDecorator } from "./read-message-history";
+import { readMessageHistory } from "./read-message-history";
 
 describe("readMessageHistory", () => {
   it("返却ペイロードのスナップショット", async () => {
@@ -45,17 +45,8 @@ describe("readMessageHistory", () => {
         return messages;
       }),
     });
-
-    const decorator: AttachmentContentDecorator = async ({ attachments, content }) => {
-      if (attachments.length === 0) {
-        return content;
-      }
-      return `${content} <attachments:${attachments.map((attachment) => attachment.id).join(",")}>`;
-    };
-
     const payload = await readMessageHistory({
       channelId: "channel-1",
-      decorator: vi.fn(decorator),
       gateway,
       limit: 30,
     });
@@ -72,7 +63,6 @@ describe("readMessageHistory", () => {
     await readMessageHistory({
       afterMessageId: "message-after",
       channelId: "channel-1",
-      decorator: vi.fn(async ({ content }) => content),
       gateway,
       limit: 30,
     });
@@ -93,7 +83,6 @@ describe("readMessageHistory", () => {
     await readMessageHistory({
       aroundMessageId: "message-around",
       channelId: "channel-1",
-      decorator: vi.fn(async ({ content }) => content),
       gateway,
       limit: 30,
     });
@@ -114,7 +103,6 @@ describe("readMessageHistory", () => {
         aroundMessageId: "around",
         beforeMessageId: "before",
         channelId: "channel-1",
-        decorator: vi.fn(async ({ content }) => content),
         gateway,
         limit: 30,
       }),

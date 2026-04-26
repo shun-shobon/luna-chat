@@ -1,9 +1,16 @@
-import { formatPlainTextMessageBlock } from "../../../shared/discord/plain-text-message";
 import type { RuntimeReaction } from "../../../shared/discord/runtime-reaction";
+import { formatXmlMessageBlock } from "../../../shared/discord/xml-message";
 
 type ReadMessageHistoryResult = {
   channelId: string;
   messages: Array<{
+    attachments: Array<{
+      id: string;
+      name: string | null;
+      url: string;
+    }>;
+    authorId: string;
+    authorIsBot: boolean;
     authorName: string;
     content: string;
     createdAt: string;
@@ -36,20 +43,31 @@ type GetUserDetailResult = {
 
 export function formatReadMessageHistoryContent(payload: ReadMessageHistoryResult): string {
   if (payload.messages.length === 0) {
-    return "メッセージはありません。";
+    return `<luna_input source="read_message_history" channel_id="${payload.channelId}">\n  <messages count="0" />\n</luna_input>`;
   }
 
-  const messageBlocks = payload.messages.map((message) => {
-    return formatPlainTextMessageBlock({
-      authorLabel: message.authorName,
-      content: message.content,
-      createdAt: message.createdAt,
-      id: message.id,
-      reactions: message.reactions,
-    });
-  });
-
-  return messageBlocks.join("\n\n");
+  return [
+    `<luna_input source="read_message_history" channel_id="${payload.channelId}">`,
+    `  <messages count="${payload.messages.length}">`,
+    ...payload.messages.map((message) => {
+      return formatXmlMessageBlock(
+        {
+          attachments: message.attachments,
+          authorId: message.authorId,
+          authorIsBot: message.authorIsBot,
+          authorName: message.authorName,
+          channelId: payload.channelId,
+          content: message.content,
+          createdAt: message.createdAt,
+          id: message.id,
+          reactions: message.reactions,
+        },
+        "    ",
+      );
+    }),
+    `  </messages>`,
+    `</luna_input>`,
+  ].join("\n");
 }
 
 export function formatSendMessageContent(_input: {
