@@ -20,6 +20,15 @@ type ReactionLike = {
   me: boolean;
 };
 
+type StickerLike = {
+  id: string;
+  name: string;
+  description?: string | null;
+  format?: number | string | null;
+  url?: string | null;
+  guildId?: string | null;
+};
+
 type HistoryMessageLike = {
   attachments?: Collection<string, AttachmentLike>;
   author: {
@@ -51,6 +60,7 @@ type HistoryMessageLike = {
       }
     >;
   };
+  stickers?: Collection<string, StickerLike>;
   reference?: {
     messageId?: string | null;
   } | null;
@@ -117,6 +127,16 @@ describe("handleMessageCreate integration", () => {
     const oldMessage = createFakeHistoryMessage({
       createdAt: new Date("2025-12-31T23:59:00.000Z"),
       id: "old",
+      stickers: [
+        {
+          description: "old sticker",
+          format: 1,
+          guildId: "guild-1",
+          id: "sticker-old",
+          name: "old-sticker",
+          url: "https://media.discordapp.net/stickers/sticker-old.png",
+        },
+      ],
     });
     const newMessage = createFakeHistoryMessage({
       createdAt: new Date("2025-12-31T23:59:30.000Z"),
@@ -182,6 +202,16 @@ describe("handleMessageCreate integration", () => {
         createdAt: "2026-01-01 08:59:00 JST",
         id: "old",
         mentionedBot: false,
+        stickers: [
+          {
+            description: "old sticker",
+            format: "png",
+            guildId: "guild-1",
+            id: "sticker-old",
+            name: "old-sticker",
+            url: "https://media.discordapp.net/stickers/sticker-old.png",
+          },
+        ],
       },
       {
         authorId: "author",
@@ -640,6 +670,79 @@ describe("handleMessageCreate integration", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it("ステッカーだけの投稿でもステッカー情報を AI 入力に含める", async () => {
+    const message = createMessage({
+      content: "",
+      referenceMessage: createFakeHistoryMessage({
+        content: "",
+        createdAt: new Date("2025-12-31T23:58:00.000Z"),
+        id: "reply-target-id",
+        stickers: [
+          {
+            description: "reply sticker",
+            format: "lottie",
+            guildId: "guild-1",
+            id: "reply-sticker",
+            name: "reply-lottie",
+            url: "https://media.discordapp.net/stickers/reply-sticker.json",
+          },
+        ],
+      }),
+      stickers: [
+        {
+          description: "current sticker",
+          format: 4,
+          guildId: "guild-1",
+          id: "current-sticker",
+          name: "current-gif",
+          url: "https://media.discordapp.net/stickers/current-sticker.gif",
+        },
+      ],
+    });
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const aiService = createAiService(generateReply);
+
+    await handleMessageCreate({
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          content: "",
+          stickers: [
+            {
+              description: "current sticker",
+              format: "gif",
+              guildId: "guild-1",
+              id: "current-sticker",
+              name: "current-gif",
+              url: "https://media.discordapp.net/stickers/current-sticker.gif",
+            },
+          ],
+          replyTo: expect.objectContaining({
+            content: "",
+            stickers: [
+              {
+                description: "reply sticker",
+                format: "lottie",
+                guildId: "guild-1",
+                id: "reply-sticker",
+                name: "reply-lottie",
+                url: "https://media.discordapp.net/stickers/reply-sticker.json",
+              },
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
   it("リアクションがある場合は絵文字別情報を AI 入力に含める", async () => {
     const message = createMessage({
       reactions: [
@@ -739,6 +842,7 @@ function createMessage(input?: {
   authorUsername?: string;
   channelId?: string;
   channelName?: string | null;
+  content?: string;
   fetchHistory?: (options: {
     before?: string;
     limit: number;
@@ -752,6 +856,7 @@ function createMessage(input?: {
   referenceMessageId?: string;
   reply?: MessageLike["reply"];
   sendTyping?: () => Promise<unknown>;
+  stickers?: StickerLike[];
 }): MessageLike {
   const reference = resolveReference(input?.referenceMessageId, input?.referenceMessage);
   const fallbackReferenceMessage = input?.referenceMessage;
@@ -791,7 +896,7 @@ function createMessage(input?: {
     },
     channel,
     channelId: input?.channelId ?? "allowed",
-    content: "hello?",
+    content: input?.content ?? "hello?",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     createdTimestamp: new Date("2026-01-01T00:00:00.000Z").getTime(),
     id: "message",
@@ -806,6 +911,7 @@ function createMessage(input?: {
     },
     reply: input?.reply ?? (async () => undefined),
     attachments: createAttachmentCollection(input?.attachments ?? []),
+    stickers: createStickerCollection(input?.stickers ?? []),
     reference,
     fetchReference,
     reactions: createReactionManager(input?.reactions ?? []),
@@ -824,6 +930,7 @@ function createFakeHistoryMessage(input: {
   referenceMessageId?: string;
   fetchReference?: () => Promise<HistoryMessageLike>;
   reactions?: ReactionLike[];
+  stickers?: StickerLike[];
 }): HistoryMessageLike {
   const reference = resolveReference(input.referenceMessageId, input.referenceMessage);
   const fallbackReferenceMessage = input.referenceMessage;
@@ -854,6 +961,7 @@ function createFakeHistoryMessage(input: {
     },
     attachments: createAttachmentCollection([]),
     reactions: createReactionManager(input.reactions ?? []),
+    stickers: createStickerCollection(input.stickers ?? []),
     reference,
     fetchReference,
   };
@@ -897,6 +1005,14 @@ function createAttachmentCollection(
   return new Collection<string, AttachmentLike>(
     attachments.map((attachment) => {
       return [attachment.id, attachment];
+    }),
+  );
+}
+
+function createStickerCollection(stickers: StickerLike[]): Collection<string, StickerLike> {
+  return new Collection<string, StickerLike>(
+    stickers.map((sticker) => {
+      return [sticker.id, sticker];
     }),
   );
 }

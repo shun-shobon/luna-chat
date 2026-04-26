@@ -247,6 +247,35 @@ exports[`buildUserRolePrompt > DMの場合はユーザー名ヘッダーを出�
 </luna_input>"
 `;
 
+exports[`buildUserRolePrompt > ステッカーがある場合は URL メタデータを出力する 1`] = `
+"<luna_input source="discord_message">
+  <discord_context kind="channel" channel_id="channel-id" channel_name="channel-name" />
+  <recent_messages count="1">
+    <message id="recent-message-id" channel_id="channel-id" author_id="recent-author-id" author_name="recent-author-name" author_is_bot="true" created_at="2026-02-23 08:59:00 JST" mentioned_bot="false">
+      <content>
+直近メッセージ
+      </content>
+    </message>
+  </recent_messages>
+  <current_message>
+    <message id="message-id" channel_id="channel-id" author_id="author-id" author_name="author-name" author_is_bot="false" created_at="2026-02-23 09:00:00 JST" mentioned_bot="false">
+      <reply_to>
+        <message id="reply-message-id" author_id="reply-author-id" author_name="reply-author-name" author_is_bot="false" created_at="2026-02-23 08:58:00 JST">
+          <content></content>
+          <stickers>
+            <sticker id="sticker-2" name="spark" format="lottie" url="https://media.discordapp.net/stickers/sticker-2.json" description="" guild_id="" />
+          </stickers>
+        </message>
+      </reply_to>
+      <content></content>
+      <stickers>
+        <sticker id="sticker-1" name="wave" format="gif" url="https://media.discordapp.net/stickers/sticker-1.gif" description="sticker description" guild_id="guild-1" />
+      </stickers>
+    </message>
+  </current_message>
+</luna_input>"
+`;
+
 exports[`buildUserRolePrompt > リアクションがある場合は絵文字別に表示し、自分の分だけ自分済みを付ける 1`] = `
 "<luna_input source="discord_message">
   <discord_context kind="channel" channel_id="channel-id" channel_name="channel-name" />

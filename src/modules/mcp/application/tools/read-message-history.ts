@@ -1,4 +1,5 @@
 import type { RuntimeReaction } from "../../../../shared/discord/runtime-reaction";
+import type { RuntimeSticker } from "../../../../shared/discord/runtime-sticker";
 import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
 const HISTORY_CURSOR_INPUT_ERROR_MESSAGE =
@@ -26,6 +27,7 @@ export async function readMessageHistory(input: {
     createdAt: string;
     id: string;
     reactions?: RuntimeReaction[];
+    stickers?: RuntimeSticker[];
   }>;
 }> {
   if (!hasExclusiveHistoryCursor(input)) {
@@ -51,6 +53,7 @@ export async function readMessageHistory(input: {
         createdAt: message.createdAt,
         id: message.id,
         ...(message.reactions ? { reactions: message.reactions } : {}),
+        ...(message.stickers ? { stickers: message.stickers } : {}),
       };
     }),
   );

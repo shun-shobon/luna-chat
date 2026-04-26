@@ -241,6 +241,52 @@ describe("buildUserRolePrompt", () => {
     expect(userRolePrompt).toMatchSnapshot();
   });
 
+  it("ステッカーがある場合は URL メタデータを出力する", () => {
+    const input = createInput();
+    input.currentMessage.content = "";
+    input.currentMessage.stickers = [
+      {
+        description: "sticker description",
+        format: "gif",
+        guildId: "guild-1",
+        id: "sticker-1",
+        name: "wave",
+        url: "https://media.discordapp.net/stickers/sticker-1.gif",
+      },
+    ];
+    input.currentMessage.replyTo = {
+      authorId: "reply-author-id",
+      authorIsBot: false,
+      authorName: "reply-author-name",
+      content: "",
+      attachments: [],
+      createdAt: "2026-02-23 08:58:00 JST",
+      id: "reply-message-id",
+      stickers: [
+        {
+          description: null,
+          format: "lottie",
+          guildId: null,
+          id: "sticker-2",
+          name: "spark",
+          url: "https://media.discordapp.net/stickers/sticker-2.json",
+        },
+      ],
+    };
+
+    const userRolePrompt = buildUserRolePrompt(input);
+
+    expect(userRolePrompt).toContain("<content></content>");
+    expect(userRolePrompt).toContain("<stickers>");
+    expect(userRolePrompt).toContain(
+      '<sticker id="sticker-1" name="wave" format="gif" url="https://media.discordapp.net/stickers/sticker-1.gif" description="sticker description" guild_id="guild-1" />',
+    );
+    expect(userRolePrompt).toContain(
+      '<sticker id="sticker-2" name="spark" format="lottie" url="https://media.discordapp.net/stickers/sticker-2.json" description="" guild_id="" />',
+    );
+    expect(userRolePrompt).toMatchSnapshot();
+  });
+
   it("直近メッセージが0件の場合は直近メッセージセクションを出力しない", () => {
     const input = createInput();
     input.recentMessages = [];

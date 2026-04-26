@@ -254,6 +254,81 @@ describe("createDiscordRestHistoryGateway", () => {
     ).resolves.toMatchObject([{ id: "new" }, { id: "old" }]);
   });
 
+  it("fetchMessages はステッカーを正規化する", async () => {
+    const fetchMessages = vi.fn(async () => {
+      return new Map<string, unknown>([
+        [
+          "message-1",
+          createRawMessage({
+            authorId: "user-1",
+            authorName: "Alice",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            createdTimestamp: 1,
+            id: "message-1",
+            stickers: [
+              {
+                description: "png sticker",
+                format: 1,
+                guildId: "guild-1",
+                id: "sticker-1",
+                name: "wave",
+                url: "https://media.discordapp.net/stickers/sticker-1.png",
+              },
+              {
+                description: null,
+                format: 3,
+                guildId: null,
+                id: "sticker-2",
+                name: "spark",
+                url: "https://media.discordapp.net/stickers/sticker-2.json",
+              },
+            ],
+          }),
+        ],
+      ]);
+    });
+    const gateway = createDiscordRestHistoryGateway({
+      channels: {
+        fetch: vi.fn(async () => createHistoryReadableChannel(fetchMessages)),
+      },
+      guilds: {
+        fetch: vi.fn(async () => null),
+      },
+      users: {
+        fetch: vi.fn(async () => null),
+      },
+    });
+
+    await expect(
+      gateway.fetchMessages({
+        channelId: "channel-1",
+        limit: 30,
+      }),
+    ).resolves.toMatchObject([
+      {
+        id: "message-1",
+        stickers: [
+          {
+            description: "png sticker",
+            format: "png",
+            guildId: "guild-1",
+            id: "sticker-1",
+            name: "wave",
+            url: "https://media.discordapp.net/stickers/sticker-1.png",
+          },
+          {
+            description: null,
+            format: "lottie",
+            guildId: null,
+            id: "sticker-2",
+            name: "spark",
+            url: "https://media.discordapp.net/stickers/sticker-2.json",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("fetchGuildEmojis は絵文字一覧を正規化する", async () => {
     const fetchEmojis = vi.fn(async () => {
       return new Map<string, unknown>([
@@ -374,6 +449,14 @@ function createRawMessage(input: {
   createdAt: string;
   createdTimestamp: number;
   id: string;
+  stickers?: Array<{
+    description: string | null;
+    format: number | string | null;
+    guildId: string | null;
+    id: string;
+    name: string;
+    url: string;
+  }>;
 }) {
   return {
     attachments: new Map<string, unknown>(),
@@ -387,6 +470,11 @@ function createRawMessage(input: {
     createdTimestamp: input.createdTimestamp,
     id: input.id,
     reactions: new Map<string, unknown>(),
+    stickers: new Map<string, unknown>(
+      (input.stickers ?? []).map((sticker) => {
+        return [sticker.id, sticker];
+      }),
+    ),
   };
 }
 

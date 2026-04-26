@@ -1,4 +1,5 @@
 import type { RuntimeReaction } from "../../../shared/discord/runtime-reaction";
+import type { RuntimeSticker } from "../../../shared/discord/runtime-sticker";
 import { formatXmlMessageBlock } from "../../../shared/discord/xml-message";
 
 type ReadMessageHistoryResult = {
@@ -16,6 +17,7 @@ type ReadMessageHistoryResult = {
     createdAt: string;
     id: string;
     reactions?: RuntimeReaction[];
+    stickers?: RuntimeSticker[];
   }>;
 };
 
@@ -77,6 +79,7 @@ export function formatReadMessageHistoryContent(payload: ReadMessageHistoryResul
           createdAt: message.createdAt,
           id: message.id,
           reactions: message.reactions,
+          stickers: message.stickers,
         },
         "    ",
       );

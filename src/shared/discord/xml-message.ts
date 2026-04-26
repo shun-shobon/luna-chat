@@ -1,4 +1,5 @@
 import type { RuntimeReaction } from "./runtime-reaction";
+import type { RuntimeSticker } from "./runtime-sticker";
 
 type XmlAttachmentInput = {
   id: string;
@@ -18,6 +19,7 @@ type XmlMessageBlockInput = {
   mentionedBot?: boolean;
   reactions?: RuntimeReaction[];
   replyTo?: XmlMessageBlockInput;
+  stickers?: RuntimeSticker[];
 };
 
 export function formatXmlMessageBlock(input: XmlMessageBlockInput, indent = "  "): string {
@@ -32,6 +34,16 @@ export function formatXmlMessageBlock(input: XmlMessageBlockInput, indent = "  "
   }
 
   lines.push(formatXmlContent(input.content, `${indent}  `));
+
+  if (input.stickers && input.stickers.length > 0) {
+    lines.push(`${indent}  <stickers>`);
+    for (const sticker of input.stickers) {
+      lines.push(
+        `${indent}    <sticker id="${sticker.id}" name="${sticker.name}" format="${sticker.format}" url="${sticker.url}" description="${sticker.description ?? ""}" guild_id="${sticker.guildId ?? ""}" />`,
+      );
+    }
+    lines.push(`${indent}  </stickers>`);
+  }
 
   if (input.attachments.length > 0) {
     lines.push(`${indent}  <attachments>`);

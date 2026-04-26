@@ -1,6 +1,7 @@
 import { formatDateTimeJst } from "../../../../../shared/discord/format-date-time-jst";
 import { toRuntimeReactions } from "../../../../../shared/discord/runtime-reaction";
 import type { RuntimeReaction } from "../../../../../shared/discord/runtime-reaction";
+import { toRuntimeStickers } from "../../../../../shared/discord/runtime-sticker";
 import type {
   DiscordChannelSummary,
   DiscordGuildEmoji,
@@ -416,6 +417,7 @@ function toDiscordHistoryMessage(rawMessage: unknown): DiscordHistoryMessageWith
 
   const attachments = toDiscordAttachments(Reflect.get(rawMessage, "attachments"));
   const reactions = toDiscordReactions(Reflect.get(rawMessage, "reactions"));
+  const stickers = toDiscordStickers(Reflect.get(rawMessage, "stickers"));
 
   return {
     createdTimestamp,
@@ -428,6 +430,7 @@ function toDiscordHistoryMessage(rawMessage: unknown): DiscordHistoryMessageWith
       createdAt: formatDateTimeJst(createdAt),
       id,
       reactions,
+      stickers,
     },
   };
 }
@@ -454,6 +457,47 @@ function toDiscordAttachments(rawAttachments: unknown): DiscordHistoryMessage["a
   }
 
   return normalized;
+}
+
+function toDiscordStickers(rawStickers: unknown): DiscordHistoryMessage["stickers"] {
+  return toRuntimeStickers(
+    toCollectionValues(rawStickers)
+      .map((sticker) => {
+        if (typeof sticker !== "object" || sticker === null) {
+          return null;
+        }
+
+        const id = Reflect.get(sticker, "id");
+        const name = Reflect.get(sticker, "name");
+        if (typeof id !== "string" || typeof name !== "string") {
+          return null;
+        }
+
+        const description = Reflect.get(sticker, "description");
+        const format = Reflect.get(sticker, "format");
+        const guildId = Reflect.get(sticker, "guildId");
+        const url = getStickerUrl(sticker);
+
+        return {
+          description: typeof description === "string" ? description : null,
+          format: typeof format === "number" || typeof format === "string" ? format : null,
+          guildId: typeof guildId === "string" ? guildId : null,
+          id,
+          name,
+          url,
+        };
+      })
+      .filter((sticker): sticker is NonNullable<typeof sticker> => sticker !== null),
+  );
+}
+
+function getStickerUrl(sticker: object): string | null {
+  try {
+    const url = Reflect.get(sticker, "url");
+    return typeof url === "string" ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function toDiscordReactions(rawReactions: unknown): RuntimeReaction[] | undefined {

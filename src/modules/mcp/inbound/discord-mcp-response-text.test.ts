@@ -46,6 +46,16 @@ describe("discord-mcp-response-text", () => {
               selfReacted: true,
             },
           ],
+          stickers: [
+            {
+              description: "sticker description",
+              format: "png",
+              guildId: "guild-1",
+              id: "sticker-1",
+              name: "wave",
+              url: "https://media.discordapp.net/stickers/sticker-1.png",
+            },
+          ],
         },
       ],
     });

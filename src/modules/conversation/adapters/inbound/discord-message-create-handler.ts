@@ -2,6 +2,7 @@ import { Collection } from "discord.js";
 
 import { formatDateTimeJst } from "../../../../shared/discord/format-date-time-jst";
 import { toRuntimeReactions } from "../../../../shared/discord/runtime-reaction";
+import { toRuntimeStickers } from "../../../../shared/discord/runtime-sticker";
 import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
 import type {
   RuntimeAttachment,
@@ -28,8 +29,18 @@ type ReactionsManagerSource = {
   cache: Collection<string, ReactionSource>;
 };
 
+type StickerSource = {
+  id: string;
+  name: string;
+  description?: string | null;
+  format?: number | string | null;
+  url?: string | null;
+  guildId?: string | null;
+};
+
 type RuntimeMessageSource = {
   attachments?: Collection<string, AttachmentSource>;
+  stickers?: Collection<string, StickerSource>;
   id: string;
   channelId: string;
   content: string;
@@ -57,6 +68,7 @@ type SendTyping = () => Promise<unknown>;
 
 export type MessageLike = {
   attachments?: Collection<string, AttachmentSource>;
+  stickers?: Collection<string, StickerSource>;
   id: string;
   channelId: string;
   content: string;
@@ -234,6 +246,7 @@ async function toRuntimeMessageFromSource(input: {
     message: input.message,
   });
   const reactions = toRuntimeReactionsFromSource(input.message.reactions);
+  const stickers = collectStickers(input.message.stickers);
 
   return {
     id: input.message.id,
@@ -246,6 +259,7 @@ async function toRuntimeMessageFromSource(input: {
     mentionedBot: input.message.mentions.has(input.botUserId),
     createdAt: formatDateTimeJst(input.message.createdAt),
     ...(reactions ? { reactions } : {}),
+    ...(stickers ? { stickers } : {}),
     ...(replyTo ? { replyTo } : {}),
   };
 }
@@ -351,6 +365,7 @@ async function toRuntimeReplyMessageFromSource(input: {
   message: RuntimeMessageSource;
 }): Promise<RuntimeReplyMessage> {
   const reactions = toRuntimeReactionsFromSource(input.message.reactions);
+  const stickers = collectStickers(input.message.stickers);
 
   return {
     id: input.message.id,
@@ -361,7 +376,29 @@ async function toRuntimeReplyMessageFromSource(input: {
     attachments: collectAttachments(input.message.attachments),
     createdAt: formatDateTimeJst(input.message.createdAt),
     ...(reactions ? { reactions } : {}),
+    ...(stickers ? { stickers } : {}),
   };
+}
+
+function collectStickers(
+  stickers: Collection<string, StickerSource> | undefined,
+): RuntimeMessage["stickers"] {
+  if (!stickers) {
+    return undefined;
+  }
+
+  return toRuntimeStickers(
+    Array.from(stickers.values()).map((sticker) => {
+      return {
+        description: sticker.description ?? null,
+        format: sticker.format ?? null,
+        guildId: sticker.guildId ?? null,
+        id: sticker.id,
+        name: sticker.name,
+        url: sticker.url ?? null,
+      };
+    }),
+  );
 }
 
 function toRuntimeReactionsFromSource(

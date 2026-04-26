@@ -15,6 +15,9 @@ old
       <content>
 new
       </content>
+      <stickers>
+        <sticker id="sticker-1" name="wave" format="png" url="https://media.discordapp.net/stickers/sticker-1.png" description="sticker description" guild_id="guild-1" />
+      </stickers>
       <reactions>
         <reaction emoji="👍" count="1" self_reacted="true" />
       </reactions>

@@ -43,6 +43,7 @@ function formatRuntimeMessageForPrompt(message: RuntimeMessage, indent: string):
       id: message.id,
       mentionedBot: message.mentionedBot,
       reactions: message.reactions,
+      stickers: message.stickers,
       replyTo: message.replyTo
         ? {
             attachments: message.replyTo.attachments,
@@ -53,6 +54,7 @@ function formatRuntimeMessageForPrompt(message: RuntimeMessage, indent: string):
             createdAt: message.replyTo.createdAt,
             id: message.replyTo.id,
             reactions: message.replyTo.reactions,
+            stickers: message.replyTo.stickers,
           }
         : undefined,
     },

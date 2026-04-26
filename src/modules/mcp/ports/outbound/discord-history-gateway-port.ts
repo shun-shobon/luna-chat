@@ -1,4 +1,5 @@
 import type { RuntimeReaction } from "../../../../shared/discord/runtime-reaction";
+import type { RuntimeSticker } from "../../../../shared/discord/runtime-sticker";
 
 export type DiscordHistoryMessage = {
   attachments: Array<{
@@ -13,6 +14,7 @@ export type DiscordHistoryMessage = {
   createdAt: string;
   id: string;
   reactions?: RuntimeReaction[];
+  stickers?: RuntimeSticker[];
 };
 
 export type DiscordChannelSummary = {
