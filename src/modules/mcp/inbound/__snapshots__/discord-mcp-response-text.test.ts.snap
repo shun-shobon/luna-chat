@@ -25,6 +25,15 @@ new
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > add_reaction 1`] = `"OK"`;
 
+exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > get_guild_emoji 1`] = `
+"名前: luna
+絵文字ID: emoji-2
+サーバーID: guild-1
+アニメーション: false
+Discord表記: <:luna:emoji-2>
+URL: https://cdn.discordapp.com/emojis/emoji-2.webp"
+`;
+
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > get_user_detail 1`] = `
 "表示名: Alice
 ユーザー名: alice
@@ -37,6 +46,11 @@ Bot: false
 `;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > list_channels 1`] = `"- general (ID: channel-1, Guild: Guild Name (ID: guild-1))"`;
+
+exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > list_guild_emojis 1`] = `
+"サーバーID: guild-1
+- <a:party:emoji-1> name="party" id="emoji-1" animated="true" url="https://cdn.discordapp.com/emojis/emoji-1.gif""
+`;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > send_message 1`] = `"OK"`;
 

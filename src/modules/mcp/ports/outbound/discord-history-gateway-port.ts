@@ -42,8 +42,22 @@ export type DiscordGuildSummary = {
   name: string;
 };
 
+export type DiscordGuildEmoji = {
+  animated: boolean;
+  guildId: string;
+  id: string;
+  mention: string;
+  name: string;
+  url: string;
+};
+
 export type DiscordHistoryGateway = {
   fetchChannelById: (channelId: string) => Promise<DiscordChannelSummary | null>;
+  fetchGuildEmojiById: (input: {
+    emojiId: string;
+    guildId: string;
+  }) => Promise<DiscordGuildEmoji | null>;
+  fetchGuildEmojis: (guildId: string) => Promise<DiscordGuildEmoji[]>;
   fetchGuildById: (guildId: string) => Promise<DiscordGuildSummary | null>;
   fetchGuildMemberByUserId: (input: {
     guildId: string;

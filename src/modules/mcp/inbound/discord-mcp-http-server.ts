@@ -10,6 +10,7 @@ import { createDiscordRestCommandGateway } from "../adapters/outbound/discord/di
 import { createDiscordRestHistoryGateway } from "../adapters/outbound/discord/discord-rest-history-gateway";
 import { addReactionTool } from "../application/tools/add-reaction";
 import { getUserDetailTool } from "../application/tools/get-user-detail";
+import { getGuildEmojiTool, listGuildEmojisTool } from "../application/tools/guild-emojis";
 import { listChannelsTool } from "../application/tools/list-channels";
 import { readMessageHistory } from "../application/tools/read-message-history";
 import { sendMessageTool } from "../application/tools/send-message";
@@ -18,7 +19,9 @@ import type { DiscordCommandTarget } from "../ports/outbound/discord-command-gat
 
 import {
   formatAddReactionContent,
+  formatGetGuildEmojiContent,
   formatGetUserDetailContent,
+  formatListGuildEmojisContent,
   formatListChannelsContent,
   formatReadMessageHistoryContent,
   formatSendMessageContent,
@@ -133,6 +136,23 @@ const getUserDetailInputSchema = z.object({
   channelId: z.string().min(1).describe("ユーザー詳細を照会するDiscordチャンネルID。"),
   userId: z.string().min(1).describe("詳細を取得するDiscordユーザーID。"),
 });
+
+const guildEmojiScopeInputSchema = z.object({
+  channelId: z.string().min(1).optional().describe("対象サーバーを解決するDiscordチャンネルID。"),
+  guildId: z.string().min(1).optional().describe("対象DiscordサーバーID。"),
+});
+
+const listGuildEmojisInputSchema = guildEmojiScopeInputSchema.refine(hasExclusiveGuildScope, {
+  message: "channelId と guildId のどちらか一方のみ指定してください。",
+});
+
+const getGuildEmojiInputSchema = guildEmojiScopeInputSchema
+  .extend({
+    emojiId: z.string().min(1).describe("取得するカスタム絵文字ID。"),
+  })
+  .refine(hasAtMostOneGuildScope, {
+    message: "channelId と guildId は同時に指定できません。",
+  });
 
 export type DiscordMcpServerHandle = {
   close: () => Promise<void>;
@@ -339,6 +359,67 @@ export async function startDiscordMcpServer(
     },
   );
 
+  mcpServer.registerTool(
+    "list_guild_emojis",
+    {
+      description: "Discordサーバーのカスタム絵文字一覧を取得する。",
+      inputSchema: listGuildEmojisInputSchema,
+      title: "Discordサーバー絵文字一覧取得",
+    },
+    async ({ channelId, guildId }) => {
+      const payload = await listGuildEmojisTool({
+        allowedChannelIds: options.allowedChannelIds,
+        channelId,
+        gateway: historyGateway,
+        guildId,
+      });
+
+      return {
+        content: [{ text: formatListGuildEmojisContent(payload), type: "text" }],
+        structuredContent: payload,
+      };
+    },
+  );
+
+  mcpServer.registerTool(
+    "get_guild_emoji",
+    {
+      description:
+        "Discordサーバーのカスタム絵文字をID指定で取得する。channelId/guildIdを省略すると許可チャンネルのサーバーから検索する。",
+      inputSchema: getGuildEmojiInputSchema,
+      title: "Discordサーバー絵文字取得",
+    },
+    async ({ channelId, emojiId, guildId }) => {
+      const payload = await getGuildEmojiTool({
+        allowedChannelIds: options.allowedChannelIds,
+        channelId,
+        emojiId,
+        gateway: historyGateway,
+        guildId,
+      });
+      const content: Array<
+        | {
+            text: string;
+            type: "text";
+          }
+        | {
+            data: string;
+            mimeType: string;
+            type: "image";
+          }
+      > = [{ text: formatGetGuildEmojiContent(payload), type: "text" }];
+      const imageContent = payload.emoji ? await fetchEmojiImageContent(payload.emoji) : undefined;
+      if (imageContent) {
+        content.push(imageContent);
+      }
+
+      return {
+        content,
+        structuredContent: payload,
+      };
+    },
+  );
+
   const transport = new StreamableHTTPTransport();
   let connectPromise: Promise<void> | undefined;
   const app = new Hono();
@@ -376,6 +457,20 @@ function hasExclusiveTarget(input: {
   userId?: string | undefined;
 }): boolean {
   return (input.channelId === undefined) !== (input.userId === undefined);
+}
+
+function hasExclusiveGuildScope(input: {
+  channelId?: string | undefined;
+  guildId?: string | undefined;
+}): boolean {
+  return (input.channelId === undefined) !== (input.guildId === undefined);
+}
+
+function hasAtMostOneGuildScope(input: {
+  channelId?: string | undefined;
+  guildId?: string | undefined;
+}): boolean {
+  return input.channelId === undefined || input.guildId === undefined;
 }
 
 function hasSendMessagePayload(input: {
@@ -459,4 +554,30 @@ async function stopServer(server: ServerType): Promise<void> {
       resolve();
     });
   });
+}
+
+async function fetchEmojiImageContent(emoji: { animated: boolean; url: string }): Promise<
+  | {
+      data: string;
+      mimeType: string;
+      type: "image";
+    }
+  | undefined
+> {
+  try {
+    const response = await fetch(emoji.url, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+
+    return {
+      data: Buffer.from(await response.arrayBuffer()).toString("base64"),
+      mimeType: emoji.animated ? "image/gif" : "image/webp",
+      type: "image",
+    };
+  } catch {
+    return undefined;
+  }
 }

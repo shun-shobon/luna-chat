@@ -41,6 +41,22 @@ type GetUserDetailResult = {
   } | null;
 };
 
+type GuildEmojiResult = {
+  emoji: {
+    animated: boolean;
+    guildId: string;
+    id: string;
+    mention: string;
+    name: string;
+    url: string;
+  } | null;
+};
+
+type ListGuildEmojisResult = {
+  emojis: Array<NonNullable<GuildEmojiResult["emoji"]>>;
+  guildId: string | null;
+};
+
 export function formatReadMessageHistoryContent(payload: ReadMessageHistoryResult): string {
   if (payload.messages.length === 0) {
     return `<luna_input source="read_message_history" channel_id="${payload.channelId}">\n  <messages count="0" />\n</luna_input>`;
@@ -126,5 +142,36 @@ export function formatGetUserDetailContent(payload: GetUserDetailResult): string
     `グローバル名: ${payload.user.globalName ?? "なし"}`,
     `アバター: ${payload.user.avatar ?? "なし"}`,
     `バナー: ${payload.user.banner ?? "なし"}`,
+  ].join("\n");
+}
+
+export function formatListGuildEmojisContent(payload: ListGuildEmojisResult): string {
+  if (!payload.guildId) {
+    return "絵文字を取得できるサーバーが見つかりませんでした。";
+  }
+  if (payload.emojis.length === 0) {
+    return `サーバーID: ${payload.guildId}\n絵文字はありません。`;
+  }
+
+  return [
+    `サーバーID: ${payload.guildId}`,
+    ...payload.emojis.map((emoji) => {
+      return `- ${emoji.mention} name="${emoji.name}" id="${emoji.id}" animated="${emoji.animated ? "true" : "false"}" url="${emoji.url}"`;
+    }),
+  ].join("\n");
+}
+
+export function formatGetGuildEmojiContent(payload: GuildEmojiResult): string {
+  if (!payload.emoji) {
+    return "絵文字を取得できませんでした。";
+  }
+
+  return [
+    `名前: ${payload.emoji.name}`,
+    `絵文字ID: ${payload.emoji.id}`,
+    `サーバーID: ${payload.emoji.guildId}`,
+    `アニメーション: ${payload.emoji.animated ? "true" : "false"}`,
+    `Discord表記: ${payload.emoji.mention}`,
+    `URL: ${payload.emoji.url}`,
   ].join("\n");
 }

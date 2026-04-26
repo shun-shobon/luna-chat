@@ -120,6 +120,8 @@ function createGatewayStub(
   const fetchMessages: DiscordHistoryGateway["fetchMessages"] = vi.fn(async () => []);
   const fetchChannelById: DiscordHistoryGateway["fetchChannelById"] = vi.fn(async () => null);
   const fetchGuildById: DiscordHistoryGateway["fetchGuildById"] = vi.fn(async () => null);
+  const fetchGuildEmojiById: DiscordHistoryGateway["fetchGuildEmojiById"] = vi.fn(async () => null);
+  const fetchGuildEmojis: DiscordHistoryGateway["fetchGuildEmojis"] = vi.fn(async () => []);
   const fetchUserById: DiscordHistoryGateway["fetchUserById"] = vi.fn(async () => null);
   const fetchGuildMemberByUserId: DiscordHistoryGateway["fetchGuildMemberByUserId"] = vi.fn(
     async () => null,
@@ -128,6 +130,8 @@ function createGatewayStub(
   return {
     fetchChannelById: overrides.fetchChannelById ?? fetchChannelById,
     fetchGuildById: overrides.fetchGuildById ?? fetchGuildById,
+    fetchGuildEmojiById: overrides.fetchGuildEmojiById ?? fetchGuildEmojiById,
+    fetchGuildEmojis: overrides.fetchGuildEmojis ?? fetchGuildEmojis,
     fetchGuildMemberByUserId: overrides.fetchGuildMemberByUserId ?? fetchGuildMemberByUserId,
     fetchMessages: overrides.fetchMessages ?? fetchMessages,
     fetchUserById: overrides.fetchUserById ?? fetchUserById,

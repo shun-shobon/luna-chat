@@ -64,6 +64,7 @@ describe("createDiscordRestHistoryGateway", () => {
       id: "guild-1",
       name: "Guild Name",
     });
+    await expect(gateway.fetchGuildEmojis("guild-1")).resolves.toEqual([]);
     await expect(gateway.fetchUserById("user-1")).resolves.toEqual({
       avatar: null,
       banner: "banner",
@@ -119,6 +120,13 @@ describe("createDiscordRestHistoryGateway", () => {
 
     await expect(gateway.fetchChannelById("channel-1")).resolves.toBeNull();
     await expect(gateway.fetchGuildById("guild-1")).resolves.toBeNull();
+    await expect(gateway.fetchGuildEmojis("guild-1")).resolves.toEqual([]);
+    await expect(
+      gateway.fetchGuildEmojiById({
+        emojiId: "emoji-1",
+        guildId: "guild-1",
+      }),
+    ).resolves.toBeNull();
     await expect(gateway.fetchUserById("user-1")).resolves.toBeNull();
     await expect(
       gateway.fetchGuildMemberByUserId({
@@ -245,6 +253,110 @@ describe("createDiscordRestHistoryGateway", () => {
       }),
     ).resolves.toMatchObject([{ id: "new" }, { id: "old" }]);
   });
+
+  it("fetchGuildEmojis は絵文字一覧を正規化する", async () => {
+    const fetchEmojis = vi.fn(async () => {
+      return new Map<string, unknown>([
+        [
+          "emoji-2",
+          createRawGuildEmoji({
+            animated: true,
+            id: "emoji-2",
+            name: "party",
+          }),
+        ],
+        [
+          "emoji-1",
+          createRawGuildEmoji({
+            animated: false,
+            id: "emoji-1",
+            name: "luna",
+          }),
+        ],
+      ]);
+    });
+    const gateway = createDiscordRestHistoryGateway({
+      channels: {
+        fetch: vi.fn(async () => null),
+      },
+      guilds: {
+        fetch: vi.fn(async () => {
+          return {
+            emojis: {
+              fetch: fetchEmojis,
+            },
+          };
+        }),
+      },
+      users: {
+        fetch: vi.fn(async () => null),
+      },
+    });
+
+    await expect(gateway.fetchGuildEmojis("guild-1")).resolves.toEqual([
+      {
+        animated: false,
+        guildId: "guild-1",
+        id: "emoji-1",
+        mention: "<:luna:emoji-1>",
+        name: "luna",
+        url: "https://cdn.discordapp.com/emojis/emoji-1.webp",
+      },
+      {
+        animated: true,
+        guildId: "guild-1",
+        id: "emoji-2",
+        mention: "<a:party:emoji-2>",
+        name: "party",
+        url: "https://cdn.discordapp.com/emojis/emoji-2.gif",
+      },
+    ]);
+    expect(fetchEmojis).toHaveBeenCalledWith();
+  });
+
+  it("fetchGuildEmojiById は絵文字IDを指定して取得する", async () => {
+    const fetchEmoji = vi.fn(async () => {
+      return createRawGuildEmoji({
+        animated: true,
+        id: "emoji-1",
+        name: "party",
+      });
+    });
+    const gateway = createDiscordRestHistoryGateway({
+      channels: {
+        fetch: vi.fn(async () => null),
+      },
+      guilds: {
+        fetch: vi.fn(async () => {
+          return {
+            emojis: {
+              fetch: fetchEmoji,
+            },
+          };
+        }),
+      },
+      users: {
+        fetch: vi.fn(async () => null),
+      },
+    });
+
+    await expect(
+      gateway.fetchGuildEmojiById({
+        emojiId: "emoji-1",
+        guildId: "guild-1",
+      }),
+    ).resolves.toEqual({
+      animated: true,
+      guildId: "guild-1",
+      id: "emoji-1",
+      mention: "<a:party:emoji-1>",
+      name: "party",
+      url: "https://cdn.discordapp.com/emojis/emoji-1.gif",
+    });
+    expect(fetchEmoji).toHaveBeenCalledWith("emoji-1", {
+      force: true,
+    });
+  });
 });
 
 function createHistoryReadableChannel(fetchMessages: (input: unknown) => Promise<unknown>) {
@@ -275,5 +387,16 @@ function createRawMessage(input: {
     createdTimestamp: input.createdTimestamp,
     id: input.id,
     reactions: new Map<string, unknown>(),
+  };
+}
+
+function createRawGuildEmoji(input: { animated: boolean; id: string; name: string }) {
+  return {
+    animated: input.animated,
+    id: input.id,
+    imageURL: vi.fn(() => {
+      return `https://cdn.discordapp.com/emojis/${input.id}.${input.animated ? "gif" : "webp"}`;
+    }),
+    name: input.name,
   };
 }

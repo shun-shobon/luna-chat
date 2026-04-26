@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatAddReactionContent,
+  formatGetGuildEmojiContent,
   formatGetUserDetailContent,
+  formatListGuildEmojisContent,
   formatListChannelsContent,
   formatReadMessageHistoryContent,
   formatSendMessageContent,
@@ -101,5 +103,34 @@ describe("discord-mcp-response-text", () => {
         },
       }),
     ).toMatchSnapshot("get_user_detail");
+
+    expect(
+      formatListGuildEmojisContent({
+        emojis: [
+          {
+            animated: true,
+            guildId: "guild-1",
+            id: "emoji-1",
+            mention: "<a:party:emoji-1>",
+            name: "party",
+            url: "https://cdn.discordapp.com/emojis/emoji-1.gif",
+          },
+        ],
+        guildId: "guild-1",
+      }),
+    ).toMatchSnapshot("list_guild_emojis");
+
+    expect(
+      formatGetGuildEmojiContent({
+        emoji: {
+          animated: false,
+          guildId: "guild-1",
+          id: "emoji-2",
+          mention: "<:luna:emoji-2>",
+          name: "luna",
+          url: "https://cdn.discordapp.com/emojis/emoji-2.webp",
+        },
+      }),
+    ).toMatchSnapshot("get_guild_emoji");
   });
 });

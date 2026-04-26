@@ -3,6 +3,7 @@ import { toRuntimeReactions } from "../../../../../shared/discord/runtime-reacti
 import type { RuntimeReaction } from "../../../../../shared/discord/runtime-reaction";
 import type {
   DiscordChannelSummary,
+  DiscordGuildEmoji,
   DiscordGuildMemberDetail,
   DiscordGuildSummary,
   DiscordHistoryGateway,
@@ -50,6 +51,47 @@ export function createDiscordRestHistoryGateway(
       } catch (error: unknown) {
         if (isSkippableDiscordRestError(error)) {
           return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildEmojiById: async ({ emojiId, guildId }) => {
+      try {
+        const guild = await client.guilds.fetch(guildId, {
+          force: true,
+        });
+        if (!isGuildWithEmojiFetcher(guild)) {
+          return null;
+        }
+
+        const emoji = await guild.emojis.fetch(emojiId, {
+          force: true,
+        });
+        return toDiscordGuildEmoji(emoji, guildId);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildEmojis: async (guildId) => {
+      try {
+        const guild = await client.guilds.fetch(guildId, {
+          force: true,
+        });
+        if (!isGuildWithEmojiFetcher(guild)) {
+          return [];
+        }
+
+        const emojis = await guild.emojis.fetch();
+        return toCollectionValues(emojis)
+          .map((emoji) => toDiscordGuildEmoji(emoji, guildId))
+          .filter((emoji): emoji is DiscordGuildEmoji => emoji !== null)
+          .sort((left, right) => left.name.localeCompare(right.name, "ja"));
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return [];
         }
         throw error;
       }
@@ -189,6 +231,66 @@ function toDiscordGuildSummary(guild: unknown): DiscordGuildSummary | null {
     id,
     name,
   };
+}
+
+function isGuildWithEmojiFetcher(guild: unknown): guild is {
+  emojis: {
+    fetch: (
+      emojiId?: string,
+      options?: {
+        force?: boolean;
+      },
+    ) => Promise<unknown>;
+  };
+} {
+  if (typeof guild !== "object" || guild === null) {
+    return false;
+  }
+
+  const emojis = Reflect.get(guild, "emojis");
+  if (typeof emojis !== "object" || emojis === null) {
+    return false;
+  }
+
+  return typeof Reflect.get(emojis, "fetch") === "function";
+}
+
+function toDiscordGuildEmoji(rawEmoji: unknown, guildId: string): DiscordGuildEmoji | null {
+  if (typeof rawEmoji !== "object" || rawEmoji === null) {
+    return null;
+  }
+
+  const id = Reflect.get(rawEmoji, "id");
+  const name = Reflect.get(rawEmoji, "name");
+  if (typeof id !== "string" || typeof name !== "string") {
+    return null;
+  }
+
+  const animated = Reflect.get(rawEmoji, "animated") === true;
+  const mention = animated ? `<a:${name}:${id}>` : `<:${name}:${id}>`;
+
+  return {
+    animated,
+    guildId,
+    id,
+    mention,
+    name,
+    url: resolveGuildEmojiUrl(rawEmoji, id, animated),
+  };
+}
+
+function resolveGuildEmojiUrl(rawEmoji: object, emojiId: string, animated: boolean): string {
+  const imageUrl = Reflect.get(rawEmoji, "imageURL");
+  if (typeof imageUrl === "function") {
+    const resolved = imageUrl.call(rawEmoji, {
+      extension: animated ? "gif" : "webp",
+    });
+    if (typeof resolved === "string" && resolved.length > 0) {
+      return resolved;
+    }
+  }
+
+  return `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? "gif" : "webp"}`;
 }
 
 function toDiscordUserDetail(rawUser: unknown): DiscordUserDetail | null {
