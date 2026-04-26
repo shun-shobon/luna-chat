@@ -34,6 +34,13 @@ ENV LUNA_HOME=/home/node/.luna
 
 WORKDIR /app
 
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && \
+    apt-get install -y sudo
+
+RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node && \
+    chmod 0440 /etc/sudoers.d/node
+
 COPY --from=build /app/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json ./
