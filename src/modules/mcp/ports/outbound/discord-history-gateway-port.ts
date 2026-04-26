@@ -1,4 +1,5 @@
 import type { RuntimeReaction } from "../../../../shared/discord/runtime-reaction";
+import type { RuntimeSticker } from "../../../../shared/discord/runtime-sticker";
 
 export type DiscordHistoryMessage = {
   attachments: Array<{
@@ -13,6 +14,7 @@ export type DiscordHistoryMessage = {
   createdAt: string;
   id: string;
   reactions?: RuntimeReaction[];
+  stickers?: RuntimeSticker[];
 };
 
 export type DiscordChannelSummary = {
@@ -22,8 +24,8 @@ export type DiscordChannelSummary = {
 };
 
 export type DiscordUserDetail = {
-  avatar: string | null;
-  banner: string | null;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
   bot: boolean;
   globalName: string | null;
   id: string;
@@ -31,6 +33,8 @@ export type DiscordUserDetail = {
 };
 
 export type DiscordGuildMemberDetail = {
+  avatarUrl: string | null;
+  bannerUrl: string | null;
   guildId: string;
   joinedAt: string | null;
   nickname: string | null;
@@ -42,8 +46,22 @@ export type DiscordGuildSummary = {
   name: string;
 };
 
+export type DiscordGuildEmoji = {
+  animated: boolean;
+  guildId: string;
+  id: string;
+  mention: string;
+  name: string;
+  url: string;
+};
+
 export type DiscordHistoryGateway = {
   fetchChannelById: (channelId: string) => Promise<DiscordChannelSummary | null>;
+  fetchGuildEmojiById: (input: {
+    emojiId: string;
+    guildId: string;
+  }) => Promise<DiscordGuildEmoji | null>;
+  fetchGuildEmojis: (guildId: string) => Promise<DiscordGuildEmoji[]>;
   fetchGuildById: (guildId: string) => Promise<DiscordGuildSummary | null>;
   fetchGuildMemberByUserId: (input: {
     guildId: string;

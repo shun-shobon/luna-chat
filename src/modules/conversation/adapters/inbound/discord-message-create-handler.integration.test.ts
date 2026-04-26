@@ -1,8 +1,6 @@
 import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DiscordAttachmentInput, DiscordAttachmentStore } from "../../../attachments";
-
 import {
   handleMessageCreate,
   type MessageLike,
@@ -20,6 +18,15 @@ type ReactionLike = {
   emojiId?: string | null;
   emojiName?: string | null;
   me: boolean;
+};
+
+type StickerLike = {
+  id: string;
+  name: string;
+  description?: string | null;
+  format?: number | string | null;
+  url?: string | null;
+  guildId?: string | null;
 };
 
 type HistoryMessageLike = {
@@ -53,6 +60,7 @@ type HistoryMessageLike = {
       }
     >;
   };
+  stickers?: Collection<string, StickerLike>;
   reference?: {
     messageId?: string | null;
   } | null;
@@ -69,10 +77,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -93,10 +99,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -123,6 +127,16 @@ describe("handleMessageCreate integration", () => {
     const oldMessage = createFakeHistoryMessage({
       createdAt: new Date("2025-12-31T23:59:00.000Z"),
       id: "old",
+      stickers: [
+        {
+          description: "old sticker",
+          format: 1,
+          guildId: "guild-1",
+          id: "sticker-old",
+          name: "old-sticker",
+          url: "https://media.discordapp.net/stickers/sticker-old.png",
+        },
+      ],
     });
     const newMessage = createFakeHistoryMessage({
       createdAt: new Date("2025-12-31T23:59:30.000Z"),
@@ -141,10 +155,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -170,6 +182,7 @@ describe("handleMessageCreate integration", () => {
         authorId: "author",
         authorIsBot: false,
         authorName: "author",
+        attachments: [],
         channelId: "allowed",
         content: "hello?",
         createdAt: "2026-01-01 09:00:00 JST",
@@ -183,16 +196,28 @@ describe("handleMessageCreate integration", () => {
         authorId: "author",
         authorIsBot: false,
         authorName: "display",
+        attachments: [],
         channelId: "channel",
         content: "history",
         createdAt: "2026-01-01 08:59:00 JST",
         id: "old",
         mentionedBot: false,
+        stickers: [
+          {
+            description: "old sticker",
+            format: "png",
+            guildId: "guild-1",
+            id: "sticker-old",
+            name: "old-sticker",
+            url: "https://media.discordapp.net/stickers/sticker-old.png",
+          },
+        ],
       },
       {
         authorId: "author",
         authorIsBot: false,
         authorName: "display",
+        attachments: [],
         channelId: "channel",
         content: "history",
         createdAt: "2026-01-01 08:59:30 JST",
@@ -212,10 +237,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -234,10 +257,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: true,
@@ -264,10 +285,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -292,10 +311,8 @@ describe("handleMessageCreate integration", () => {
         throw new Error("ai failed");
       }),
     );
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -322,10 +339,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -341,6 +356,7 @@ describe("handleMessageCreate integration", () => {
             authorId: "reply-target-author-id",
             authorIsBot: false,
             authorName: "reply-target-display",
+            attachments: [],
             content: "reply target content",
             createdAt: "2026-01-01 08:58:00 JST",
             id: "reply-target-id",
@@ -369,10 +385,8 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({ fetchHistory });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -392,6 +406,7 @@ describe("handleMessageCreate integration", () => {
           authorId: "history-reply-target-author-id",
           authorIsBot: false,
           authorName: "history-reply-target-display",
+          attachments: [],
           content: "history reply target",
           createdAt: "2026-01-01 08:57:00 JST",
           id: "history-reply-target-id",
@@ -411,10 +426,8 @@ describe("handleMessageCreate integration", () => {
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -444,10 +457,8 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({ channelId: "other", reply, sendTyping });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -472,10 +483,8 @@ describe("handleMessageCreate integration", () => {
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -509,10 +518,8 @@ describe("handleMessageCreate integration", () => {
           return undefined;
         }),
       );
-      const attachmentStore = createAttachmentStore();
 
       const handlePromise = handleMessageCreate({
-        attachmentStore,
         aiService,
         allowedChannelIds: new Set(["allowed"]),
         allowDm: false,
@@ -542,10 +549,8 @@ describe("handleMessageCreate integration", () => {
           return undefined;
         }),
       );
-      const attachmentStore = createAttachmentStore();
 
       const handlePromise = handleMessageCreate({
-        attachmentStore,
         aiService,
         allowedChannelIds: new Set(["allowed"]),
         allowDm: false,
@@ -570,10 +575,8 @@ describe("handleMessageCreate integration", () => {
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -586,7 +589,7 @@ describe("handleMessageCreate integration", () => {
     expect(logger.warn).toHaveBeenCalledWith("Failed to send typing indicator:", expect.any(Error));
   });
 
-  it("添付ファイルがある場合は本文末尾に1行でマーカーを追記する", async () => {
+  it("添付ファイルがある場合は本文と分離して AI 入力に含める", async () => {
     const message = createMessage({
       attachments: [
         {
@@ -603,15 +606,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore({
-      pathsById: {
-        a1: "/tmp/a1.png",
-        a2: "/tmp/a2.jpg",
-      },
-    });
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -623,13 +619,25 @@ describe("handleMessageCreate integration", () => {
     expect(generateReply).toHaveBeenCalledWith(
       expect.objectContaining({
         currentMessage: expect.objectContaining({
-          content: "hello?\n<attachment:/tmp/a1.png> <attachment:/tmp/a2.jpg>",
+          attachments: [
+            {
+              id: "a1",
+              name: "cat.png",
+              url: "https://example.com/cat.png",
+            },
+            {
+              id: "a2",
+              name: "dog.jpg",
+              url: "https://example.com/dog.jpg",
+            },
+          ],
+          content: "hello?",
         }),
       }),
     );
   });
 
-  it("添付保存が失敗しても本文は維持して処理を継続する", async () => {
+  it("添付ファイルがあってもダウンロードせず処理を継続する", async () => {
     const message = createMessage({
       attachments: [
         {
@@ -642,12 +650,8 @@ describe("handleMessageCreate integration", () => {
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore({
-      failIds: new Set(["a1"]),
-    });
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -663,7 +667,80 @@ describe("handleMessageCreate integration", () => {
         }),
       }),
     );
-    expect(logger.warn).toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("ステッカーだけの投稿でもステッカー情報を AI 入力に含める", async () => {
+    const message = createMessage({
+      content: "",
+      referenceMessage: createFakeHistoryMessage({
+        content: "",
+        createdAt: new Date("2025-12-31T23:58:00.000Z"),
+        id: "reply-target-id",
+        stickers: [
+          {
+            description: "reply sticker",
+            format: "lottie",
+            guildId: "guild-1",
+            id: "reply-sticker",
+            name: "reply-lottie",
+            url: "https://media.discordapp.net/stickers/reply-sticker.json",
+          },
+        ],
+      }),
+      stickers: [
+        {
+          description: "current sticker",
+          format: 4,
+          guildId: "guild-1",
+          id: "current-sticker",
+          name: "current-gif",
+          url: "https://media.discordapp.net/stickers/current-sticker.gif",
+        },
+      ],
+    });
+    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const aiService = createAiService(generateReply);
+
+    await handleMessageCreate({
+      aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
+
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          content: "",
+          stickers: [
+            {
+              description: "current sticker",
+              format: "gif",
+              guildId: "guild-1",
+              id: "current-sticker",
+              name: "current-gif",
+              url: "https://media.discordapp.net/stickers/current-sticker.gif",
+            },
+          ],
+          replyTo: expect.objectContaining({
+            content: "",
+            stickers: [
+              {
+                description: "reply sticker",
+                format: "lottie",
+                guildId: "guild-1",
+                id: "reply-sticker",
+                name: "reply-lottie",
+                url: "https://media.discordapp.net/stickers/reply-sticker.json",
+              },
+            ],
+          }),
+        }),
+      }),
+    );
   });
 
   it("リアクションがある場合は絵文字別情報を AI 入力に含める", async () => {
@@ -694,10 +771,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -740,10 +815,8 @@ describe("handleMessageCreate integration", () => {
     });
     const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
     const aiService = createAiService(generateReply);
-    const attachmentStore = createAttachmentStore();
 
     await handleMessageCreate({
-      attachmentStore,
       aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
@@ -769,6 +842,7 @@ function createMessage(input?: {
   authorUsername?: string;
   channelId?: string;
   channelName?: string | null;
+  content?: string;
   fetchHistory?: (options: {
     before?: string;
     limit: number;
@@ -782,6 +856,7 @@ function createMessage(input?: {
   referenceMessageId?: string;
   reply?: MessageLike["reply"];
   sendTyping?: () => Promise<unknown>;
+  stickers?: StickerLike[];
 }): MessageLike {
   const reference = resolveReference(input?.referenceMessageId, input?.referenceMessage);
   const fallbackReferenceMessage = input?.referenceMessage;
@@ -821,7 +896,7 @@ function createMessage(input?: {
     },
     channel,
     channelId: input?.channelId ?? "allowed",
-    content: "hello?",
+    content: input?.content ?? "hello?",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     createdTimestamp: new Date("2026-01-01T00:00:00.000Z").getTime(),
     id: "message",
@@ -836,6 +911,7 @@ function createMessage(input?: {
     },
     reply: input?.reply ?? (async () => undefined),
     attachments: createAttachmentCollection(input?.attachments ?? []),
+    stickers: createStickerCollection(input?.stickers ?? []),
     reference,
     fetchReference,
     reactions: createReactionManager(input?.reactions ?? []),
@@ -854,6 +930,7 @@ function createFakeHistoryMessage(input: {
   referenceMessageId?: string;
   fetchReference?: () => Promise<HistoryMessageLike>;
   reactions?: ReactionLike[];
+  stickers?: StickerLike[];
 }): HistoryMessageLike {
   const reference = resolveReference(input.referenceMessageId, input.referenceMessage);
   const fallbackReferenceMessage = input.referenceMessage;
@@ -884,6 +961,7 @@ function createFakeHistoryMessage(input: {
     },
     attachments: createAttachmentCollection([]),
     reactions: createReactionManager(input.reactions ?? []),
+    stickers: createStickerCollection(input.stickers ?? []),
     reference,
     fetchReference,
   };
@@ -931,6 +1009,14 @@ function createAttachmentCollection(
   );
 }
 
+function createStickerCollection(stickers: StickerLike[]): Collection<string, StickerLike> {
+  return new Collection<string, StickerLike>(
+    stickers.map((sticker) => {
+      return [sticker.id, sticker];
+    }),
+  );
+}
+
 function createReactionManager(reactions: ReactionLike[]) {
   return {
     cache: new Collection(
@@ -948,21 +1034,6 @@ function createReactionManager(reactions: ReactionLike[]) {
         ];
       }),
     ),
-  };
-}
-
-function createAttachmentStore(input?: {
-  failIds?: ReadonlySet<string>;
-  pathsById?: Record<string, string>;
-}): DiscordAttachmentStore {
-  return {
-    saveAttachment: vi.fn(async (attachment: DiscordAttachmentInput) => {
-      if (input?.failIds?.has(attachment.id)) {
-        throw new Error("save failed");
-      }
-
-      return input?.pathsById?.[attachment.id] ?? `/tmp/${attachment.id}`;
-    }),
   };
 }
 

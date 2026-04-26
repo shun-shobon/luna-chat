@@ -517,9 +517,12 @@ describe("ChannelSessionCoordinator", () => {
     expect(runtime.startTurn).toHaveBeenNthCalledWith(
       1,
       "thread-1",
-      "HEARTBEAT.mdを確認し、作業を行ってください。",
+      expect.stringContaining('<luna_input source="heartbeat">'),
       expect.any(Object),
       { timeoutMs: 30 * 60_000 },
+    );
+    expect(runtime.startTurn.mock.calls[0]?.[1]).toContain(
+      "HEARTBEAT.mdを確認し、作業を行ってください。",
     );
   });
 
@@ -731,6 +734,7 @@ function createAiInput(
     authorName: "author",
     channelId,
     content,
+    attachments: [],
     createdAt: "2026-01-01 09:00:00 JST",
     id: messageId,
     mentionedBot: false,

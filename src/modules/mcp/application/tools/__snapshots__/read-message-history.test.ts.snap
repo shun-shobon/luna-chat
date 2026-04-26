@@ -5,17 +5,25 @@ exports[`readMessageHistory > 返却ペイロードのスナップショット 1
   "channelId": "channel-1",
   "messages": [
     {
+      "attachments": [
+        {
+          "id": "att-1",
+          "name": "memo.txt",
+          "url": "https://example.com/memo.txt",
+        },
+      ],
       "authorId": "user-1",
       "authorIsBot": false,
-      "authorName": "Alice (ID: user-1)",
-      "content": "古いメッセージ <attachments:att-1>",
+      "authorName": "Alice",
+      "content": "古いメッセージ",
       "createdAt": "2026-01-01 09:00:00 JST",
       "id": "m1",
     },
     {
+      "attachments": [],
       "authorId": "bot-1",
       "authorIsBot": true,
-      "authorName": "ルナ (Bot) (ID: bot-1)",
+      "authorName": "ルナ",
       "content": "新しいメッセージ",
       "createdAt": "2026-01-01 09:01:00 JST",
       "id": "m2",
@@ -24,6 +32,16 @@ exports[`readMessageHistory > 返却ペイロードのスナップショット 1
           "count": 2,
           "emoji": "👍",
           "selfReacted": true,
+        },
+      ],
+      "stickers": [
+        {
+          "description": "sticker description",
+          "format": "apng",
+          "guildId": "guild-1",
+          "id": "sticker-1",
+          "name": "wave",
+          "url": "https://media.discordapp.net/stickers/sticker-1.png",
         },
       ],
     },

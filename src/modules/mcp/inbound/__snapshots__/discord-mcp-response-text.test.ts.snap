@@ -1,15 +1,41 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`discord-mcp-response-text > read_message_history のレスポンスを整形する 1`] = `
-"[2026-01-01 09:00:00 JST] Alice (ID: user-1) (Message ID: message-1):
+"<luna_input source="read_message_history" channel_id="channel-1">
+  <messages count="2">
+    <message id="message-1" channel_id="channel-1" author_id="user-1" author_name="Alice" author_is_bot="false" created_at="2026-01-01 09:00:00 JST">
+      <content>
 old
-
-[2026-01-01 09:01:00 JST] Bob (ID: user-2) (Message ID: message-2):
+      </content>
+      <attachments>
+        <attachment id="att-1" name="memo.txt" url="https://example.com/memo.txt" />
+      </attachments>
+    </message>
+    <message id="message-2" channel_id="channel-1" author_id="user-2" author_name="Bob" author_is_bot="false" created_at="2026-01-01 09:01:00 JST">
+      <content>
 new
-リアクション: 👍 x1 (自分済み)"
+      </content>
+      <stickers>
+        <sticker id="sticker-1" name="wave" format="png" url="https://media.discordapp.net/stickers/sticker-1.png" description="sticker description" guild_id="guild-1" />
+      </stickers>
+      <reactions>
+        <reaction emoji="👍" count="1" self_reacted="true" />
+      </reactions>
+    </message>
+  </messages>
+</luna_input>"
 `;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > add_reaction 1`] = `"OK"`;
+
+exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > get_guild_emoji 1`] = `
+"名前: luna
+絵文字ID: emoji-2
+サーバーID: guild-1
+アニメーション: false
+Discord表記: <:luna:emoji-2>
+URL: https://cdn.discordapp.com/emojis/emoji-2.webp"
+`;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > get_user_detail 1`] = `
 "表示名: Alice
@@ -18,11 +44,16 @@ exports[`discord-mcp-response-text > 他ツールのレスポンスを整形す�
 Bot: false
 ニックネーム: なし
 グローバル名: Alice Global
-アバター: なし
-バナー: なし"
+アバターURL: https://cdn.discordapp.com/avatars/user-1/display-avatar.png
+バナーURL: https://cdn.discordapp.com/banners/user-1/display-banner.png"
 `;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > list_channels 1`] = `"- general (ID: channel-1, Guild: Guild Name (ID: guild-1))"`;
+
+exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > list_guild_emojis 1`] = `
+"サーバーID: guild-1
+- <a:party:emoji-1> name="party" id="emoji-1" animated="true" url="https://cdn.discordapp.com/emojis/emoji-1.gif""
+`;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > send_message 1`] = `"OK"`;
 

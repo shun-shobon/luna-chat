@@ -41,8 +41,6 @@
   - `templates` 配下の通常ファイルを再帰的に `workspace` へ不足分のみ自動コピー（既存は非上書き、空ディレクトリは許容、シンボリックリンクは起動エラー）
 - `src/shared/logger.ts`
   - 共通 logger（標準出力 + `$LUNA_HOME/logs/*.log` JSONL 出力）
-- `src/shared/discord/message-author-label.ts`
-  - 表示名ラベル整形（`<name> (ID: <id>)`）
 - `src/shared/discord/runtime-reaction.ts`
   - リアクション正規化（`emoji` / `count` / `selfReacted`）
 
@@ -51,7 +49,7 @@
 - `src/modules/conversation/adapters/inbound/discord-message-create-handler.ts`
   - `messageCreate` ハンドリング
   - 返信判定（非スレッド・DMは`allow_dm`に従う・Guildは許可チャンネル）
-  - `RuntimeMessage` 整形（返信先・添付マーカー・リアクション含む）
+  - `RuntimeMessage` 整形（返信先・添付メタデータ・リアクション含む）
   - 初期履歴10件の遅延取得関数を AI へ渡す
 - `src/modules/conversation/domain/runtime-message.ts`
   - `RuntimeMessage` / `RuntimeReplyMessage` / `RuntimeReaction` 型
@@ -68,6 +66,7 @@
 - `src/modules/ai/application/prompt-composer.ts`
   - `instructions` / `developerRolePrompt` / `userRolePrompt` 生成
   - `LUNA.md` / `SOUL.md` 連結
+  - `userRolePrompt` を `source` 付き XML 風入力で構築
 - `src/modules/ai/application/thread-config-factory.ts`
   - thread config 生成（MCP URL + `projects["<resolved workspace>"].trust_level = "trusted"` + `skills.config[*].enabled = false`）
 - `src/modules/ai/adapters/outbound/codex/*`
@@ -113,16 +112,11 @@
   - `chokidar` で変更検知しホットリロード
   - 不正設定時は前回有効スケジュールを維持
 
-### 4.7 Attachments
+### 4.7 Discord Message Formatting
 
-- `src/modules/attachments/domain/attachment-marker.ts`
-  - 本文末尾 `<attachment:...>` マーカー付与
-- `src/modules/attachments/ports/discord-attachment-store.ts`
-  - 添付保存ポート定義
-- `src/modules/attachments/application/append-attachments-to-content.ts`
-  - 添付保存 + マーカー追記ユースケース
-- `src/modules/attachments/adapters/outbound/workspace-discord-attachment-store.ts`
-  - ワークスペース保存実装
+- `src/shared/discord/xml-message.ts`
+  - Discord メッセージと添付メタデータを XML 風入力へ整形
+  - Discord 添付は自動保存せず、`id` / `name` / `url` を `<attachment>` として渡す
 - `src/generated/codex/*`
   - app-server 型定義（自動生成、`pnpm run gen:app-server` で更新）
 
@@ -136,6 +130,7 @@
 - `authorName: string`
 - `authorIsBot: boolean`
 - `content: string`
+- `attachments: RuntimeAttachment[]`
 - `mentionedBot: boolean`
 - `createdAt: string`
 - `reactions?: RuntimeReaction[]`（存在時のみ）
@@ -148,8 +143,15 @@
 - `authorName: string`
 - `authorIsBot: boolean`
 - `content: string`
+- `attachments: RuntimeAttachment[]`
 - `createdAt: string`
 - `reactions?: RuntimeReaction[]`（存在時のみ）
+
+### RuntimeAttachment
+
+- `id: string`
+- `name: string | null`
+- `url: string`
 
 ### RuntimeReaction
 
@@ -183,20 +185,20 @@
 2. `beforeMessageId` / `afterMessageId` / `aroundMessageId` のいずれか1つを任意指定できる（同時指定不可）。
 3. `limit` は 1〜100（既定30）に制限する。
 4. Discord API レスポンスを zod で検証し、不正要素はスキップする。
-5. 添付を保存して `<attachment:...>` を追記し、昇順で返す。
+5. Discord 添付の `id` / `name` / `url` を含む `source` 付き XML 風テキストへ整形し、昇順で返す。
 6. MCP tool の返却は構造化JSONではなくプレーンテキストを返す。
 
 ### 6.4 heartbeat 実行
 
 1. cron（`[heartbeat].cron_time`, `waitForCompletion=true`）で起動する（未設定時 `0 0,30 * * * *`）。
    - `time_zone` 未設定時はシステムタイムゾーンを使用する。
-2. 固定 heartbeat プロンプトを AI に渡す。
+2. 固定 heartbeat プロンプトを `source` 付き XML 風入力として AI に渡す。
 3. 失敗時はログのみ記録して次周期へ継続する。
 
 ### 6.5 cron prompt 実行
 
 1. `workspace/cron.toml` の `[jobs.<id>]` から `cron` / `prompt` / `oneshot` を読み込む。
-2. 各ジョブを cron（`waitForCompletion=true`）で起動する。
+2. 各ジョブを `source` 付き XML 風入力へ整形し、cron（`waitForCompletion=true`）で起動する。
 3. 同一ジョブが実行中の場合は次tickをスキップする。
 4. `oneshot=true` のジョブは1回試行後に `cron.toml` から削除する（成功/失敗問わず）。
 5. `cron.toml` 変更時は `chokidar` で再読込し、再起動なしで反映する。
@@ -234,7 +236,6 @@
 - 主要テスト:
   - `src/modules/ai/application/channel-session-coordinator.test.ts`
   - `src/modules/ai/application/prompt-composer.test.ts`（スナップショット）
-  - `src/modules/attachments/index.test.ts`
   - `src/modules/runtime-config/runtime-config.test.ts`
   - `src/modules/heartbeat/heartbeat-runner.test.ts`
   - `src/modules/heartbeat/workspace-cron-config.test.ts`

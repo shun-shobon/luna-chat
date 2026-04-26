@@ -42,10 +42,12 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 ### 3.2 文脈取得
 
 - メッセージログを永続保存しない。
+- Discord メッセージと履歴は `userRolePrompt` 内の `source` 付き XML 風入力として AI に渡し、添付ファイルは自動保存せず `id` / `name` / `url` を含める。
 - AI 呼び出し時は現在メッセージに加えて、セッションキー内で未注入の履歴スコープに限り直近 10 件の履歴を初期入力として渡す（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
 - さらに過去履歴が必要な場合、AI は tool use（`read_message_history`）で都度取得する。
 - `read_message_history` は 1 回あたり最大 100 件（未指定時 30 件）を取得でき、複数回呼び出せる。
 - `read_message_history` は `beforeMessageId` / `afterMessageId` / `aroundMessageId` のいずれか1つを任意指定できる（同時指定不可）。
+- `read_message_history` の返却は `source` 付き XML 風入力と同形式で整形し、Discord 添付の `id` / `name` / `url` を含める。
 
 ### 3.3 推論と制御
 
@@ -94,15 +96,15 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 1. 指定外チャンネルでは処理しない。
 2. 指定チャンネル内の投稿（メンション有無を問わない）を AI へ渡せる。
 3. 現在メッセージの `mentionedBot` 情報を AI 入力へ含められる。
-4. 履歴永続化なしで、セッションキー内で未注入の履歴スコープのみ直近 10 件を初期文脈として渡せる。
-5. 必要時に `read_message_history` で追加履歴取得できる（`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他）。
+4. 履歴永続化なしで、セッションキー内で未注入の履歴スコープのみ直近 10 件を `source` 付き XML 風の初期文脈として渡せる。
+5. 必要時に `read_message_history` で `source` 付き XML 風の追加履歴取得ができる（`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他、Discord 添付の `id` / `name` / `url` を含む）。
 6. AI 失敗時は返信せず終了し、失敗ログを確認できる。
 7. ワークスペース運用（`$LUNA_HOME/workspace`）で `LUNA.md` / `SOUL.md` を読み込める。
 8. `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を tool use で実行できる。`send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）のどちらか一方で対象を指定でき、`send_message` は任意で返信先IDと複数添付ファイルパスを指定でき、`text` または `filePaths` の少なくとも一方が必要である。
 9. heartbeat は `[heartbeat].cron_time` で設定したスケジュールで実行される（未設定時は毎時 00 分 / 30 分、タイムゾーン未設定時はシステムタイムゾーン）。
-10. heartbeat 実行時は実装済みの固定プロンプトが渡される。
+10. heartbeat 実行時は `source` 付き XML 風で実装済みの固定プロンプトが渡される。
 11. `allow_dm = false` では DM を処理せず、`allow_dm = true` では DM 投稿を AI へ渡せる。
-12. `workspace/cron.toml` の cron prompt ジョブが定期実行され、`oneshot = true` ジョブは1回試行後に設定ファイルから削除される。
+12. `workspace/cron.toml` の cron prompt ジョブが `source` 付き XML 風入力で定期実行され、`oneshot = true` ジョブは1回試行後に設定ファイルから削除される。
 13. `cron.toml` の変更が再起動なしで反映される。不正設定時は前回有効スケジュールを維持する。
 14. Codex app-server が起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有される。
 15. Discord セッションは turn 完了後も再利用され、通常チャンネル投稿は `channelId` ごとに 1 セッション、DM 投稿は `userId` ごとのセッションで運用され、各セッションは 30 分アイドルで閉じる。

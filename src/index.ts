@@ -5,10 +5,6 @@ import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { CodexAiRuntime } from "./modules/ai/adapters/outbound/codex/codex-ai-runtime";
 import { ChannelSessionCoordinator } from "./modules/ai/application/channel-session-coordinator";
 import {
-  WorkspaceDiscordAttachmentStore,
-  type DiscordAttachmentStore,
-} from "./modules/attachments";
-import {
   handleMessageCreate,
   type ReplyGenerator,
 } from "./modules/conversation/adapters/inbound/discord-message-create-handler";
@@ -52,10 +48,8 @@ const runtimeConfig = await loadConfigOrExit();
 client.rest.setToken(runtimeConfig.discordBotToken);
 await initializeFileLoggingOrExit(runtimeConfig.logsDir);
 const typingLifecycleRegistry = createTypingLifecycleRegistry();
-const attachmentStore = new WorkspaceDiscordAttachmentStore(runtimeConfig.codexWorkspaceDir);
 const discordMcpServer = await startDiscordMcpServerOrExit(
   runtimeConfig.allowedChannelIds,
-  attachmentStore,
   client,
   typingLifecycleRegistry,
   runtimeConfig.codexWorkspaceDir,
@@ -135,7 +129,6 @@ const cronPromptScheduler = await startCronPromptScheduler({
 
 client.on("messageCreate", async (message) => {
   await handleMessageCreate({
-    attachmentStore,
     aiService: discordAiService,
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     allowDm: runtimeConfig.allowDm,
@@ -186,7 +179,6 @@ async function initializeFileLoggingOrExit(logsDir: string): Promise<void> {
 
 async function startDiscordMcpServerOrExit(
   allowedChannelIds: ReadonlySet<string>,
-  attachmentStore: DiscordAttachmentStore,
   client: Client,
   typingRegistry: ReturnType<typeof createTypingLifecycleRegistry>,
   workspaceDir: string,
@@ -194,7 +186,6 @@ async function startDiscordMcpServerOrExit(
   try {
     const mcpServer = await startDiscordMcpServer({
       allowedChannelIds,
-      attachmentStore,
       client,
       typingLifecycleRegistry: typingRegistry,
       workspaceDir,

@@ -14,21 +14,22 @@
 5. 会話ログ本文は永続保存しない。
 6. AI 入力には現在メッセージを必ず含め、セッションキー内で未注入の履歴スコープの場合のみ直近 10 件を追加する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
 7. 追加履歴は `read_message_history` で都度取得できる（`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他指定）。
-8. AI は必要時に `start_typing` で入力中表示を開始でき、`send_message` 成功時または Discord turn 完了時に自動停止される。
-9. Bot 直接メンション時の自動 typing 送信も継続する。
-10. ワークスペース（`$LUNA_HOME/workspace`）のドキュメントを AI instructions に読み込む。
-11. 自己改善ドキュメントの自動更新フローは現時点で未実装。
-12. 秘密情報をログやドキュメントに平文出力しない。
-13. `STATUS.md` は作業ごとに AI が更新する。
-14. heartbeat は `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` に従って自動実行する（未設定時は毎時 00 分 / 30 分）。
-15. `time_zone` を未設定にした場合、heartbeat と cron prompt はシステムタイムゾーンで実行する。
-16. heartbeat 実行時は以下の固定プロンプトを使う。  
+8. `userRolePrompt` / heartbeat / cron prompt / `read_message_history` は `source` 付き XML 風入力で扱い、Discord 添付は自動保存せず `id` / `name` / `url` を含める。
+9. AI は必要時に `start_typing` で入力中表示を開始でき、`send_message` 成功時または Discord turn 完了時に自動停止される。
+10. Bot 直接メンション時の自動 typing 送信も継続する。
+11. ワークスペース（`$LUNA_HOME/workspace`）のドキュメントを AI instructions に読み込む。
+12. 自己改善ドキュメントの自動更新フローは現時点で未実装。
+13. 秘密情報をログやドキュメントに平文出力しない。
+14. `STATUS.md` は作業ごとに AI が更新する。
+15. heartbeat は `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` に従って自動実行する（未設定時は毎時 00 分 / 30 分）。
+16. `time_zone` を未設定にした場合、heartbeat と cron prompt はシステムタイムゾーンで実行する。
+17. heartbeat 実行時は以下の固定プロンプトを `source` 付き XML 風入力で使う。
     `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
-17. cron prompt は `$LUNA_HOME/workspace/cron.toml` の `[jobs.<id>]`（`cron` / `prompt` / `oneshot`）に従って実行する。
-18. `cron.toml` の変更は再起動なしで反映し、不正設定時は前回有効スケジュールを維持する。
-19. `oneshot = true` の cron prompt は1回試行後に `cron.toml` から削除する。
-20. `codex app-server` は起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有する。
-21. Discord セッションは turn 完了後も保持し、通常チャンネル投稿は `channelId` ごとに 1 セッションを再利用し、DM 投稿は `userId` ごとに別セッションを再利用する。各セッションは最終メッセージから 30 分新規メッセージがなければ閉じる（turn 実行中なら完了後に閉じる）。
+18. cron prompt は `$LUNA_HOME/workspace/cron.toml` の `[jobs.<id>]`（`cron` / `prompt` / `oneshot`）に従い、`source` 付き XML 風入力として実行する。
+19. `cron.toml` の変更は再起動なしで反映し、不正設定時は前回有効スケジュールを維持する。
+20. `oneshot = true` の cron prompt は1回試行後に `cron.toml` から削除する。
+21. `codex app-server` は起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有する。
+22. Discord セッションは turn 完了後も保持し、通常チャンネル投稿は `channelId` ごとに 1 セッションを再利用し、DM 投稿は `userId` ごとに別セッションを再利用する。各セッションは最終メッセージから 30 分新規メッセージがなければ閉じる（turn 実行中なら完了後に閉じる）。
 
 ## 3. 実行手順
 
@@ -59,20 +60,22 @@
 
 1. 受信イベントでチャンネル判定（スレッド除外、DMは`allow_dm`で判定、Guildは許可外除外）を実施する。
 2. 現在メッセージを AI に渡し、セッションキー内で未注入の履歴スコープの場合のみ直近 10 件を初回注入する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
-3. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信し、任意の `filePaths` で複数ファイルを添付できる。`text` は任意だが、`text` または `filePaths` の少なくとも一方が必要である。`filePaths` の相対パスは AI ワークスペース基準で解決し、ワークスペース外への脱出は拒否する。MCP tool の応答はプレーンテキストで返る。
-4. AI エラー時は返信せず終了し、失敗ログを確認する。
-5. アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log`（JSONL）にも出力される。
-6. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。
-7. cron prompt 実行が失敗してもプロセスは継続し、`oneshot=false` は次周期で再実行する。
+3. Discord メッセージ / heartbeat / cron prompt / `read_message_history` 返却は `source` 付き XML 風入力として扱い、Discord 添付は自動保存せず `id` / `name` / `url` を含める。
+4. AI は必要時に `read_message_history` / `send_message` / `add_reaction` / `start_typing` / `list_channels` / `get_user_detail` を使用する。`send_message` は任意の `replyToMessageId` 指定時に返信投稿として送信し、任意の `filePaths` で複数ファイルを添付できる。`text` は任意だが、`text` または `filePaths` の少なくとも一方が必要である。`filePaths` の相対パスは AI ワークスペース基準で解決し、ワークスペース外への脱出は拒否する。MCP tool の応答はプレーンテキストで返る。
+5. AI エラー時は返信せず終了し、失敗ログを確認する。
+6. アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log`（JSONL）にも出力される。
+7. heartbeat 実行が失敗してもプロセスは継続し、次の cron 周期で再実行する。
+8. cron prompt 実行が失敗してもプロセスは継続し、`oneshot=false` は次周期で再実行する。
 
 ## 4. プロンプト運用
 
 AI には最低限以下を渡す。
 
 1. ルナの人格定義とセーフティガード
-2. 現在メッセージ（author/channel/message）
-3. 直近メッセージ履歴
-4. 返信・リアクション時は `discord` ツールを使う制約
+2. `source` 付き XML 風の `userRolePrompt`
+3. Discord 添付がある場合は `id` / `name` / `url`
+4. heartbeat / cron prompt も実行起点を示す `source` を付ける
+5. 返信・リアクション時は `discord` ツールを使う制約
 
 ## 5. 失敗時対応
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DiscordHistoryGateway } from "../../ports/outbound/discord-history-gateway-port";
 
-import { readMessageHistory, type AttachmentContentDecorator } from "./read-message-history";
+import { readMessageHistory } from "./read-message-history";
 
 describe("readMessageHistory", () => {
   it("返却ペイロードのスナップショット", async () => {
@@ -22,6 +22,16 @@ describe("readMessageHistory", () => {
                 count: 2,
                 emoji: "👍",
                 selfReacted: true,
+              },
+            ],
+            stickers: [
+              {
+                description: "sticker description",
+                format: "apng",
+                guildId: "guild-1",
+                id: "sticker-1",
+                name: "wave",
+                url: "https://media.discordapp.net/stickers/sticker-1.png",
               },
             ],
           },
@@ -45,17 +55,8 @@ describe("readMessageHistory", () => {
         return messages;
       }),
     });
-
-    const decorator: AttachmentContentDecorator = async ({ attachments, content }) => {
-      if (attachments.length === 0) {
-        return content;
-      }
-      return `${content} <attachments:${attachments.map((attachment) => attachment.id).join(",")}>`;
-    };
-
     const payload = await readMessageHistory({
       channelId: "channel-1",
-      decorator: vi.fn(decorator),
       gateway,
       limit: 30,
     });
@@ -72,7 +73,6 @@ describe("readMessageHistory", () => {
     await readMessageHistory({
       afterMessageId: "message-after",
       channelId: "channel-1",
-      decorator: vi.fn(async ({ content }) => content),
       gateway,
       limit: 30,
     });
@@ -93,7 +93,6 @@ describe("readMessageHistory", () => {
     await readMessageHistory({
       aroundMessageId: "message-around",
       channelId: "channel-1",
-      decorator: vi.fn(async ({ content }) => content),
       gateway,
       limit: 30,
     });
@@ -114,7 +113,6 @@ describe("readMessageHistory", () => {
         aroundMessageId: "around",
         beforeMessageId: "before",
         channelId: "channel-1",
-        decorator: vi.fn(async ({ content }) => content),
         gateway,
         limit: 30,
       }),
@@ -132,6 +130,8 @@ function createGatewayStub(
   const fetchMessages: DiscordHistoryGateway["fetchMessages"] = vi.fn(async () => []);
   const fetchChannelById: DiscordHistoryGateway["fetchChannelById"] = vi.fn(async () => null);
   const fetchGuildById: DiscordHistoryGateway["fetchGuildById"] = vi.fn(async () => null);
+  const fetchGuildEmojiById: DiscordHistoryGateway["fetchGuildEmojiById"] = vi.fn(async () => null);
+  const fetchGuildEmojis: DiscordHistoryGateway["fetchGuildEmojis"] = vi.fn(async () => []);
   const fetchUserById: DiscordHistoryGateway["fetchUserById"] = vi.fn(async () => null);
   const fetchGuildMemberByUserId: DiscordHistoryGateway["fetchGuildMemberByUserId"] = vi.fn(
     async () => null,
@@ -140,6 +140,8 @@ function createGatewayStub(
   return {
     fetchChannelById: overrides.fetchChannelById ?? fetchChannelById,
     fetchGuildById: overrides.fetchGuildById ?? fetchGuildById,
+    fetchGuildEmojiById: overrides.fetchGuildEmojiById ?? fetchGuildEmojiById,
+    fetchGuildEmojis: overrides.fetchGuildEmojis ?? fetchGuildEmojis,
     fetchGuildMemberByUserId: overrides.fetchGuildMemberByUserId ?? fetchGuildMemberByUserId,
     fetchMessages: overrides.fetchMessages ?? fetchMessages,
     fetchUserById: overrides.fetchUserById ?? fetchUserById,

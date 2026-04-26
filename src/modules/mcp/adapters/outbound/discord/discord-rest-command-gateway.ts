@@ -83,10 +83,6 @@ export function createDiscordRestCommandGateway(
         throw new Error("channel does not support sending messages.");
       }
       const options: MessageCreateOptions = {
-        allowedMentions: {
-          parse: [],
-          repliedUser: trimmedReplyToMessageId ? true : undefined,
-        },
         reply: trimmedReplyToMessageId
           ? {
               failIfNotExists: false,

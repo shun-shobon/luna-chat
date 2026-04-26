@@ -7,8 +7,8 @@ export async function getUserDetailTool(input: {
   userId: string;
 }): Promise<{
   user: {
-    avatar: string | null;
-    banner: string | null;
+    avatarUrl: string | null;
+    bannerUrl: string | null;
     bot: boolean;
     displayName: string;
     globalName: string | null;
@@ -51,6 +51,16 @@ export async function getUserDetailTool(input: {
         member.user?.username ??
         user.globalName ??
         user.username;
+
+      return {
+        user: {
+          ...user,
+          avatarUrl: member.avatarUrl ?? user.avatarUrl,
+          bannerUrl: member.bannerUrl ?? user.bannerUrl,
+          displayName,
+          nickname,
+        },
+      };
     }
   }
 

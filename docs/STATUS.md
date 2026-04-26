@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-03-09
+- 2026-04-26
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -11,12 +11,13 @@
 - メンション有無は `mentionedBot` として保持するが、返信優先制御には使っていない。
 - Bot投稿は無視し、Guildでは許可チャンネル投稿、DMでは `allow_dm=true` の投稿を AI へ渡す。
 - AI 入力には現在メッセージを渡し、セッションキー内で未注入の履歴スコープの場合のみ直近 10 件履歴を初期投入する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
+- Discord メッセージ / 初期履歴 / `read_message_history` 返却は `source` 付き XML 風入力で扱う。
 - AI 入力メッセージには、リアクションが存在する場合のみ絵文字別 `reactions` を含める（`selfReacted` はBot自身が該当絵文字でリアクション済みのときのみ付与）。
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件、`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他指定）。
-- `read_message_history` の返却メッセージにも、リアクションがある場合のみ `reactions` を含める。
+- `read_message_history` の返却メッセージにも、リアクションがある場合のみ `reactions` を含め、Discord 添付の `id` / `name` / `url` を XML 風要素として含める。
 - Discord MCP の tool レスポンスは `structuredContent` ではなくプレーンテキストを返す。
-- 添付ファイルはワークスペースへ保存し、本文末尾へ `<attachment:...>` マーカーを追記する。
-- 添付処理は `src/modules/attachments`（domain/ports/application/adapters）へ集約し、`conversation` と `mcp` の重複実装を解消している。
+- 添付ファイルは自動保存せず、本文と履歴の XML 風入力へ Discord 添付の `id` / `name` / `url` を埋め込む。
+- 添付の XML 風整形は `src/shared/discord/xml-message.ts` に集約している。
 - 返信・リアクションは MCP tool `send_message` / `add_reaction` を使用する。
 - `send_message` / `add_reaction` / `start_typing` は `channelId` または `userId`（DM）のどちらか一方で対象を指定できる。
 - `send_message` は `text` を任意入力とし、`text` または `filePaths` の少なくとも一方が必要である。
@@ -68,11 +69,12 @@
 - `time_zone` 未設定時は heartbeat / cron prompt ともにシステムタイムゾーンで実行する。
 - heartbeat プロンプトは以下の固定文を使用する。  
   `HEARTBEAT.md`がワークスペース内に存在する場合はそれを確認し、内容に従って作業を行ってください。過去のチャットで言及された古いタスクを推測したり繰り返してはいけません。特に対応すべき事項がない場合は、そのまま終了してください。
-- cron prompt は `workspace/cron.toml` の `[jobs.<id>]` から `cron` / `prompt` / `oneshot` を読み込み実行する。
+- heartbeat プロンプトは `source` 付き XML 風入力として AI に渡す。
+- cron prompt は `workspace/cron.toml` の `[jobs.<id>]` から `cron` / `prompt` / `oneshot` を読み込み、`source` 付き XML 風入力として実行する。
 - `cron.toml` は `chokidar` で監視し、変更時に再起動なしで再読込する。
 - `cron.toml` の再読込に失敗した場合は直前の有効スケジュールを維持する。
 - `oneshot = true` の cron prompt は1回試行後に `cron.toml` から削除する（成功/失敗問わず）。
-- プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。
+- プロンプトは `instructions` / `developerRolePrompt` / `userRolePrompt` に分割し、`instructions` にはワークスペースの `LUNA.md` / `SOUL.md` を連結する。`userRolePrompt` は `source` 付き XML 風入力で構成する。
 - `oxlint` では `application`/`ports`/`domain` からの不適切な層依存（adapters/application 直接参照など）を `no-restricted-imports` で検出する。
 - CI（lint/format/knip/typecheck/test）と Docker build は、事前に `pnpm run gen` を実行してから検証・ビルドする。
 - 自己改善ドキュメントの自動更新フローは未実装。

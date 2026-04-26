@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DiscordAttachmentStore } from "../../attachments";
-
 import { startDiscordMcpServer } from "./discord-mcp-http-server";
 
 const startedServers: Array<{ close: () => Promise<void>; url: string }> = [];
@@ -16,7 +14,6 @@ describe("startDiscordMcpServer", () => {
   it("starts server and returns /mcp url", async () => {
     const server = await startDiscordMcpServer({
       allowedChannelIds: new Set(["channel-id"]),
-      attachmentStore: createAttachmentStoreStub(),
       client: createDiscordClientStub(),
       workspaceDir: "/tmp/workspace",
     });
@@ -29,12 +26,6 @@ describe("startDiscordMcpServer", () => {
     expect(Number(url.port)).toBeGreaterThan(0);
   });
 });
-
-function createAttachmentStoreStub(): DiscordAttachmentStore {
-  return {
-    saveAttachment: vi.fn(async () => "/tmp/attachment"),
-  };
-}
 
 function createDiscordClientStub() {
   return {

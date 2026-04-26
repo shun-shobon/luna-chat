@@ -21,11 +21,12 @@ describe("buildUserRolePrompt", () => {
 
     expect(userRolePrompt).toContain("テスト本文");
     expect(userRolePrompt).not.toContain("forceReply");
-    expect(userRolePrompt).toContain("新しいチャンネルメッセージです。");
+    expect(userRolePrompt).toContain('<luna_input source="discord_message">');
+    expect(userRolePrompt).toContain('<discord_context kind="channel"');
     expect(userRolePrompt).not.toContain("以下は現在の入力情報です。");
 
-    const recentMessagesIndex = userRolePrompt.indexOf("## 直近のメッセージ");
-    const currentMessageIndex = userRolePrompt.indexOf("## 投稿されたメッセージ");
+    const recentMessagesIndex = userRolePrompt.indexOf("<recent_messages");
+    const currentMessageIndex = userRolePrompt.indexOf("<current_message>");
     expect(recentMessagesIndex).toBeGreaterThanOrEqual(0);
     expect(currentMessageIndex).toBeGreaterThan(recentMessagesIndex);
     expect(userRolePrompt).toMatchSnapshot();
@@ -38,19 +39,17 @@ describe("buildUserRolePrompt", () => {
       authorIsBot: false,
       authorName: "reply-author-name",
       content: "返信先本文",
+      attachments: [],
       createdAt: "2026-02-23 08:58:00 JST",
       id: "reply-message-id",
     };
     const userRolePrompt = buildUserRolePrompt(input);
 
     expect(userRolePrompt).not.toContain("返信先メッセージ:");
-    expect(userRolePrompt).toContain(
-      "> [2026-02-23 08:58:00 JST] reply-author-name (ID: reply-author-id) (Message ID: reply-message-id):",
-    );
-    expect(userRolePrompt).toContain("> 返信先本文");
-    expect(userRolePrompt).toContain("(Message ID: reply-message-id):\n> 返信先本文");
-    expect(userRolePrompt).toContain("(Message ID: message-id):\nテスト本文");
-    expect(userRolePrompt).toMatch(/> 返信先本文\n\[2026-02-23 09:00:00 JST]/);
+    expect(userRolePrompt).toContain("<reply_to>");
+    expect(userRolePrompt).toContain('id="reply-message-id"');
+    expect(userRolePrompt).toContain("返信先本文");
+    expect(userRolePrompt).toContain("テスト本文");
     expect(userRolePrompt).toMatchSnapshot();
   });
 
@@ -63,6 +62,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-1",
         channelId: "channel-id",
         content: "直近メッセージ1",
+        attachments: [],
         createdAt: "2026-02-23 08:56:00 JST",
         id: "recent-message-id-1",
         mentionedBot: false,
@@ -73,6 +73,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-2",
         channelId: "channel-id",
         content: "直近メッセージ2",
+        attachments: [],
         createdAt: "2026-02-23 08:57:00 JST",
         id: "recent-message-id-2",
         mentionedBot: false,
@@ -83,6 +84,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-3",
         channelId: "channel-id",
         content: "直近メッセージ3",
+        attachments: [],
         createdAt: "2026-02-23 08:58:00 JST",
         id: "recent-message-id-3",
         mentionedBot: false,
@@ -93,6 +95,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-4",
         channelId: "channel-id",
         content: "直近メッセージ4",
+        attachments: [],
         createdAt: "2026-02-23 08:59:00 JST",
         id: "recent-message-id-4",
         mentionedBot: false,
@@ -109,9 +112,7 @@ describe("buildUserRolePrompt", () => {
     expect(secondIndex).toBeGreaterThan(firstIndex);
     expect(thirdIndex).toBeGreaterThan(secondIndex);
     expect(fourthIndex).toBeGreaterThan(thirdIndex);
-    expect(userRolePrompt).toMatch(
-      /recent-message-id-1\):\n直近メッセージ1\n\n\[2026-02-23 08:57:00 JST]/,
-    );
+    expect(userRolePrompt).toContain('<recent_messages count="4">');
     expect(userRolePrompt).toMatchSnapshot();
   });
 
@@ -124,6 +125,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-1",
         channelId: "channel-id",
         content: "直近メッセージ1",
+        attachments: [],
         createdAt: "2026-02-23 08:56:00 JST",
         id: "recent-message-id-1",
         mentionedBot: false,
@@ -132,6 +134,7 @@ describe("buildUserRolePrompt", () => {
           authorIsBot: false,
           authorName: "reply-author-name-1",
           content: "返信先本文1",
+          attachments: [],
           createdAt: "2026-02-23 08:55:00 JST",
           id: "reply-message-id-1",
         },
@@ -142,6 +145,7 @@ describe("buildUserRolePrompt", () => {
         authorName: "recent-author-name-2",
         channelId: "channel-id",
         content: "直近メッセージ2",
+        attachments: [],
         createdAt: "2026-02-23 08:58:00 JST",
         id: "recent-message-id-2",
         mentionedBot: false,
@@ -150,6 +154,7 @@ describe("buildUserRolePrompt", () => {
           authorIsBot: true,
           authorName: "reply-author-name-2",
           content: "返信先本文2",
+          attachments: [],
           createdAt: "2026-02-23 08:57:00 JST",
           id: "reply-message-id-2",
         },
@@ -160,14 +165,15 @@ describe("buildUserRolePrompt", () => {
       authorIsBot: false,
       authorName: "reply-author-name-current",
       content: "返信先本文-current",
+      attachments: [],
       createdAt: "2026-02-23 08:59:00 JST",
       id: "reply-message-id-current",
     };
     input.currentMessage.content = "投稿本文1\n投稿本文2\n投稿本文3";
     const userRolePrompt = buildUserRolePrompt(input);
 
-    const quotedReplyMetaCount = (userRolePrompt.match(/^> \[/gm) ?? []).length;
-    expect(quotedReplyMetaCount).toBe(3);
+    const replyToCount = (userRolePrompt.match(/<reply_to>/g) ?? []).length;
+    expect(replyToCount).toBe(3);
     expect(userRolePrompt).not.toContain("返信先メッセージ:");
     expect(userRolePrompt).toContain("投稿本文3");
     expect(userRolePrompt).toMatchSnapshot();
@@ -191,6 +197,7 @@ describe("buildUserRolePrompt", () => {
       authorIsBot: false,
       authorName: "reply-author-name",
       content: "返信先本文",
+      attachments: [],
       createdAt: "2026-02-23 08:58:00 JST",
       id: "reply-message-id",
       reactions: [
@@ -203,15 +210,81 @@ describe("buildUserRolePrompt", () => {
     };
     const userRolePrompt = buildUserRolePrompt(input);
 
-    expect(userRolePrompt).toContain("リアクション: 👍 x3 (自分済み), 🎉 x1");
-    expect(userRolePrompt).toContain("> リアクション: 🔥 x2 (自分済み)");
+    expect(userRolePrompt).toContain('<reaction emoji="👍" count="3" self_reacted="true" />');
+    expect(userRolePrompt).toContain('<reaction emoji="🎉" count="1" self_reacted="false" />');
+    expect(userRolePrompt).toContain('<reaction emoji="🔥" count="2" self_reacted="true" />');
     expect(userRolePrompt).toMatchSnapshot();
   });
 
   it("リアクションがない場合はリアクション行を出力しない", () => {
     const userRolePrompt = buildUserRolePrompt(createInput());
 
-    expect(userRolePrompt).not.toContain("リアクション:");
+    expect(userRolePrompt).not.toContain("<reactions>");
+  });
+
+  it("添付がある場合は URL メタデータを出力する", () => {
+    const input = createInput();
+    input.currentMessage.attachments = [
+      {
+        id: "attachment-1",
+        name: "cat.png",
+        url: "https://example.com/cat.png",
+      },
+    ];
+
+    const userRolePrompt = buildUserRolePrompt(input);
+
+    expect(userRolePrompt).toContain("<attachments>");
+    expect(userRolePrompt).toContain(
+      '<attachment id="attachment-1" name="cat.png" url="https://example.com/cat.png" />',
+    );
+    expect(userRolePrompt).toMatchSnapshot();
+  });
+
+  it("ステッカーがある場合は URL メタデータを出力する", () => {
+    const input = createInput();
+    input.currentMessage.content = "";
+    input.currentMessage.stickers = [
+      {
+        description: "sticker description",
+        format: "gif",
+        guildId: "guild-1",
+        id: "sticker-1",
+        name: "wave",
+        url: "https://media.discordapp.net/stickers/sticker-1.gif",
+      },
+    ];
+    input.currentMessage.replyTo = {
+      authorId: "reply-author-id",
+      authorIsBot: false,
+      authorName: "reply-author-name",
+      content: "",
+      attachments: [],
+      createdAt: "2026-02-23 08:58:00 JST",
+      id: "reply-message-id",
+      stickers: [
+        {
+          description: null,
+          format: "lottie",
+          guildId: null,
+          id: "sticker-2",
+          name: "spark",
+          url: "https://media.discordapp.net/stickers/sticker-2.json",
+        },
+      ],
+    };
+
+    const userRolePrompt = buildUserRolePrompt(input);
+
+    expect(userRolePrompt).toContain("<content></content>");
+    expect(userRolePrompt).toContain("<stickers>");
+    expect(userRolePrompt).toContain(
+      '<sticker id="sticker-1" name="wave" format="gif" url="https://media.discordapp.net/stickers/sticker-1.gif" description="sticker description" guild_id="guild-1" />',
+    );
+    expect(userRolePrompt).toContain(
+      '<sticker id="sticker-2" name="spark" format="lottie" url="https://media.discordapp.net/stickers/sticker-2.json" description="" guild_id="" />',
+    );
+    expect(userRolePrompt).toMatchSnapshot();
   });
 
   it("直近メッセージが0件の場合は直近メッセージセクションを出力しない", () => {
@@ -222,7 +295,8 @@ describe("buildUserRolePrompt", () => {
 
     expect(userRolePrompt).not.toContain("## 直近のメッセージ");
     expect(userRolePrompt).not.toContain("(none)");
-    expect(userRolePrompt).toContain("## 投稿されたメッセージ");
+    expect(userRolePrompt).toContain('<recent_messages count="0" />');
+    expect(userRolePrompt).toContain("<current_message>");
     expect(userRolePrompt).toMatchSnapshot();
   });
 
@@ -230,9 +304,24 @@ describe("buildUserRolePrompt", () => {
     const input = createDmInput();
     const userRolePrompt = buildUserRolePrompt(input);
 
-    expect(userRolePrompt).toContain("新しいダイレクトメッセージです。");
-    expect(userRolePrompt).toContain("ユーザー名: author-name (ID: author-id)");
-    expect(userRolePrompt).not.toContain("チャンネル名:");
+    expect(userRolePrompt).toContain('<discord_context kind="dm"');
+    expect(userRolePrompt).toContain('user_id="author-id"');
+    expect(userRolePrompt).not.toContain('kind="channel"');
+    expect(userRolePrompt).toMatchSnapshot();
+  });
+
+  it("Botメンション情報は現在メッセージに出力する", () => {
+    const input = createInput();
+    input.currentMessage.mentionedBot = true;
+
+    const userRolePrompt = buildUserRolePrompt(input);
+
+    expect(userRolePrompt).toContain(
+      '<message id="message-id" channel_id="channel-id" author_id="author-id" author_name="author-name" author_is_bot="false" created_at="2026-02-23 09:00:00 JST" mentioned_bot="true">',
+    );
+    expect(userRolePrompt).not.toContain(
+      'discord_context kind="channel" channel_id="channel-id" channel_name="channel-name" mentioned_bot=',
+    );
     expect(userRolePrompt).toMatchSnapshot();
   });
 });
@@ -320,8 +409,23 @@ describe("buildHeartbeatPromptBundle", () => {
       );
 
       expect(promptBundle).toMatchSnapshot();
-      expect(promptBundle.userRolePrompt).toBe("HEARTBEAT.mdを確認し、作業を行ってください。");
+      expect(promptBundle.userRolePrompt).toContain('<luna_input source="heartbeat">');
+      expect(promptBundle.userRolePrompt).toContain("HEARTBEAT.mdを確認し、作業を行ってください。");
       expect(promptBundle.userRolePrompt).not.toContain("チャンネル名:");
+    });
+  });
+
+  it("cron prompt 用の user role prompt は source を cron_prompt にする", async () => {
+    await withWorkspaceDir(async (workspaceDir) => {
+      const promptBundle = await buildHeartbeatPromptBundle(
+        workspaceDir,
+        "定期タスクを実行してください。",
+        TEST_BOT_USER_ID,
+        "cron",
+      );
+
+      expect(promptBundle.userRolePrompt).toMatchSnapshot();
+      expect(promptBundle.userRolePrompt).toContain('<luna_input source="cron_prompt">');
     });
   });
 });
@@ -342,6 +446,7 @@ function createInput(): {
       authorName: "author-name",
       channelId: "channel-id",
       content: "テスト本文",
+      attachments: [],
       createdAt: "2026-02-23 09:00:00 JST",
       id: "message-id",
       mentionedBot: false,
@@ -353,6 +458,7 @@ function createInput(): {
         authorName: "recent-author-name",
         channelId: "channel-id",
         content: "直近メッセージ",
+        attachments: [],
         createdAt: "2026-02-23 08:59:00 JST",
         id: "recent-message-id",
         mentionedBot: false,
@@ -376,6 +482,7 @@ function createDmInput(): {
       authorName: "author-name",
       channelId: "channel-id",
       content: "テスト本文",
+      attachments: [],
       createdAt: "2026-02-23 09:00:00 JST",
       id: "message-id",
       mentionedBot: false,
@@ -387,6 +494,7 @@ function createDmInput(): {
         authorName: "recent-author-name",
         channelId: "channel-id",
         content: "直近メッセージ",
+        attachments: [],
         createdAt: "2026-02-23 08:59:00 JST",
         id: "recent-message-id",
         mentionedBot: false,

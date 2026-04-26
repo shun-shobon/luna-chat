@@ -1,8 +1,10 @@
 import { formatDateTimeJst } from "../../../../../shared/discord/format-date-time-jst";
 import { toRuntimeReactions } from "../../../../../shared/discord/runtime-reaction";
 import type { RuntimeReaction } from "../../../../../shared/discord/runtime-reaction";
+import { toRuntimeStickers } from "../../../../../shared/discord/runtime-sticker";
 import type {
   DiscordChannelSummary,
+  DiscordGuildEmoji,
   DiscordGuildMemberDetail,
   DiscordGuildSummary,
   DiscordHistoryGateway,
@@ -50,6 +52,47 @@ export function createDiscordRestHistoryGateway(
       } catch (error: unknown) {
         if (isSkippableDiscordRestError(error)) {
           return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildEmojiById: async ({ emojiId, guildId }) => {
+      try {
+        const guild = await client.guilds.fetch(guildId, {
+          force: true,
+        });
+        if (!isGuildWithEmojiFetcher(guild)) {
+          return null;
+        }
+
+        const emoji = await guild.emojis.fetch(emojiId, {
+          force: true,
+        });
+        return toDiscordGuildEmoji(emoji, guildId);
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    fetchGuildEmojis: async (guildId) => {
+      try {
+        const guild = await client.guilds.fetch(guildId, {
+          force: true,
+        });
+        if (!isGuildWithEmojiFetcher(guild)) {
+          return [];
+        }
+
+        const emojis = await guild.emojis.fetch();
+        return toCollectionValues(emojis)
+          .map((emoji) => toDiscordGuildEmoji(emoji, guildId))
+          .filter((emoji): emoji is DiscordGuildEmoji => emoji !== null)
+          .sort((left, right) => left.name.localeCompare(right.name, "ja"));
+      } catch (error: unknown) {
+        if (isSkippableDiscordRestError(error)) {
+          return [];
         }
         throw error;
       }
@@ -191,6 +234,66 @@ function toDiscordGuildSummary(guild: unknown): DiscordGuildSummary | null {
   };
 }
 
+function isGuildWithEmojiFetcher(guild: unknown): guild is {
+  emojis: {
+    fetch: (
+      emojiId?: string,
+      options?: {
+        force?: boolean;
+      },
+    ) => Promise<unknown>;
+  };
+} {
+  if (typeof guild !== "object" || guild === null) {
+    return false;
+  }
+
+  const emojis = Reflect.get(guild, "emojis");
+  if (typeof emojis !== "object" || emojis === null) {
+    return false;
+  }
+
+  return typeof Reflect.get(emojis, "fetch") === "function";
+}
+
+function toDiscordGuildEmoji(rawEmoji: unknown, guildId: string): DiscordGuildEmoji | null {
+  if (typeof rawEmoji !== "object" || rawEmoji === null) {
+    return null;
+  }
+
+  const id = Reflect.get(rawEmoji, "id");
+  const name = Reflect.get(rawEmoji, "name");
+  if (typeof id !== "string" || typeof name !== "string") {
+    return null;
+  }
+
+  const animated = Reflect.get(rawEmoji, "animated") === true;
+  const mention = animated ? `<a:${name}:${id}>` : `<:${name}:${id}>`;
+
+  return {
+    animated,
+    guildId,
+    id,
+    mention,
+    name,
+    url: resolveGuildEmojiUrl(rawEmoji, id, animated),
+  };
+}
+
+function resolveGuildEmojiUrl(rawEmoji: object, emojiId: string, animated: boolean): string {
+  const imageUrl = Reflect.get(rawEmoji, "imageURL");
+  if (typeof imageUrl === "function") {
+    const resolved = imageUrl.call(rawEmoji, {
+      extension: animated ? "gif" : "webp",
+    });
+    if (typeof resolved === "string" && resolved.length > 0) {
+      return resolved;
+    }
+  }
+
+  return `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? "gif" : "webp"}`;
+}
+
 function toDiscordUserDetail(rawUser: unknown): DiscordUserDetail | null {
   if (typeof rawUser !== "object" || rawUser === null) {
     return null;
@@ -202,19 +305,33 @@ function toDiscordUserDetail(rawUser: unknown): DiscordUserDetail | null {
     return null;
   }
 
-  const avatar = Reflect.get(rawUser, "avatar");
-  const banner = Reflect.get(rawUser, "banner");
   const bot = Reflect.get(rawUser, "bot");
   const globalName = Reflect.get(rawUser, "globalName");
 
   return {
-    avatar: typeof avatar === "string" ? avatar : null,
-    banner: typeof banner === "string" ? banner : null,
+    avatarUrl: getOptionalStringFromMethod(rawUser, "displayAvatarURL"),
+    bannerUrl: getOptionalStringFromMethod(rawUser, "displayBannerURL"),
     bot: bot === true,
     globalName: typeof globalName === "string" ? globalName : null,
     id,
     username,
   };
+}
+
+function getOptionalStringFromMethod(target: object, methodName: string): string | null {
+  const method = Reflect.get(target, methodName);
+  if (typeof method !== "function") {
+    return null;
+  }
+
+  try {
+    const value = method.call(target, {
+      size: 1024,
+    });
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function isGuildWithMemberFetcher(guild: unknown): guild is {
@@ -247,6 +364,8 @@ function toDiscordGuildMemberDetail(input: {
   const user = toDiscordUserDetail(Reflect.get(input.member, "user"));
 
   return {
+    avatarUrl: getOptionalStringFromMethod(input.member, "displayAvatarURL"),
+    bannerUrl: getOptionalStringFromMethod(input.member, "displayBannerURL"),
     guildId: input.guildId,
     joinedAt: joinedAt instanceof Date ? joinedAt.toISOString() : null,
     nickname: typeof nickname === "string" ? nickname : null,
@@ -314,6 +433,7 @@ function toDiscordHistoryMessage(rawMessage: unknown): DiscordHistoryMessageWith
 
   const attachments = toDiscordAttachments(Reflect.get(rawMessage, "attachments"));
   const reactions = toDiscordReactions(Reflect.get(rawMessage, "reactions"));
+  const stickers = toDiscordStickers(Reflect.get(rawMessage, "stickers"));
 
   return {
     createdTimestamp,
@@ -326,6 +446,7 @@ function toDiscordHistoryMessage(rawMessage: unknown): DiscordHistoryMessageWith
       createdAt: formatDateTimeJst(createdAt),
       id,
       reactions,
+      stickers,
     },
   };
 }
@@ -352,6 +473,47 @@ function toDiscordAttachments(rawAttachments: unknown): DiscordHistoryMessage["a
   }
 
   return normalized;
+}
+
+function toDiscordStickers(rawStickers: unknown): DiscordHistoryMessage["stickers"] {
+  return toRuntimeStickers(
+    toCollectionValues(rawStickers)
+      .map((sticker) => {
+        if (typeof sticker !== "object" || sticker === null) {
+          return null;
+        }
+
+        const id = Reflect.get(sticker, "id");
+        const name = Reflect.get(sticker, "name");
+        if (typeof id !== "string" || typeof name !== "string") {
+          return null;
+        }
+
+        const description = Reflect.get(sticker, "description");
+        const format = Reflect.get(sticker, "format");
+        const guildId = Reflect.get(sticker, "guildId");
+        const url = getStickerUrl(sticker);
+
+        return {
+          description: typeof description === "string" ? description : null,
+          format: typeof format === "number" || typeof format === "string" ? format : null,
+          guildId: typeof guildId === "string" ? guildId : null,
+          id,
+          name,
+          url,
+        };
+      })
+      .filter((sticker): sticker is NonNullable<typeof sticker> => sticker !== null),
+  );
+}
+
+function getStickerUrl(sticker: object): string | null {
+  try {
+    const url = Reflect.get(sticker, "url");
+    return typeof url === "string" ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function toDiscordReactions(rawReactions: unknown): RuntimeReaction[] | undefined {

@@ -3,8 +3,8 @@
 exports[`getUserDetailTool > nickname がないときは user の globalName / username で表示名を補完する 1`] = `
 {
   "user": {
-    "avatar": null,
-    "banner": null,
+    "avatarUrl": "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+    "bannerUrl": null,
     "bot": false,
     "displayName": "global-name",
     "globalName": "global-name",
@@ -18,8 +18,8 @@ exports[`getUserDetailTool > nickname がないときは user の globalName / u
 exports[`getUserDetailTool > ユーザー情報と表示名/ニックネームを単一 user フィールドで返す 1`] = `
 {
   "user": {
-    "avatar": null,
-    "banner": null,
+    "avatarUrl": "https://cdn.discordapp.com/guilds/guild-1/users/user-1/avatars/member-display.png",
+    "bannerUrl": "https://cdn.discordapp.com/banners/user-1/display-banner.png",
     "bot": false,
     "displayName": "guild-nick",
     "globalName": "global-user",
