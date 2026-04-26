@@ -22,16 +22,15 @@ describe("createDiscordRestHistoryGateway", () => {
               members: {
                 fetch: vi.fn(async () => {
                   return {
+                    displayAvatarURL: vi.fn(() => {
+                      return "https://cdn.discordapp.com/guild-member-display-avatar.png";
+                    }),
+                    displayBannerURL: vi.fn(() => {
+                      return "https://cdn.discordapp.com/user-display-banner.png";
+                    }),
                     joinedAt: new Date("2026-01-01T00:00:00.000Z"),
                     nickname: "nick-name",
-                    user: {
-                      avatar: null,
-                      banner: "banner",
-                      bot: true,
-                      globalName: "Global Name",
-                      id: "user-1",
-                      username: "user-name",
-                    },
+                    user: createRawUser(),
                   };
                 }),
               },
@@ -43,14 +42,7 @@ describe("createDiscordRestHistoryGateway", () => {
       },
       users: {
         fetch: vi.fn(async () => {
-          return {
-            avatar: null,
-            banner: "banner",
-            bot: true,
-            globalName: "Global Name",
-            id: "user-1",
-            username: "user-name",
-          };
+          return createRawUser();
         }),
       },
     });
@@ -66,8 +58,8 @@ describe("createDiscordRestHistoryGateway", () => {
     });
     await expect(gateway.fetchGuildEmojis("guild-1")).resolves.toEqual([]);
     await expect(gateway.fetchUserById("user-1")).resolves.toEqual({
-      avatar: null,
-      banner: "banner",
+      avatarUrl: "https://cdn.discordapp.com/user-display-avatar.png",
+      bannerUrl: "https://cdn.discordapp.com/user-display-banner.png",
       bot: true,
       globalName: "Global Name",
       id: "user-1",
@@ -79,12 +71,14 @@ describe("createDiscordRestHistoryGateway", () => {
         userId: "user-1",
       }),
     ).resolves.toEqual({
+      avatarUrl: "https://cdn.discordapp.com/guild-member-display-avatar.png",
+      bannerUrl: "https://cdn.discordapp.com/user-display-banner.png",
       guildId: "guild-1",
       joinedAt: "2026-01-01T00:00:00.000Z",
       nickname: "nick-name",
       user: {
-        avatar: null,
-        banner: "banner",
+        avatarUrl: "https://cdn.discordapp.com/user-display-avatar.png",
+        bannerUrl: "https://cdn.discordapp.com/user-display-banner.png",
         bot: true,
         globalName: "Global Name",
         id: "user-1",
@@ -486,5 +480,20 @@ function createRawGuildEmoji(input: { animated: boolean; id: string; name: strin
       return `https://cdn.discordapp.com/emojis/${input.id}.${input.animated ? "gif" : "webp"}`;
     }),
     name: input.name,
+  };
+}
+
+function createRawUser() {
+  return {
+    bot: true,
+    displayAvatarURL: vi.fn(() => {
+      return "https://cdn.discordapp.com/user-display-avatar.png";
+    }),
+    displayBannerURL: vi.fn(() => {
+      return "https://cdn.discordapp.com/user-display-banner.png";
+    }),
+    globalName: "Global Name",
+    id: "user-1",
+    username: "user-name",
   };
 }

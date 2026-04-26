@@ -102,8 +102,8 @@ describe("discord-mcp-response-text", () => {
     expect(
       formatGetUserDetailContent({
         user: {
-          avatar: null,
-          banner: null,
+          avatarUrl: "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+          bannerUrl: "https://cdn.discordapp.com/banners/user-1/display-banner.png",
           bot: false,
           displayName: "Alice",
           globalName: "Alice Global",

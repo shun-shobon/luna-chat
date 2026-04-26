@@ -305,19 +305,33 @@ function toDiscordUserDetail(rawUser: unknown): DiscordUserDetail | null {
     return null;
   }
 
-  const avatar = Reflect.get(rawUser, "avatar");
-  const banner = Reflect.get(rawUser, "banner");
   const bot = Reflect.get(rawUser, "bot");
   const globalName = Reflect.get(rawUser, "globalName");
 
   return {
-    avatar: typeof avatar === "string" ? avatar : null,
-    banner: typeof banner === "string" ? banner : null,
+    avatarUrl: getOptionalStringFromMethod(rawUser, "displayAvatarURL"),
+    bannerUrl: getOptionalStringFromMethod(rawUser, "displayBannerURL"),
     bot: bot === true,
     globalName: typeof globalName === "string" ? globalName : null,
     id,
     username,
   };
+}
+
+function getOptionalStringFromMethod(target: object, methodName: string): string | null {
+  const method = Reflect.get(target, methodName);
+  if (typeof method !== "function") {
+    return null;
+  }
+
+  try {
+    const value = method.call(target, {
+      size: 1024,
+    });
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function isGuildWithMemberFetcher(guild: unknown): guild is {
@@ -350,6 +364,8 @@ function toDiscordGuildMemberDetail(input: {
   const user = toDiscordUserDetail(Reflect.get(input.member, "user"));
 
   return {
+    avatarUrl: getOptionalStringFromMethod(input.member, "displayAvatarURL"),
+    bannerUrl: getOptionalStringFromMethod(input.member, "displayBannerURL"),
     guildId: input.guildId,
     joinedAt: joinedAt instanceof Date ? joinedAt.toISOString() : null,
     nickname: typeof nickname === "string" ? nickname : null,

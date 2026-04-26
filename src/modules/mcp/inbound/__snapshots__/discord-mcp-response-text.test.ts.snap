@@ -44,8 +44,8 @@ exports[`discord-mcp-response-text > 他ツールのレスポンスを整形す�
 Bot: false
 ニックネーム: なし
 グローバル名: Alice Global
-アバター: なし
-バナー: なし"
+アバターURL: https://cdn.discordapp.com/avatars/user-1/display-avatar.png
+バナーURL: https://cdn.discordapp.com/banners/user-1/display-banner.png"
 `;
 
 exports[`discord-mcp-response-text > 他ツールのレスポンスを整形する > list_channels 1`] = `"- general (ID: channel-1, Guild: Guild Name (ID: guild-1))"`;

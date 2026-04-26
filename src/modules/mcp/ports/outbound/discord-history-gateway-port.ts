@@ -24,8 +24,8 @@ export type DiscordChannelSummary = {
 };
 
 export type DiscordUserDetail = {
-  avatar: string | null;
-  banner: string | null;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
   bot: boolean;
   globalName: string | null;
   id: string;
@@ -33,6 +33,8 @@ export type DiscordUserDetail = {
 };
 
 export type DiscordGuildMemberDetail = {
+  avatarUrl: string | null;
+  bannerUrl: string | null;
   guildId: string;
   joinedAt: string | null;
   nickname: string | null;

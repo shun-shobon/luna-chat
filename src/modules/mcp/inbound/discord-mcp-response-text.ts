@@ -32,8 +32,8 @@ type ListChannelsResult = {
 
 type GetUserDetailResult = {
   user: {
-    avatar: string | null;
-    banner: string | null;
+    avatarUrl: string | null;
+    bannerUrl: string | null;
     bot: boolean;
     displayName: string;
     globalName: string | null;
@@ -143,8 +143,8 @@ export function formatGetUserDetailContent(payload: GetUserDetailResult): string
     `Bot: ${payload.user.bot ? "true" : "false"}`,
     `ニックネーム: ${payload.user.nickname ?? "なし"}`,
     `グローバル名: ${payload.user.globalName ?? "なし"}`,
-    `アバター: ${payload.user.avatar ?? "なし"}`,
-    `バナー: ${payload.user.banner ?? "なし"}`,
+    `アバターURL: ${payload.user.avatarUrl ?? "なし"}`,
+    `バナーURL: ${payload.user.bannerUrl ?? "なし"}`,
   ].join("\n");
 }
 

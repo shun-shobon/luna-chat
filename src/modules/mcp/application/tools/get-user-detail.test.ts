@@ -20,8 +20,8 @@ describe("getUserDetailTool", () => {
     );
     const fetchUserById: DiscordHistoryGateway["fetchUserById"] = vi.fn(async () => {
       return {
-        avatar: null,
-        banner: null,
+        avatarUrl: "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+        bannerUrl: "https://cdn.discordapp.com/banners/user-1/display-banner.png",
         bot: false,
         globalName: "global-user",
         id: "user-1",
@@ -31,6 +31,9 @@ describe("getUserDetailTool", () => {
     const fetchGuildMemberByUserId: DiscordHistoryGateway["fetchGuildMemberByUserId"] = vi.fn(
       async () => {
         return {
+          avatarUrl:
+            "https://cdn.discordapp.com/guilds/guild-1/users/user-1/avatars/member-display.png",
+          bannerUrl: null,
           guildId: "guild-1",
           joinedAt: "2026-01-01T00:00:00.000Z",
           nickname: "guild-nick",
@@ -71,6 +74,8 @@ describe("getUserDetailTool", () => {
       }),
       fetchGuildMemberByUserId: vi.fn(async () => {
         return {
+          avatarUrl: null,
+          bannerUrl: null,
           guildId: "guild-1",
           joinedAt: null,
           nickname: null,
@@ -78,8 +83,8 @@ describe("getUserDetailTool", () => {
       }),
       fetchUserById: vi.fn(async () => {
         return {
-          avatar: null,
-          banner: null,
+          avatarUrl: "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+          bannerUrl: null,
           bot: false,
           globalName: "global-name",
           id: "user-1",
@@ -102,8 +107,8 @@ describe("getUserDetailTool", () => {
     const gateway = createGatewayStub({
       fetchUserById: vi.fn(async () => {
         return {
-          avatar: null,
-          banner: null,
+          avatarUrl: "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+          bannerUrl: null,
           bot: false,
           globalName: "global-name",
           id: "user-1",
@@ -121,8 +126,8 @@ describe("getUserDetailTool", () => {
       }),
     ).resolves.toEqual({
       user: {
-        avatar: null,
-        banner: null,
+        avatarUrl: "https://cdn.discordapp.com/avatars/user-1/display-avatar.png",
+        bannerUrl: null,
         bot: false,
         displayName: "global-name",
         globalName: "global-name",
