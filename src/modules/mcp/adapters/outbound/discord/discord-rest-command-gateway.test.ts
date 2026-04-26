@@ -51,9 +51,6 @@ describe("createDiscordRestCommandGateway", () => {
 
     expect(client.channels.fetch).toHaveBeenCalledWith("channel-1");
     expect(client.channel.send).toHaveBeenCalledWith({
-      allowedMentions: {
-        parse: [],
-      },
       content: "hello",
     });
   });
@@ -72,9 +69,6 @@ describe("createDiscordRestCommandGateway", () => {
     });
 
     expect(client.channel.send).toHaveBeenCalledWith({
-      allowedMentions: {
-        parse: [],
-      },
       files: [
         expect.objectContaining({
           attachment: "/tmp/report.txt",
@@ -100,10 +94,6 @@ describe("createDiscordRestCommandGateway", () => {
     });
 
     expect(client.channel.send).toHaveBeenCalledWith({
-      allowedMentions: {
-        parse: [],
-        repliedUser: true,
-      },
       content: "hello",
       files: [
         expect.objectContaining({
@@ -146,11 +136,7 @@ describe("createDiscordRestCommandGateway", () => {
     if (!sentOptions) {
       throw new Error("send was not called");
     }
-    expect(sentOptions).toMatchObject({
-      allowedMentions: {
-        parse: [],
-      },
-    });
+    expect(sentOptions).not.toHaveProperty("allowedMentions");
     expect(sentOptions).not.toHaveProperty("content");
     const attachments = sentOptions.files;
     expect(attachments).toHaveLength(2);
@@ -185,10 +171,6 @@ describe("createDiscordRestCommandGateway", () => {
       throw new Error("send was not called");
     }
     expect(sentOptions).toMatchObject({
-      allowedMentions: {
-        parse: [],
-        repliedUser: true,
-      },
       content: "hello",
       reply: {
         failIfNotExists: false,
