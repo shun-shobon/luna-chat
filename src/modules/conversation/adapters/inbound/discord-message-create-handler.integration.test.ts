@@ -1,10 +1,12 @@
 import { Collection } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DiscordAiDispatcher } from "../../application/discord-ai-dispatcher";
+
 import {
   handleMessageCreate,
+  handleTypingStart,
   type MessageLike,
-  type ReplyGenerator,
 } from "./discord-message-create-handler";
 
 type AttachmentLike = {
@@ -75,11 +77,11 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       sendTyping,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -97,11 +99,11 @@ describe("handleMessageCreate integration", () => {
       authorIsBot: true,
       authorUsername: "other-bot",
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -153,11 +155,11 @@ describe("handleMessageCreate integration", () => {
       reply,
       sendTyping,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -190,6 +192,7 @@ describe("handleMessageCreate integration", () => {
         mentionedBot: false,
       },
       loadRecentMessages: expect.any(Function),
+      sendTyping: expect.any(Function),
     });
     await expect(aiInput.loadRecentMessages()).resolves.toEqual([
       {
@@ -235,11 +238,11 @@ describe("handleMessageCreate integration", () => {
       inGuild: false,
       sendTyping,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -255,11 +258,11 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({
       inGuild: false,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: true,
       botUserId: "bot",
@@ -283,11 +286,11 @@ describe("handleMessageCreate integration", () => {
       isThread: true,
       sendTyping,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -299,21 +302,20 @@ describe("handleMessageCreate integration", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("メンション投稿で AI が失敗してもフォールバック返信しない", async () => {
+  it("メンション投稿では dispatcher に typing 送信用関数を渡す", async () => {
     const reply = vi.fn(async () => undefined);
     const logger = createLogger();
+    const sendTyping = vi.fn(async () => undefined);
     const message = createMessage({
       mentionBot: true,
       reply,
+      sendTyping,
     });
-    const aiService = createAiService(
-      vi.fn(async () => {
-        throw new Error("ai failed");
-      }),
-    );
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
+    const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -322,7 +324,16 @@ describe("handleMessageCreate integration", () => {
     });
 
     expect(reply).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith("Failed to generate AI reply:", expect.any(Error));
+    expect(sendTyping).not.toHaveBeenCalled();
+    expect(generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentMessage: expect.objectContaining({
+          mentionedBot: true,
+        }),
+        sendTyping: expect.any(Function),
+      }),
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it("返信投稿では返信先情報を含めて AI が呼び出される", async () => {
@@ -337,11 +348,11 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({
       referenceMessage: referencedMessage,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -383,11 +394,11 @@ describe("handleMessageCreate integration", () => {
       return new Collection<string, HistoryMessageLike>([["history-reply", historyReply]]);
     });
     const message = createMessage({ fetchHistory });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -423,12 +434,12 @@ describe("handleMessageCreate integration", () => {
       fetchReference,
       referenceMessageId: "reply-target-id",
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -455,11 +466,11 @@ describe("handleMessageCreate integration", () => {
     const reply = vi.fn(async () => undefined);
     const sendTyping = vi.fn(async () => undefined);
     const message = createMessage({ channelId: "other", reply, sendTyping });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -472,6 +483,105 @@ describe("handleMessageCreate integration", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
+  it("許可チャンネルの typingStart は dispatcher に記録する", () => {
+    const recordTypingStart = vi.fn<DiscordAiDispatcher["recordTypingStart"]>(() => undefined);
+
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      messageDispatcher: {
+        recordTypingStart,
+      },
+      typing: createTyping({
+        channelId: "allowed",
+        userId: "author",
+      }),
+    });
+
+    expect(recordTypingStart).toHaveBeenCalledWith({
+      scopeKey: "channel:allowed",
+      userId: "author",
+    });
+  });
+
+  it("ルナ自身と指定外チャンネルとスレッドの typingStart は無視する", () => {
+    const recordTypingStart = vi.fn<DiscordAiDispatcher["recordTypingStart"]>(() => undefined);
+    const messageDispatcher = {
+      recordTypingStart,
+    };
+
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      messageDispatcher,
+      typing: createTyping({
+        channelId: "allowed",
+        userId: "bot",
+      }),
+    });
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      messageDispatcher,
+      typing: createTyping({
+        channelId: "other",
+        userId: "author",
+      }),
+    });
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      messageDispatcher,
+      typing: createTyping({
+        channelId: "allowed",
+        isThread: true,
+        userId: "author",
+      }),
+    });
+
+    expect(recordTypingStart).not.toHaveBeenCalled();
+  });
+
+  it("DM typingStart は allow_dm が true の場合だけユーザースコープで記録する", () => {
+    const recordTypingStart = vi.fn<DiscordAiDispatcher["recordTypingStart"]>(() => undefined);
+    const messageDispatcher = {
+      recordTypingStart,
+    };
+
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      messageDispatcher,
+      typing: createTyping({
+        channelId: "dm-channel",
+        inGuild: false,
+        userId: "author",
+      }),
+    });
+    handleTypingStart({
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: true,
+      botUserId: "bot",
+      messageDispatcher,
+      typing: createTyping({
+        channelId: "dm-channel",
+        inGuild: false,
+        userId: "author",
+      }),
+    });
+
+    expect(recordTypingStart).toHaveBeenCalledTimes(1);
+    expect(recordTypingStart).toHaveBeenCalledWith({
+      scopeKey: "dm-user:author",
+      userId: "author",
+    });
+  });
+
   it("履歴取得に失敗しても空履歴で AI を呼び出す", async () => {
     const fetchHistory = vi.fn(async () => {
       throw new Error("fetch failed");
@@ -480,12 +590,12 @@ describe("handleMessageCreate integration", () => {
       channelName: null,
       fetchHistory,
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -505,79 +615,55 @@ describe("handleMessageCreate integration", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("Botメンション時はAI処理中の入力中表示を定期更新する", async () => {
-    vi.useFakeTimers();
-    try {
-      const sendTyping = vi.fn(async () => undefined);
-      const message = createMessage({ mentionBot: true, sendTyping });
-      const aiService = createAiService(
-        vi.fn(async () => {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 17_000);
-          });
-          return undefined;
-        }),
-      );
+  it("Botメンション時も handler では入力中表示を直接送信しない", async () => {
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({ mentionBot: true, sendTyping });
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
+    const aiService = createAiService(generateReply);
 
-      const handlePromise = handleMessageCreate({
-        aiService,
-        allowedChannelIds: new Set(["allowed"]),
-        allowDm: false,
-        botUserId: "bot",
-        logger: createLogger(),
-        message,
-      });
-      await vi.advanceTimersByTimeAsync(17_000);
-      await handlePromise;
+    await handleMessageCreate({
+      messageDispatcher: aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
 
-      expect(sendTyping).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("Bot未メンション時はAI処理中でも入力中表示を送信しない", async () => {
-    vi.useFakeTimers();
-    try {
-      const sendTyping = vi.fn(async () => undefined);
-      const message = createMessage({ sendTyping });
-      const aiService = createAiService(
-        vi.fn(async () => {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 17_000);
-          });
-          return undefined;
-        }),
-      );
+  it("Bot未メンション時は入力中表示を送信しない", async () => {
+    const sendTyping = vi.fn(async () => undefined);
+    const message = createMessage({ sendTyping });
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
+    const aiService = createAiService(generateReply);
 
-      const handlePromise = handleMessageCreate({
-        aiService,
-        allowedChannelIds: new Set(["allowed"]),
-        allowDm: false,
-        botUserId: "bot",
-        logger: createLogger(),
-        message,
-      });
-      await vi.advanceTimersByTimeAsync(17_000);
-      await handlePromise;
+    await handleMessageCreate({
+      messageDispatcher: aiService,
+      allowedChannelIds: new Set(["allowed"]),
+      allowDm: false,
+      botUserId: "bot",
+      logger: createLogger(),
+      message,
+    });
 
-      expect(sendTyping).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(generateReply).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("入力中表示送信に失敗してもAI呼び出しは継続する", async () => {
+  it("入力中表示送信関数は handler では実行しない", async () => {
     const sendTyping = vi.fn(async () => {
       throw new Error("typing failed");
     });
     const message = createMessage({ mentionBot: true, sendTyping });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -586,7 +672,8 @@ describe("handleMessageCreate integration", () => {
     });
 
     expect(generateReply).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith("Failed to send typing indicator:", expect.any(Error));
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
   });
 
   it("添付ファイルがある場合は本文と分離して AI 入力に含める", async () => {
@@ -604,11 +691,11 @@ describe("handleMessageCreate integration", () => {
         },
       ],
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -647,12 +734,12 @@ describe("handleMessageCreate integration", () => {
         },
       ],
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const logger = createLogger();
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -699,11 +786,11 @@ describe("handleMessageCreate integration", () => {
         },
       ],
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -769,11 +856,11 @@ describe("handleMessageCreate integration", () => {
         ],
       }),
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -813,11 +900,11 @@ describe("handleMessageCreate integration", () => {
     const message = createMessage({
       reactions: [],
     });
-    const generateReply = vi.fn<ReplyGenerator["generateReply"]>(async () => undefined);
+    const generateReply = vi.fn<DiscordAiDispatcher["enqueue"]>(() => undefined);
     const aiService = createAiService(generateReply);
 
     await handleMessageCreate({
-      aiService,
+      messageDispatcher: aiService,
       allowedChannelIds: new Set(["allowed"]),
       allowDm: false,
       botUserId: "bot",
@@ -915,6 +1002,24 @@ function createMessage(input?: {
     reference,
     fetchReference,
     reactions: createReactionManager(input?.reactions ?? []),
+  };
+}
+
+function createTyping(input: {
+  channelId: string;
+  inGuild?: boolean;
+  isThread?: boolean;
+  userId: string;
+}) {
+  return {
+    channel: {
+      id: input.channelId,
+      isThread: () => input.isThread ?? false,
+    },
+    inGuild: () => input.inGuild ?? true,
+    user: {
+      id: input.userId,
+    },
   };
 }
 
@@ -1037,9 +1142,11 @@ function createReactionManager(reactions: ReactionLike[]) {
   };
 }
 
-function createAiService(generateReply: ReplyGenerator["generateReply"]): ReplyGenerator {
+function createAiService(
+  generateReply: DiscordAiDispatcher["enqueue"],
+): Pick<DiscordAiDispatcher, "enqueue"> {
   return {
-    generateReply,
+    enqueue: generateReply,
   };
 }
 

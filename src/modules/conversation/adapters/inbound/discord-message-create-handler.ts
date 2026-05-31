@@ -3,7 +3,12 @@ import { Collection } from "discord.js";
 import { formatDateTimeJst } from "../../../../shared/discord/format-date-time-jst";
 import { toRuntimeReactions } from "../../../../shared/discord/runtime-reaction";
 import { toRuntimeStickers } from "../../../../shared/discord/runtime-sticker";
-import { createTypingLifecycleRegistry } from "../../../typing/typing-lifecycle-registry";
+import type { DiscordPromptContext } from "../../../ai/ports/inbound/ai-service-port";
+import type { DiscordAiDispatcher } from "../../application/discord-ai-dispatcher";
+import {
+  resolveDiscordChannelScopeKey,
+  resolveDiscordDmScopeKey,
+} from "../../application/discord-ai-dispatcher";
 import type {
   RuntimeAttachment,
   RuntimeMessage,
@@ -100,27 +105,21 @@ export type MessageLike = {
   fetchReference?: () => Promise<RuntimeMessageSource>;
 };
 
+type TypingLike = {
+  inGuild: () => boolean;
+  channel: {
+    id: string;
+    isThread?: (() => boolean) | undefined;
+  };
+  user: {
+    id: string;
+  };
+};
+
 type LoggerLike = {
   info: (...arguments_: unknown[]) => void;
   warn: (...arguments_: unknown[]) => void;
   error: (...arguments_: unknown[]) => void;
-};
-
-export type GenerateReplyInput = {
-  context:
-    | {
-        kind: "channel";
-        channelName: string;
-      }
-    | {
-        kind: "dm";
-      };
-  currentMessage: RuntimeMessage;
-  loadRecentMessages: () => Promise<RuntimeMessage[]>;
-};
-
-export type ReplyGenerator = {
-  generateReply: (input: GenerateReplyInput) => Promise<void>;
 };
 
 type HandleMessageInput = {
@@ -128,9 +127,16 @@ type HandleMessageInput = {
   botUserId: string;
   allowedChannelIds: ReadonlySet<string>;
   allowDm: boolean;
-  aiService: ReplyGenerator;
+  messageDispatcher: Pick<DiscordAiDispatcher, "enqueue">;
   logger: LoggerLike;
-  typingLifecycleRegistry?: ReturnType<typeof createTypingLifecycleRegistry>;
+};
+
+type HandleTypingStartInput = {
+  typing: TypingLike;
+  botUserId: string;
+  allowedChannelIds: ReadonlySet<string>;
+  allowDm: boolean;
+  messageDispatcher: Pick<DiscordAiDispatcher, "recordTypingStart">;
 };
 
 type ReplyPolicyInput = {
@@ -142,11 +148,9 @@ type ReplyPolicyInput = {
 };
 
 const INITIAL_PROMPT_HISTORY_LIMIT = 10;
-const defaultTypingLifecycleRegistry = createTypingLifecycleRegistry();
 
 export async function handleMessageCreate(input: HandleMessageInput): Promise<void> {
   const { message } = input;
-  const typingLifecycleRegistry = input.typingLifecycleRegistry ?? defaultTypingLifecycleRegistry;
   if (message.author.id === input.botUserId) {
     return;
   }
@@ -168,34 +172,47 @@ export async function handleMessageCreate(input: HandleMessageInput): Promise<vo
     message,
   });
 
-  const stopTypingLoop = currentMessage.mentionedBot
-    ? typingLifecycleRegistry.start({
-        channelId: message.channelId,
-        onTypingError: (error) => {
-          input.logger.warn("Failed to send typing indicator:", error);
-        },
-        sendTyping: toSendTyping(message.channel),
-        source: `message:${message.id}`,
-      }).stop
-    : () => undefined;
+  input.messageDispatcher.enqueue({
+    context: resolvePromptContext(message),
+    currentMessage,
+    loadRecentMessages: async () => {
+      return await fetchRecentMessages({
+        botUserId: input.botUserId,
+        logger: input.logger,
+        message,
+      });
+    },
+    sendTyping: toSendTyping(message.channel),
+  });
+}
 
-  try {
-    await input.aiService.generateReply({
-      context: resolvePromptContext(message),
-      currentMessage,
-      loadRecentMessages: async () => {
-        return await fetchRecentMessages({
-          botUserId: input.botUserId,
-          logger: input.logger,
-          message,
-        });
-      },
-    });
-  } catch (error: unknown) {
-    input.logger.error("Failed to generate AI reply:", error);
-  } finally {
-    stopTypingLoop();
+export function handleTypingStart(input: HandleTypingStartInput): void {
+  const { typing } = input;
+  if (typing.user.id === input.botUserId) {
+    return;
   }
+
+  const policyDecision = evaluateReplyPolicy({
+    allowedChannelIds: input.allowedChannelIds,
+    allowDm: input.allowDm,
+    channelId: typing.channel.id,
+    isDm: !typing.inGuild(),
+    isThread: isTypingThread(typing),
+  });
+  if (!policyDecision.shouldHandle) {
+    return;
+  }
+
+  input.messageDispatcher.recordTypingStart({
+    scopeKey: typing.inGuild()
+      ? resolveDiscordChannelScopeKey(typing.channel.id)
+      : resolveDiscordDmScopeKey(typing.user.id),
+    userId: typing.user.id,
+  });
+}
+
+function isTypingThread(typing: TypingLike): boolean {
+  return typing.channel.isThread?.() ?? false;
 }
 
 function toSendTyping(
@@ -438,7 +455,7 @@ function resolveChannelName(channelName: string | null | undefined): string {
 
 function resolvePromptContext(
   message: Pick<MessageLike, "inGuild" | "channel">,
-): GenerateReplyInput["context"] {
+): DiscordPromptContext {
   if (!message.inGuild()) {
     return {
       kind: "dm",

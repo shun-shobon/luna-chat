@@ -26,7 +26,7 @@ describe("buildUserRolePrompt", () => {
     expect(userRolePrompt).not.toContain("以下は現在の入力情報です。");
 
     const recentMessagesIndex = userRolePrompt.indexOf("<recent_messages");
-    const currentMessageIndex = userRolePrompt.indexOf("<current_message>");
+    const currentMessageIndex = userRolePrompt.indexOf("<current_messages");
     expect(recentMessagesIndex).toBeGreaterThanOrEqual(0);
     expect(currentMessageIndex).toBeGreaterThan(recentMessagesIndex);
     expect(userRolePrompt).toMatchSnapshot();
@@ -296,7 +296,30 @@ describe("buildUserRolePrompt", () => {
     expect(userRolePrompt).not.toContain("## 直近のメッセージ");
     expect(userRolePrompt).not.toContain("(none)");
     expect(userRolePrompt).toContain('<recent_messages count="0" />');
-    expect(userRolePrompt).toContain("<current_message>");
+    expect(userRolePrompt).toContain('<current_messages count="1">');
+    expect(userRolePrompt).toMatchSnapshot();
+  });
+
+  it("現在メッセージが複数ある場合は順序どおりにすべて含める", () => {
+    const input = createInput();
+    input.currentMessages.push({
+      attachments: [],
+      authorId: "author-id-2",
+      authorIsBot: false,
+      authorName: "author-name-2",
+      channelId: "channel-id",
+      content: "二つ目の投稿",
+      createdAt: "2026-02-23 09:00:05 JST",
+      id: "message-id-2",
+      mentionedBot: false,
+    });
+
+    const userRolePrompt = buildUserRolePrompt(input);
+
+    expect(userRolePrompt).toContain('<current_messages count="2">');
+    expect(userRolePrompt.indexOf("message-id-2")).toBeGreaterThan(
+      userRolePrompt.indexOf("message-id"),
+    );
     expect(userRolePrompt).toMatchSnapshot();
   });
 
@@ -433,24 +456,28 @@ describe("buildHeartbeatPromptBundle", () => {
 function createInput(): {
   context: DiscordPromptContext;
   currentMessage: RuntimeMessage;
+  currentMessages: [RuntimeMessage, ...RuntimeMessage[]];
   recentMessages: RuntimeMessage[];
 } {
+  const currentMessage: RuntimeMessage = {
+    authorId: "author-id",
+    authorIsBot: false,
+    authorName: "author-name",
+    channelId: "channel-id",
+    content: "テスト本文",
+    attachments: [],
+    createdAt: "2026-02-23 09:00:00 JST",
+    id: "message-id",
+    mentionedBot: false,
+  };
+
   return {
     context: {
       kind: "channel",
       channelName: "channel-name",
     },
-    currentMessage: {
-      authorId: "author-id",
-      authorIsBot: false,
-      authorName: "author-name",
-      channelId: "channel-id",
-      content: "テスト本文",
-      attachments: [],
-      createdAt: "2026-02-23 09:00:00 JST",
-      id: "message-id",
-      mentionedBot: false,
-    },
+    currentMessage,
+    currentMessages: [currentMessage],
     recentMessages: [
       {
         authorId: "recent-author-id",
@@ -470,23 +497,27 @@ function createInput(): {
 function createDmInput(): {
   context: DiscordPromptContext;
   currentMessage: RuntimeMessage;
+  currentMessages: [RuntimeMessage, ...RuntimeMessage[]];
   recentMessages: RuntimeMessage[];
 } {
+  const currentMessage: RuntimeMessage = {
+    authorId: "author-id",
+    authorIsBot: false,
+    authorName: "author-name",
+    channelId: "channel-id",
+    content: "テスト本文",
+    attachments: [],
+    createdAt: "2026-02-23 09:00:00 JST",
+    id: "message-id",
+    mentionedBot: false,
+  };
+
   return {
     context: {
       kind: "dm",
     },
-    currentMessage: {
-      authorId: "author-id",
-      authorIsBot: false,
-      authorName: "author-name",
-      channelId: "channel-id",
-      content: "テスト本文",
-      attachments: [],
-      createdAt: "2026-02-23 09:00:00 JST",
-      id: "message-id",
-      mentionedBot: false,
-    },
+    currentMessage,
+    currentMessages: [currentMessage],
     recentMessages: [
       {
         authorId: "recent-author-id",

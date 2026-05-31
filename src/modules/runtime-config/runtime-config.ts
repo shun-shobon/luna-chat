@@ -22,12 +22,16 @@ const LOGS_DIR_NAME = "logs";
 const DEFAULT_TEMPLATES_DIR_NAME = "templates";
 const CONFIG_FILE_NAME = "config.toml";
 const DEFAULT_HEARTBEAT_CRON_TIME = "0 0,30 * * * *";
+const DEFAULT_AI_DISPATCH_DELAY_MS = 5_000;
+const DEFAULT_TYPING_IDLE_TIMEOUT_MS = 10_000;
 
 type RuntimeSettings = {
   time_zone?: string;
   discord: {
     allowed_channel_ids: string[];
+    ai_dispatch_delay_ms: number;
     allow_dm: boolean;
+    typing_idle_timeout_ms: number;
   };
   heartbeat: {
     cron_time: string;
@@ -37,7 +41,9 @@ type RuntimeSettings = {
 const DEFAULT_RUNTIME_SETTINGS: RuntimeSettings = {
   discord: {
     allowed_channel_ids: [],
+    ai_dispatch_delay_ms: DEFAULT_AI_DISPATCH_DELAY_MS,
     allow_dm: false,
+    typing_idle_timeout_ms: DEFAULT_TYPING_IDLE_TIMEOUT_MS,
   },
   heartbeat: {
     cron_time: DEFAULT_HEARTBEAT_CRON_TIME,
@@ -48,7 +54,17 @@ const RuntimeSettingsSchema = z.looseObject({
   time_zone: z.string().trim().min(1).optional(),
   discord: z.looseObject({
     allowed_channel_ids: z.array(z.string()),
+    ai_dispatch_delay_ms: z
+      .number()
+      .int()
+      .min(0)
+      .default(DEFAULT_RUNTIME_SETTINGS.discord.ai_dispatch_delay_ms),
     allow_dm: z.boolean().default(DEFAULT_RUNTIME_SETTINGS.discord.allow_dm),
+    typing_idle_timeout_ms: z
+      .number()
+      .int()
+      .min(1)
+      .default(DEFAULT_RUNTIME_SETTINGS.discord.typing_idle_timeout_ms),
   }),
   heartbeat: z
     .looseObject({
@@ -60,7 +76,9 @@ const RuntimeSettingsSchema = z.looseObject({
 export type RuntimeConfig = {
   discordBotToken: string;
   allowedChannelIds: ReadonlySet<string>;
+  aiDispatchDelayMs: number;
   allowDm: boolean;
+  typingIdleTimeoutMs: number;
   heartbeatCronTime: string;
   timeZone: string | undefined;
   lunaHomeDir: string;
@@ -108,7 +126,9 @@ export async function loadRuntimeConfig(
 
   return {
     allowedChannelIds: runtimeSettings.allowedChannelIds,
+    aiDispatchDelayMs: runtimeSettings.aiDispatchDelayMs,
     allowDm: runtimeSettings.allowDm,
+    typingIdleTimeoutMs: runtimeSettings.typingIdleTimeoutMs,
     heartbeatCronTime: runtimeSettings.heartbeatCronTime,
     timeZone: runtimeSettings.timeZone,
     lunaHomeDir,
@@ -121,14 +141,16 @@ export async function loadRuntimeConfig(
 
 function parseRuntimeSettingsFromConfig(rawConfig: unknown): {
   allowedChannelIds: ReadonlySet<string>;
+  aiDispatchDelayMs: number;
   allowDm: boolean;
+  typingIdleTimeoutMs: number;
   heartbeatCronTime: string;
   timeZone: string | undefined;
 } {
   const parseResult = RuntimeSettingsSchema.safeParse(rawConfig);
   if (!parseResult.success) {
     throw new RuntimeConfigError(
-      "config.toml must define [discord].allowed_channel_ids as an array of strings, optional [discord].allow_dm as a boolean, optional [heartbeat].cron_time, and optional top-level time_zone.",
+      "config.toml must define [discord].allowed_channel_ids as an array of strings, optional [discord].allow_dm as a boolean, optional [discord].ai_dispatch_delay_ms as a non-negative integer, optional [discord].typing_idle_timeout_ms as a positive integer, optional [heartbeat].cron_time, and optional top-level time_zone.",
     );
   }
   if (hasDeprecatedHeartbeatTimeZone(rawConfig)) {
@@ -146,7 +168,9 @@ function parseRuntimeSettingsFromConfig(rawConfig: unknown): {
 
   return {
     allowedChannelIds: new Set(allowedChannelIds),
+    aiDispatchDelayMs: parseResult.data.discord.ai_dispatch_delay_ms,
     allowDm: parseResult.data.discord.allow_dm,
+    typingIdleTimeoutMs: parseResult.data.discord.typing_idle_timeout_ms,
     heartbeatCronTime,
     timeZone,
   };

@@ -12,20 +12,19 @@ type ThreadPromptBundle = {
 
 type UserRolePromptInput = {
   context: DiscordPromptContext;
-  currentMessage: RuntimeMessage;
+  currentMessages: [RuntimeMessage, ...RuntimeMessage[]];
   recentMessages: RuntimeMessage[];
 };
 
 const WORKSPACE_INSTRUCTION_FILES = ["LUNA.md", "SOUL.md"] as const;
 
 export function buildUserRolePrompt(input: UserRolePromptInput): string {
+  const firstCurrentMessage = input.currentMessages[0];
   return [
     `<luna_input source="discord_message">`,
-    formatDiscordContext(input.context, input.currentMessage),
+    formatDiscordContext(input.context, firstCurrentMessage),
     formatRecentMessages(input.recentMessages),
-    `  <current_message>`,
-    formatRuntimeMessageForPrompt(input.currentMessage, "    "),
-    `  </current_message>`,
+    formatCurrentMessages(input.currentMessages),
     `</luna_input>`,
   ].join("\n");
 }
@@ -82,6 +81,14 @@ function formatRecentMessages(messages: RuntimeMessage[]): string {
     `  <recent_messages count="${messages.length}">`,
     ...messages.map((message) => formatRuntimeMessageForPrompt(message, "    ")),
     `  </recent_messages>`,
+  ].join("\n");
+}
+
+function formatCurrentMessages(messages: [RuntimeMessage, ...RuntimeMessage[]]): string {
+  return [
+    `  <current_messages count="${messages.length}">`,
+    ...messages.map((message) => formatRuntimeMessageForPrompt(message, "    ")),
+    `  </current_messages>`,
   ].join("\n");
 }
 

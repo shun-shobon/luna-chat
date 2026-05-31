@@ -6,8 +6,9 @@ import { CodexAiRuntime } from "./modules/ai/adapters/outbound/codex/codex-ai-ru
 import { ChannelSessionCoordinator } from "./modules/ai/application/channel-session-coordinator";
 import {
   handleMessageCreate,
-  type ReplyGenerator,
+  handleTypingStart,
 } from "./modules/conversation/adapters/inbound/discord-message-create-handler";
+import { createDiscordAiDispatcher } from "./modules/conversation/application/discord-ai-dispatcher";
 import {
   startCronPromptScheduler,
   type CronPromptSchedulerHandle,
@@ -38,7 +39,9 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageTyping,
     GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.DirectMessageTyping,
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
@@ -103,7 +106,13 @@ await aiService.initializeRuntime().catch(async (error: unknown) => {
   process.exit(1);
 });
 
-const discordAiService: ReplyGenerator = aiService;
+const discordAiDispatcher = createDiscordAiDispatcher({
+  aiService,
+  dispatchDelayMs: runtimeConfig.aiDispatchDelayMs,
+  logger,
+  typingIdleTimeoutMs: runtimeConfig.typingIdleTimeoutMs,
+  typingLifecycleRegistry,
+});
 
 const heartbeatRunner = startHeartbeatRunner({
   aiService,
@@ -129,21 +138,31 @@ const cronPromptScheduler = await startCronPromptScheduler({
 
 client.on("messageCreate", async (message) => {
   await handleMessageCreate({
-    aiService: discordAiService,
     allowedChannelIds: runtimeConfig.allowedChannelIds,
     allowDm: runtimeConfig.allowDm,
     botUserId,
     logger,
     message,
-    typingLifecycleRegistry,
+    messageDispatcher: discordAiDispatcher,
   }).catch((error: unknown) => {
     logger.error("Unexpected handler failure:", error);
+  });
+});
+
+client.on("typingStart", (typing) => {
+  handleTypingStart({
+    allowedChannelIds: runtimeConfig.allowedChannelIds,
+    allowDm: runtimeConfig.allowDm,
+    botUserId,
+    messageDispatcher: discordAiDispatcher,
+    typing,
   });
 });
 
 registerShutdownHooks({
   client,
   cronPromptScheduler,
+  discordAiDispatcher,
   discordMcpServer,
   heartbeatRunner,
   aiService,
@@ -210,6 +229,7 @@ async function closeDiscordMcpServer(discordMcpServer: DiscordMcpServerHandle): 
 function registerShutdownHooks(input: {
   client: Client;
   cronPromptScheduler: CronPromptSchedulerHandle;
+  discordAiDispatcher: ReturnType<typeof createDiscordAiDispatcher>;
   discordMcpServer: DiscordMcpServerHandle;
   heartbeatRunner: HeartbeatRunnerHandle;
   aiService: ChannelSessionCoordinator;
@@ -226,6 +246,7 @@ function registerShutdownHooks(input: {
     });
     await input.cronPromptScheduler.stop();
     input.heartbeatRunner.stop();
+    input.discordAiDispatcher.dispose();
     input.typingLifecycleRegistry.stopAll();
     await input.client.destroy();
     await closeDiscordMcpServer(input.discordMcpServer);

@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import { loadRuntimeConfig, RuntimeConfigError } from "./runtime-config";
 
 const DEFAULT_HEARTBEAT_CRON_TIME = "0 0,30 * * * *";
+const DEFAULT_AI_DISPATCH_DELAY_MS = 5_000;
+const DEFAULT_TYPING_IDLE_TIMEOUT_MS = 10_000;
 
 describe("loadRuntimeConfig", () => {
   it("必須設定のみ読み込む", async () => {
@@ -26,7 +28,9 @@ describe("loadRuntimeConfig", () => {
 
     expect(config.discordBotToken).toBe("token");
     expect(Array.from(config.allowedChannelIds)).toEqual(["111", "222", "333"]);
+    expect(config.aiDispatchDelayMs).toBe(DEFAULT_AI_DISPATCH_DELAY_MS);
     expect(config.allowDm).toBe(false);
+    expect(config.typingIdleTimeoutMs).toBe(DEFAULT_TYPING_IDLE_TIMEOUT_MS);
     expect(config.heartbeatCronTime).toBe(DEFAULT_HEARTBEAT_CRON_TIME);
     expect(config.timeZone).toBeUndefined();
     expect(config.lunaHomeDir).toBe(resolve(lunaHomeDir));
@@ -110,6 +114,33 @@ describe("loadRuntimeConfig", () => {
     }
   });
 
+  it("config.toml の Discord 遅延設定を読み込む", async () => {
+    const lunaHomeDir = createTempLunaHomeDir();
+    await writeConfigToml(
+      lunaHomeDir,
+      createConfigToml({
+        aiDispatchDelayMs: 1_234,
+        allowedChannelIds: ["111"],
+        typingIdleTimeoutMs: 9_876,
+      }),
+    );
+
+    try {
+      const config = await loadRuntimeConfig({
+        LUNA_HOME: lunaHomeDir,
+        DISCORD_BOT_TOKEN: "token",
+      });
+
+      expect(config.aiDispatchDelayMs).toBe(1_234);
+      expect(config.typingIdleTimeoutMs).toBe(9_876);
+    } finally {
+      await rm(lunaHomeDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it("config.toml の heartbeat 設定を読み込む", async () => {
     const lunaHomeDir = createTempLunaHomeDir();
     await writeConfigToml(
@@ -177,8 +208,10 @@ describe("loadRuntimeConfig", () => {
       const generatedConfigToml = await readFile(resolve(lunaHomeDir, "config.toml"), "utf8");
       expect(parseTOML(generatedConfigToml)).toEqual({
         discord: {
+          ai_dispatch_delay_ms: DEFAULT_AI_DISPATCH_DELAY_MS,
           allow_dm: false,
           allowed_channel_ids: [],
+          typing_idle_timeout_ms: DEFAULT_TYPING_IDLE_TIMEOUT_MS,
         },
         heartbeat: {
           cron_time: DEFAULT_HEARTBEAT_CRON_TIME,
@@ -694,6 +727,56 @@ allow_dm = "true"
     }
   });
 
+  it("config.toml の ai_dispatch_delay_ms が非負整数でなければ失敗する", async () => {
+    const lunaHomeDir = createTempLunaHomeDir();
+    await writeConfigToml(
+      lunaHomeDir,
+      `[discord]
+allowed_channel_ids = ["111"]
+ai_dispatch_delay_ms = -1
+`,
+    );
+
+    try {
+      await expect(
+        loadRuntimeConfig({
+          LUNA_HOME: lunaHomeDir,
+          DISCORD_BOT_TOKEN: "token",
+        }),
+      ).rejects.toThrowError(RuntimeConfigError);
+    } finally {
+      await rm(lunaHomeDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it("config.toml の typing_idle_timeout_ms が正整数でなければ失敗する", async () => {
+    const lunaHomeDir = createTempLunaHomeDir();
+    await writeConfigToml(
+      lunaHomeDir,
+      `[discord]
+allowed_channel_ids = ["111"]
+typing_idle_timeout_ms = 0
+`,
+    );
+
+    try {
+      await expect(
+        loadRuntimeConfig({
+          LUNA_HOME: lunaHomeDir,
+          DISCORD_BOT_TOKEN: "token",
+        }),
+      ).rejects.toThrowError(RuntimeConfigError);
+    } finally {
+      await rm(lunaHomeDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it("config.toml の heartbeat.cron_time が不正値なら失敗する", async () => {
     const lunaHomeDir = createTempLunaHomeDir();
     await writeConfigToml(
@@ -826,11 +909,13 @@ function createTempLunaHomeDir(): string {
 }
 
 function createConfigToml(input: {
+  aiDispatchDelayMs?: number;
   allowedChannelIds: string[];
   allowDm?: boolean;
   heartbeat?: {
     cronTime: string;
   };
+  typingIdleTimeoutMs?: number;
   timeZone?: string;
 }): string {
   const channelIds = input.allowedChannelIds.map((channelId) => `"${channelId}"`).join(", ");
@@ -839,10 +924,14 @@ function createConfigToml(input: {
     cronTime: DEFAULT_HEARTBEAT_CRON_TIME,
   };
   const timeZoneLine = input.timeZone === undefined ? "" : `time_zone = "${input.timeZone}"\n`;
+  const aiDispatchDelayMs = input.aiDispatchDelayMs ?? DEFAULT_AI_DISPATCH_DELAY_MS;
+  const typingIdleTimeoutMs = input.typingIdleTimeoutMs ?? DEFAULT_TYPING_IDLE_TIMEOUT_MS;
   return (
     `${timeZoneLine}[discord]
 allowed_channel_ids = [${channelIds}]
 allow_dm = ${allowDm}
+ai_dispatch_delay_ms = ${aiDispatchDelayMs}
+typing_idle_timeout_ms = ${typingIdleTimeoutMs}
 
 [heartbeat]
 cron_time = "${heartbeat.cronTime}"

@@ -12,6 +12,38 @@ import { ChannelSessionCoordinator } from "./channel-session-coordinator";
 import { buildThreadConfig } from "./thread-config-factory";
 
 describe("ChannelSessionCoordinator", () => {
+  it("複数の現在メッセージを1つの turn として送る", async () => {
+    const runtime = new FakeAiRuntime();
+    const service = createService({
+      createRuntime: vi.fn(() => runtime),
+    });
+    const input = createAiInput("m1", "c1", "first");
+    input.currentMessages.push({
+      attachments: [],
+      authorId: "author-id-2",
+      authorIsBot: false,
+      authorName: "author-2",
+      channelId: "c1",
+      content: "second",
+      createdAt: "2026-01-01 09:00:05 JST",
+      id: "m2",
+      mentionedBot: false,
+    });
+
+    const replyPromise = service.generateReply(input);
+    await vi.waitFor(() => {
+      expect(runtime.startTurn).toHaveBeenCalledTimes(1);
+    });
+
+    const prompt = runtime.startTurn.mock.calls[0]?.[1];
+    expect(prompt).toContain('<current_messages count="2">');
+    expect(prompt).toContain("first");
+    expect(prompt).toContain("second");
+
+    runtime.completeTurn("turn-1", createCompletedTurnResult());
+    await replyPromise;
+  });
+
   it("進行中turnがある場合は steer を送る", async () => {
     const runtime = new FakeAiRuntime();
     const service = createService({
@@ -725,7 +757,7 @@ function createAiInput(
   } = {},
 ): {
   context: DiscordPromptContext;
-  currentMessage: RuntimeMessage;
+  currentMessages: [RuntimeMessage, ...RuntimeMessage[]];
   loadRecentMessages: () => Promise<RuntimeMessage[]>;
 } {
   const currentMessage: RuntimeMessage = {
@@ -746,7 +778,7 @@ function createAiInput(
       kind: "channel",
       channelName: `channel-${channelId}`,
     },
-    currentMessage,
+    currentMessages: [currentMessage],
     loadRecentMessages:
       options.loadRecentMessages ??
       (async () => {

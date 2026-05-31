@@ -34,8 +34,9 @@
 - `src/modules/runtime-config/runtime-config.ts`
   - 設定値検証（環境変数: `DISCORD_BOT_TOKEN` / `LUNA_HOME`、設定ファイル: `$LUNA_HOME/config.toml`）
   - `config.toml` の `[discord].allowed_channel_ids`（文字列配列）/ `[discord].allow_dm`（boolean）読み込み（`confbox`）
+  - `config.toml` の `[discord].ai_dispatch_delay_ms` / `[discord].typing_idle_timeout_ms` 読み込み（`confbox`）
   - `config.toml` の `[heartbeat].cron_time` / トップレベル `time_zone` 読み込み（`confbox`）
-  - `config.toml` 未存在時の自動生成（`allowed_channel_ids = []`, `allow_dm = false`, `heartbeat.cron_time = "0 0,30 * * * *"`）
+  - `config.toml` 未存在時の自動生成（`allowed_channel_ids = []`, `allow_dm = false`, `ai_dispatch_delay_ms = 5000`, `typing_idle_timeout_ms = 10000`, `heartbeat.cron_time = "0 0,30 * * * *"`）
   - `config.toml` の `[ai]` セクションは読み込まず、Codex 側既定のモデル/推論努力値を使用
   - `LUNA_HOME` / `workspace` / `codex` / `logs` の自動作成・書込可否検証
   - `templates` 配下の通常ファイルを再帰的に `workspace` へ不足分のみ自動コピー（既存は非上書き、空ディレクトリは許容、シンボリックリンクは起動エラー）
@@ -48,9 +49,15 @@
 
 - `src/modules/conversation/adapters/inbound/discord-message-create-handler.ts`
   - `messageCreate` ハンドリング
+  - `typingStart` ハンドリング
   - 返信判定（非スレッド・DMは`allow_dm`に従う・Guildは許可チャンネル）
   - `RuntimeMessage` 整形（返信先・添付メタデータ・リアクション含む）
-  - 初期履歴10件の遅延取得関数を AI へ渡す
+  - 初期履歴10件の遅延取得関数を dispatcher へ渡す
+- `src/modules/conversation/application/discord-ai-dispatcher.ts`
+  - Discord 投稿のスコープ別遅延バッチング（通常チャンネルは `channelId`、DM は `userId`）
+  - 同一スコープの追加投稿で待機タイマーをリセット
+  - 同一スコープの外部 typing 中は、投稿または typing 無音判定まで AI 送信を保留
+  - バッチ内メンション起点 typing の開始/停止
 - `src/modules/conversation/domain/runtime-message.ts`
   - `RuntimeMessage` / `RuntimeReplyMessage` / `RuntimeReaction` 型
 
@@ -67,6 +74,7 @@
   - `instructions` / `developerRolePrompt` / `userRolePrompt` 生成
   - `LUNA.md` / `SOUL.md` 連結
   - `userRolePrompt` を `source` 付き XML 風入力で構築
+  - Discord 投稿は `<current_messages count="N">` として複数新着メッセージを表現
 - `src/modules/ai/application/thread-config-factory.ts`
   - thread config 生成（MCP URL + `projects["<resolved workspace>"].trust_level = "trusted"` + `skills.config[*].enabled = false`）
 - `src/modules/ai/adapters/outbound/codex/*`
@@ -168,10 +176,12 @@
 3. 返信判定（スレッド除外、DMは`allow_dm`で判定、Guildは許可外チャンネルを除外）を行う。
 4. 現在メッセージを `RuntimeMessage` に変換する（添付・返信先・リアクション含む）。
 5. `mentionedBot=true` の場合のみ typing を開始する（source=`message:<id>`）。
-6. セッションキー内で未注入の履歴スコープの場合のみ直近履歴10件を遅延取得し、昇順整形して AI へ渡す（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
-7. AI は必要に応じて MCP tools を実行する。
-8. ハンドラ `finally` でメンション起点 typing を停止する。
-9. `send_message` 成功時と turn 完了時コールバックで channel 単位の typing を停止する。Discord セッションは継続し、30分アイドル時に破棄する（turn 実行中は完了後にクローズ）。
+6. dispatcher が `[discord].ai_dispatch_delay_ms` だけ待機し、待機中の同一スコープ投稿をバッチへ追加する。
+7. 同一スコープで外部 typing があれば、該当ユーザーの投稿または `[discord].typing_idle_timeout_ms` 経過まで AI 送信を保留する。
+8. セッションキー内で未注入の履歴スコープの場合のみ、バッチ先頭メッセージより前の直近履歴10件を遅延取得し、昇順整形して AI へ渡す。
+9. バッチ内に `mentionedBot=true` があれば、AI 送信中のみ typing を開始する。
+10. AI は必要に応じて MCP tools を実行する。
+11. `send_message` 成功時と turn 完了時コールバックで channel 単位の typing を停止する。Discord セッションは継続し、30分アイドル時に破棄する（turn 実行中は完了後にクローズ）。
 
 ### 6.2 連投時のセッション制御
 
@@ -211,6 +221,8 @@
 - `$LUNA_HOME/config.toml`: 起動時に自動生成（未存在時）
   - `[discord].allowed_channel_ids`: 文字列配列（例: `["123","456"]`）
   - `[discord].allow_dm`: boolean（`false` ならDM無効、`true` ならDM有効。未指定時 `false`）
+  - `[discord].ai_dispatch_delay_ms`: 非負整数（未指定時 `5000`）
+  - `[discord].typing_idle_timeout_ms`: 正整数（未指定時 `10000`）
   - 空配列でも起動継続（Bot は許可チャンネルなし状態で待機）
   - `[ai]` セクションは読み込まない（存在しても無視する）
   - `[heartbeat].cron_time`: cron 文字列（未指定時 `0 0,30 * * * *`）

@@ -19,6 +19,8 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - 指定されたチャンネルでのみ動作する。
 - 指定チャンネル内の投稿（メンション有無を問わない）を AI 処理対象とする。
 - DM 投稿の処理有無は `$LUNA_HOME/config.toml` の `[discord].allow_dm` で切り替える（`false` で無効、`true` で有効）。
+- Discord 投稿は即時 AI へ渡さず、`[discord].ai_dispatch_delay_ms`（未設定時 5000ms）だけ待機してから送信する。同一スコープ内で追加投稿があれば待機時間をリセットし、複数投稿をまとめて渡す。
+- AI 送信待機中にルナ以外のユーザーが同一スコープで typing 中の場合は、そのユーザーの投稿、または最後の typing から `[discord].typing_idle_timeout_ms`（未設定時 10000ms）経過まで送信を保留する。
 - `mentionedBot` 情報は AI 入力に含めるが、メンション優先制御はコード上で実装していない。
 - すべての投稿へ返信する必要はない。
 - Discord 投稿起点に加えて heartbeat 起点でも AI を実行する。
@@ -43,7 +45,7 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 
 - メッセージログを永続保存しない。
 - Discord メッセージと履歴は `userRolePrompt` 内の `source` 付き XML 風入力として AI に渡し、添付ファイルは自動保存せず `id` / `name` / `url` を含める。
-- AI 呼び出し時は現在メッセージに加えて、セッションキー内で未注入の履歴スコープに限り直近 10 件の履歴を初期入力として渡す（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
+- AI 呼び出し時は現在メッセージ群に加えて、セッションキー内で未注入の履歴スコープに限り直近 10 件の履歴を初期入力として渡す（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。初期履歴はバッチ先頭メッセージより前を基準に取得し、バッチ対象と重複させない。
 - さらに過去履歴が必要な場合、AI は tool use（`read_message_history`）で都度取得する。
 - `read_message_history` は 1 回あたり最大 100 件（未指定時 30 件）を取得でき、複数回呼び出せる。
 - `read_message_history` は `beforeMessageId` / `afterMessageId` / `aroundMessageId` のいずれか1つを任意指定できる（同時指定不可）。
@@ -86,6 +88,8 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 - 許可チャンネルは `$LUNA_HOME/config.toml` の `[discord].allowed_channel_ids`（文字列配列）で設定する。
 - 例: `allowed_channel_ids = ["1234567890", "2345678901"]`
 - DM 応答可否は `$LUNA_HOME/config.toml` の `[discord].allow_dm`（boolean）で設定する。
+- Discord 投稿の AI 送信遅延は `$LUNA_HOME/config.toml` の `[discord].ai_dispatch_delay_ms`（非負整数、未設定時 5000）で設定する。
+- typing の無音判定は `$LUNA_HOME/config.toml` の `[discord].typing_idle_timeout_ms`（正整数、未設定時 10000）で設定する。
 - AI モデル/推論努力値は `config.toml` では設定せず、Codex 側の既定設定を使用する。
 - heartbeat 実行タイミングは `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` で設定可能にする（未設定時 `0 0,30 * * * *`）。
 - heartbeat と cron prompt の共通タイムゾーンは `$LUNA_HOME/config.toml` のトップレベル `time_zone` で設定可能にする（未設定時はシステムタイムゾーン）。
@@ -109,3 +113,4 @@ luna-chat は、身内向け Discord サーバーで雑談に自然参加する 
 14. Codex app-server が起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有される。
 15. Discord セッションは turn 完了後も再利用され、通常チャンネル投稿は `channelId` ごとに 1 セッション、DM 投稿は `userId` ごとのセッションで運用され、各セッションは 30 分アイドルで閉じる。
 16. Discord MCP の各 tool はレスポンスをプレーンテキストで返す。
+17. 同一スコープの連投は設定遅延内で1回の AI 入力にまとめられ、同一スコープの他ユーザー typing 中は投稿または typing 無音判定まで AI 送信が保留される。

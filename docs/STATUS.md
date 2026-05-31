@@ -2,7 +2,7 @@
 
 ## 1. 最終更新
 
-- 2026-04-26
+- 2026-06-01
 - 更新者: AI
 
 ## 2. 現在の真実（Project Truth）
@@ -10,8 +10,11 @@
 - 返信判定は `$LUNA_HOME/config.toml` の `[discord].allow_dm` + `[discord].allowed_channel_ids` + 非スレッドで行う（DMは `allow_dm` が `true` のときのみ処理）。
 - メンション有無は `mentionedBot` として保持するが、返信優先制御には使っていない。
 - Bot投稿は無視し、Guildでは許可チャンネル投稿、DMでは `allow_dm=true` の投稿を AI へ渡す。
-- AI 入力には現在メッセージを渡し、セッションキー内で未注入の履歴スコープの場合のみ直近 10 件履歴を初期投入する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
-- Discord メッセージ / 初期履歴 / `read_message_history` 返却は `source` 付き XML 風入力で扱う。
+- Discord 投稿は `[discord].ai_dispatch_delay_ms`（未設定時 5000ms）だけ待機してから AI へ渡す。
+- 待機中の同一スコープ投稿は1つのバッチにまとめ、追加投稿ごとに待機時間をリセットする（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
+- 同一スコープでルナ以外のユーザーが typing 中の場合は、そのユーザーの投稿、または `[discord].typing_idle_timeout_ms`（未設定時 10000ms）経過まで AI 送信を保留する。
+- AI 入力には現在メッセージ群を渡し、セッションキー内で未注入の履歴スコープの場合のみ、バッチ先頭メッセージより前の直近 10 件履歴を初期投入する（通常チャンネル投稿は `channelId` 単位、DM 投稿は `userId` 単位）。
+- Discord メッセージ / 初期履歴 / `read_message_history` 返却は `source` 付き XML 風入力で扱い、Discord 投稿起点の現在入力は `<current_messages count="N">` で表現する。
 - AI 入力メッセージには、リアクションが存在する場合のみ絵文字別 `reactions` を含める（`selfReacted` はBot自身が該当絵文字でリアクション済みのときのみ付与）。
 - 追加履歴は MCP tool `read_message_history` で取得できる（1〜100件、未指定30件、`beforeMessageId` / `afterMessageId` / `aroundMessageId` は排他指定）。
 - `read_message_history` の返却メッセージにも、リアクションがある場合のみ `reactions` を含め、Discord 添付の `id` / `name` / `url` を XML 風要素として含める。
@@ -36,7 +39,7 @@
 - アプリケーションログは標準出力に加えて `$LUNA_HOME/logs/YYYYMMDD-HHmmss-SSS.log` へ JSONL でも出力する。
 - ログファイル出力の初期化に失敗した場合は起動を中断する（fail-fast）。
 - `list_channels` / `get_user_detail` は権限不足・未存在などの失敗対象を黙ってスキップする。
-- 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、無効化していない。
+- 既存の Bot 直接メンション時の typing（8 秒間隔）も併用し、バッチ内に `mentionedBot=true` が含まれる場合に AI 送信中だけ開始する。
 - 実装構成は `src/modules/*` 中心へ移行済みで、`index.ts` は Composition Root としてモジュール配線のみを担当する。
 - `mcp` の application 層は adapters 実装へ直接依存せず、`src/modules/mcp/ports/outbound/*` のポートを介して依存している。
 - リアクション正規化と著者ラベル整形は `src/shared/discord/*` に集約している。
@@ -48,11 +51,13 @@
 - 設定は `DISCORD_BOT_TOKEN` を必須とし、`LUNA_HOME` 未設定時は `~/.luna` を使う。
 - 許可チャンネルは `$LUNA_HOME/config.toml` の `[discord].allowed_channel_ids`（文字列配列）から読み込む。
 - DM 応答可否は `$LUNA_HOME/config.toml` の `[discord].allow_dm`（boolean）から読み込む。
+- Discord 投稿の AI 送信遅延は `$LUNA_HOME/config.toml` の `[discord].ai_dispatch_delay_ms`（非負整数、未設定時 5000）から読み込む。
+- typing の無音判定は `$LUNA_HOME/config.toml` の `[discord].typing_idle_timeout_ms`（正整数、未設定時 10000）から読み込む。
 - AI モデル/推論努力値は `config.toml` から読み込まず、Codex 側の既定設定を使用する。
 - `config.toml` に `[ai]` セクションが存在しても無視して起動継続する。
 - heartbeat 実行スケジュールは `$LUNA_HOME/config.toml` の `[heartbeat].cron_time` から読み込む。
 - heartbeat と cron prompt のタイムゾーンは `$LUNA_HOME/config.toml` のトップレベル `time_zone` から読み込む（未設定時はシステムタイムゾーン）。
-- `config.toml` が存在しない場合は起動時に自動生成し、`allowed_channel_ids = []`, `allow_dm = false`, `heartbeat.cron_time = "0 0,30 * * * *"` で起動継続する。
+- `config.toml` が存在しない場合は起動時に自動生成し、`allowed_channel_ids = []`, `allow_dm = false`, `ai_dispatch_delay_ms = 5000`, `typing_idle_timeout_ms = 10000`, `heartbeat.cron_time = "0 0,30 * * * *"` で起動継続する。
 - 起動時に `LUNA_HOME` / `workspace` / `codex` / `logs` を自動作成する。
 - 起動時に `templates` 配下の通常ファイルを再帰的に `workspace` へ不足分のみコピーし、既存ファイルは上書きしない（空ディレクトリは許容）。
 - 起動時に `templates` 配下にシンボリックリンクが含まれる場合は失敗する。

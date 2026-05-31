@@ -32,7 +32,8 @@ type TurnLogContext =
   | {
       source: "discord";
       channelId: string;
-      messageId: string;
+      messageCount: number;
+      messageIds: string[];
     }
   | {
       source: "heartbeat";
@@ -174,6 +175,7 @@ export class ChannelSessionCoordinator implements AiService {
     const historyScope = resolveInitialHistoryScope(input);
     const includeRecentMessages = !session.injectedHistoryScopes.has(historyScope);
     const recentMessages = includeRecentMessages ? await input.loadRecentMessages() : [];
+    const firstCurrentMessage = input.currentMessages[0];
 
     if (includeRecentMessages) {
       session.injectedHistoryScopes.add(historyScope);
@@ -185,21 +187,25 @@ export class ChannelSessionCoordinator implements AiService {
       const expectedTurnId = session.activeTurnId;
       const userRolePrompt = buildUserRolePrompt({
         context: input.context,
-        currentMessage: input.currentMessage,
+        currentMessages: input.currentMessages,
         recentMessages,
       });
-      session.activeTurnChannelIds.add(input.currentMessage.channelId);
+      for (const currentMessage of input.currentMessages) {
+        session.activeTurnChannelIds.add(currentMessage.channelId);
+      }
 
       try {
         await runtime.steerTurn(threadId, expectedTurnId, userRolePrompt);
         return {};
       } catch {
-        session.activeTurnChannelIds.delete(input.currentMessage.channelId);
+        for (const currentMessage of input.currentMessages) {
+          session.activeTurnChannelIds.delete(currentMessage.channelId);
+        }
         await runtime.interruptTurn(threadId, expectedTurnId).catch(() => undefined);
 
         await this.startDiscordTurn(session, runtime, {
-          channelId: input.currentMessage.channelId,
-          messageId: input.currentMessage.id,
+          channelId: firstCurrentMessage.channelId,
+          messageIds: input.currentMessages.map((currentMessage) => currentMessage.id),
           prompt: userRolePrompt,
         });
 
@@ -209,13 +215,13 @@ export class ChannelSessionCoordinator implements AiService {
 
     const userRolePrompt = buildUserRolePrompt({
       context: input.context,
-      currentMessage: input.currentMessage,
+      currentMessages: input.currentMessages,
       recentMessages,
     });
 
     await this.startDiscordTurn(session, runtime, {
-      channelId: input.currentMessage.channelId,
-      messageId: input.currentMessage.id,
+      channelId: firstCurrentMessage.channelId,
+      messageIds: input.currentMessages.map((currentMessage) => currentMessage.id),
       prompt: userRolePrompt,
     });
 
@@ -321,14 +327,15 @@ export class ChannelSessionCoordinator implements AiService {
     runtime: AiRuntimePort,
     input: {
       channelId: string;
-      messageId: string;
+      messageIds: string[];
       prompt: string;
     },
   ): Promise<void> {
     const context: TurnLogContext = {
       source: "discord",
       channelId: input.channelId,
-      messageId: input.messageId,
+      messageCount: input.messageIds.length,
+      messageIds: input.messageIds,
     };
 
     const startedTurn = await runtime.startTurn(
@@ -553,18 +560,18 @@ function throwIfTurnFailed(turnResult: TurnResult): void {
 
 function resolveDiscordSessionKey(input: AiInput): DiscordSessionKey {
   if (input.context.kind === "dm") {
-    return `dm-user:${input.currentMessage.authorId}`;
+    return `dm-user:${input.currentMessages[0].authorId}`;
   }
 
-  return `channel:${input.currentMessage.channelId}`;
+  return `channel:${input.currentMessages[0].channelId}`;
 }
 
 function resolveInitialHistoryScope(input: AiInput): string {
   if (input.context.kind === "dm") {
-    return `dm-user:${input.currentMessage.authorId}`;
+    return `dm-user:${input.currentMessages[0].authorId}`;
   }
 
-  return `channel:${input.currentMessage.channelId}`;
+  return `channel:${input.currentMessages[0].channelId}`;
 }
 
 function createTurnObserver(context: TurnLogContext): TurnObserver {
@@ -625,7 +632,8 @@ function toTurnLogContextFields(context: TurnLogContext):
   | {
       source: "discord";
       channelId: string;
-      messageId: string;
+      messageCount: number;
+      messageIds: string[];
     } {
   if (context.source === "heartbeat" || context.source === "cron") {
     return {
@@ -635,7 +643,8 @@ function toTurnLogContextFields(context: TurnLogContext):
 
   return {
     channelId: context.channelId,
-    messageId: context.messageId,
+    messageCount: context.messageCount,
+    messageIds: context.messageIds,
     source: "discord",
   };
 }

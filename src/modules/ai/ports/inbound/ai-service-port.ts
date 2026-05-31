@@ -1,5 +1,7 @@
 import type { RuntimeMessage } from "../../../conversation/domain/runtime-message";
 
+export type NonEmptyRuntimeMessages = [RuntimeMessage, ...RuntimeMessage[]];
+
 export type DiscordPromptContext =
   | {
       kind: "channel";
@@ -11,7 +13,7 @@ export type DiscordPromptContext =
 
 export type AiInput = {
   context: DiscordPromptContext;
-  currentMessage: RuntimeMessage;
+  currentMessages: NonEmptyRuntimeMessages;
   loadRecentMessages: () => Promise<RuntimeMessage[]>;
 };
 
