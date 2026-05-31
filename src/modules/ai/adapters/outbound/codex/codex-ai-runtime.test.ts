@@ -71,8 +71,6 @@ describe("CodexAiRuntime", () => {
       cwd: "/tmp/workspace",
       developerInstructions: "developer prompt",
       ephemeral: false,
-      experimentalRawEvents: false,
-      persistExtendedHistory: false,
     });
   });
 });
