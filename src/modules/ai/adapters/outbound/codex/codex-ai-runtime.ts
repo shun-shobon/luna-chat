@@ -48,7 +48,7 @@ export class CodexAiRuntime {
       baseInstructions: input.instructions,
       cwd: this.options.cwd,
       developerInstructions: input.developerRolePrompt,
-      ephemeral: true,
+      ephemeral: false,
       experimentalRawEvents: false,
       persistExtendedHistory: false,
     };
