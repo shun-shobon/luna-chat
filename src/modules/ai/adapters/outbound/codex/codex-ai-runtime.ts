@@ -49,8 +49,6 @@ export class CodexAiRuntime {
       cwd: this.options.cwd,
       developerInstructions: input.developerRolePrompt,
       ephemeral: false,
-      experimentalRawEvents: false,
-      persistExtendedHistory: false,
     };
 
     if (input.config) {
