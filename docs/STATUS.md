@@ -66,7 +66,7 @@
 - Codex app-server プロセスは起動時に 1 回だけ起動し、Discord / heartbeat / cron prompt で共有する。
 - Discord は通常チャンネル投稿では `channelId` ごとに 1 セッション（thread）を再利用し、DM 投稿では `userId` ごとに別セッション（thread）を再利用する。
 - Discord セッションは各セッション単位で最終メッセージから 30 分新規メッセージがない場合に閉じる（turn 実行中は完了後に閉じる）。
-- `thread/start` は `approvalPolicy="never"` / `ephemeral=false` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。加えて `config.projects["<resolved $LUNA_HOME/workspace>"].trust_level = "trusted"` と `config.skills.config = [{ path = "<resolved $LUNA_HOME/codex/skills/.system/skill-creator/SKILL.md>", enabled = false }, { path = "<resolved $LUNA_HOME/codex/skills/.system/skill-installer/SKILL.md>", enabled = false }]` を注入する。
+- `thread/start` は `approvalPolicy="never"` / `ephemeral=false` を使用し、Discord MCP URLを `config.mcp_servers.discord.url` へ注入する。加えて `config.projects["<resolved $LUNA_HOME/workspace>"].trust_level = "trusted"` を注入する。
 - server-initiated request のうち、approval 系は `decline` 応答、`requestUserInput` は辞退選択肢を返す。
 - Discord MCP サーバーは `http://127.0.0.1:<port>/mcp` で起動し、`read_message_history` / `send_message`（`channelId` または `userId` + 任意 `replyToMessageId` + 任意 `filePaths`、ただし `text` または `filePaths` の少なくとも一方が必要） / `add_reaction`（`channelId` または `userId`） / `start_typing`（`channelId` または `userId`） / `list_channels` / `get_user_detail` を提供する。
 - MCP の Discord 呼び出しは `discord.js` の `Client` 経由に統一し、command/history gateway で共通利用する。

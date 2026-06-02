@@ -76,7 +76,7 @@
   - `userRolePrompt` を `source` 付き XML 風入力で構築
   - Discord 投稿は `<current_messages count="N">` として複数新着メッセージを表現
 - `src/modules/ai/application/thread-config-factory.ts`
-  - thread config 生成（MCP URL + `projects["<resolved workspace>"].trust_level = "trusted"` + `skills.config[*].enabled = false`）
+  - thread config 生成（MCP URL + `projects["<resolved workspace>"].trust_level = "trusted"`）
 - `src/modules/ai/adapters/outbound/codex/*`
   - `codex-ai-runtime.ts`: app-server 実行ランタイム
   - `json-rpc-client.ts`: JSON-RPC req/resp・server request 応答（req/resp は双方向で debug ログ出力）

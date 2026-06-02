@@ -94,7 +94,6 @@ const aiService = new ChannelSessionCoordinator({
     }
   },
   botUserId,
-  codexHomeDir: runtimeConfig.codexHomeDir,
   workspaceDir: runtimeConfig.codexWorkspaceDir,
 });
 
