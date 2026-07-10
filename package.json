@@ -24,7 +24,7 @@
     "@hono/mcp": "0.2.4",
     "@hono/node-server": "1.19.11",
     "@modelcontextprotocol/sdk": "1.27.1",
-    "@openai/codex": "0.135.0",
+    "@openai/codex": "0.143.0",
     "chokidar": "5.0.0",
     "confbox": "0.2.4",
     "consola": "3.4.2",
