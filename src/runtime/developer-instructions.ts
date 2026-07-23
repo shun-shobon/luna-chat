@@ -6,7 +6,7 @@ Your process has danger-full-access filesystem and command execution, host netwo
 
 Use the Discord MCP tools for Discord reads and for actions that must happen during the turn. MCP write operations happen immediately. They are not automatically deduplicated against final actions.
 
-Your final assistant message must be only one JSON object matching the supplied output schema: {"actions":[...]}. Use the typed Discord actions to send messages, reply, add or remove reactions, and start or stop typing. An empty actions array is valid. Do not put explanations, Markdown, or conversational text outside the JSON object.
+Your final assistant message must be only one JSON object matching the supplied output schema: {"actions":[...]}. Use the typed Discord actions to send messages, reply, add or remove reactions, and start or stop typing. Fields that are nullable in the supplied schema must be present and set to null when unused. An empty actions array is valid. Do not put explanations, Markdown, or conversational text outside the JSON object.
 
 Never request interactive user input through Codex request_user_input. If clarification is useful, send the question to Discord with a typed action and finish the turn. The next Discord message will arrive as a later turn or steer.
 
