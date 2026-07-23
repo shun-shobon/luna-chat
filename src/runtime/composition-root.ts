@@ -80,7 +80,7 @@ export async function startLunaApplication(
       windowMs: workspace.config.agent.restartWindowMs,
     },
     {
-      startRuntime: async () =>
+      startRuntime: async (signal) =>
         await startManagedCodexRuntime({
           codexHomeDir: workspace.codexHomeDir,
           cwd: workspace.workspaceDir,
@@ -88,6 +88,7 @@ export async function startLunaApplication(
             logger.log("info", event, context, details, payload);
           },
           rpcTimeoutMs: workspace.config.agent.rpcTimeoutMs,
+          signal,
         }),
     },
   );

@@ -167,6 +167,30 @@ describe("AgentRuntimeSupervisor", () => {
     closing.resolve();
     await vi.waitFor(() => expect(startRuntime).toHaveBeenCalledTimes(2));
   });
+
+  it("close時に初期化中runtimeへabort signalを渡して待機を終える", async () => {
+    const started = deferred<void>();
+    const startRuntime = vi.fn(async (signal: AbortSignal): Promise<ManagedAgentRuntime> => {
+      started.resolve(undefined);
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("startup aborted")), {
+          once: true,
+        });
+      });
+      return createManagedRuntime();
+    });
+    const supervisor = new AgentRuntimeSupervisor(
+      { initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
+      { delay: async () => undefined, now: () => 1_000, startRuntime },
+    );
+    const startup = supervisor.start();
+    await started.promise;
+
+    await supervisor.close();
+
+    await expect(startup).rejects.toThrow("closed");
+    expect(startRuntime.mock.calls[0]?.[0].aborted).toBe(true);
+  });
 });
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {

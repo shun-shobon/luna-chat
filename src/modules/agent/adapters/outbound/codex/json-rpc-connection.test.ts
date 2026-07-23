@@ -8,7 +8,13 @@ class FakeTransport implements CodexLineTransport {
   readonly #failureHandlers = new Set<(error: Error) => void>();
   readonly #lineHandlers = new Set<(line: string) => void>();
 
-  public async close(): Promise<void> {}
+  public constructor(
+    private readonly closeOperation: () => Promise<void> = async () => undefined,
+  ) {}
+
+  public async close(): Promise<void> {
+    await this.closeOperation();
+  }
 
   public emitFailure(error: Error): void {
     for (const handler of this.#failureHandlers) {
@@ -114,4 +120,31 @@ describe("JsonRpcConnection", () => {
     await expect(request).resolves.toEqual({});
     vi.useRealTimers();
   });
+
+  it("並行closeが同じtransport cleanup完了を待つ", async () => {
+    const closing = deferred<void>();
+    const closeOperation = vi.fn(async () => await closing.promise);
+    const connection = new JsonRpcConnection(new FakeTransport(closeOperation), 1_000);
+
+    const first = connection.close();
+    const second = connection.close();
+    expect(closeOperation).toHaveBeenCalledOnce();
+    closing.resolve(undefined);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+  });
 });
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve(value) {
+      if (resolvePromise === undefined) throw new Error("deferred is not initialized");
+      resolvePromise(value);
+    },
+  };
+}

@@ -17,7 +17,7 @@ type AgentRestartPolicy = {
 type AgentRuntimeSupervisorDependencies = {
   delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
-  startRuntime: () => Promise<ManagedAgentRuntime>;
+  startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
 };
 
 export class AgentRuntimeRestartLimitError extends Error {
@@ -34,7 +34,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
   readonly #now: () => number;
   readonly #policy: AgentRestartPolicy;
   readonly #restartTimestamps: number[] = [];
-  readonly #startRuntime: () => Promise<ManagedAgentRuntime>;
+  readonly #startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
   #bootPromise: Promise<AgentRuntimePort> | undefined;
   readonly #closeController = new AbortController();
   #closed = false;
@@ -133,7 +133,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
     while (!this.#closed && this.#fatalError === undefined) {
       const generation = ++this.#runtimeGeneration;
       try {
-        const managed = await this.#startRuntime();
+        const managed = await this.#startRuntime(this.#closeController.signal);
         if (this.#closed || generation !== this.#runtimeGeneration) {
           await managed.close();
           throw new Error("Codex runtime startup was superseded.");

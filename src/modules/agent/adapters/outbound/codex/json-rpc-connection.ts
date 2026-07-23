@@ -64,6 +64,7 @@ export class JsonRpcConnection {
   readonly #rpcTimeoutMs: number;
   readonly #serverRequestHandlers = new Set<(request: JsonRpcServerRequest) => void>();
   readonly #transport: CodexLineTransport;
+  #closePromise: Promise<void> | undefined;
   #closed = false;
   #fatalError: Error | undefined;
   #nextRequestId = 1;
@@ -82,13 +83,13 @@ export class JsonRpcConnection {
     transport.onFailure((error) => this.fail(error));
   }
 
-  public async close(): Promise<void> {
-    if (this.#closed) {
-      return;
-    }
+  public close(): Promise<void> {
+    if (this.#closePromise !== undefined) return this.#closePromise;
     this.#closed = true;
     this.#rejectPending(new Error("Codex JSON-RPC connection was closed."));
-    await this.#transport.close();
+    const closePromise = (async () => await this.#transport.close())();
+    this.#closePromise = closePromise;
+    return closePromise;
   }
 
   public fail(error: Error): void {
