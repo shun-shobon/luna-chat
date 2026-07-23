@@ -2,8 +2,6 @@
 
 Lunaは、Discordを入口にCodexを動かす個人用workspace agentです。Discordの会話、host上のfilesystemとcommand、heartbeat、時刻指定jobを一つのLuna workspaceへ接続します。
 
-> 現在のbranchは再設計文書の承認段階です。このREADME、[仕様](./docs/SPEC.md)、[architecture](./docs/ARCHITECTURE.md)は切替先の設計を表し、実装はまだ旧composition rootのままです。設計一括承認後に実装を切り替えます。
-
 ## 最初に読む注意
 
 LunaはDiscord利用者をhost権限から隔離しません。BotへDMできる利用者、設定外channelでLunaをmentionできる利用者、他Bot、Webhookの入力から、次の操作が確認なしに実行され得ます。
@@ -117,7 +115,7 @@ pnpm run dev
 
 ## Docker setup
 
-Dockerは専用non-root userでprocessを起動し、そのuserへpasswordless sudoを設定します。標準ではLuna homeだけをmountし、追加directoryはComposeで明示してください。host rootを自動mountしません。
+Dockerは専用non-root userでprocessを起動し、そのuserへpasswordless sudoを設定します。標準ではnamed volume `luna-data`だけをLuna homeへmountし、追加directoryはComposeで明示してください。host rootを自動mountしません。
 
 ```sh
 docker compose build

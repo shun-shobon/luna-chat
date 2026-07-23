@@ -53,12 +53,13 @@ src/
 │   └── observability/
 ├── runtime/
 │   ├── composition-root.ts
-│   └── process-lifecycle.ts
-├── shared/
+│   ├── developer-instructions.ts
+│   ├── runtime-environment.ts
+│   └── thread-input-factory.ts
 └── generated/codex/
 ```
 
-各capabilityは必要なlayerだけを持つ。空のlayerや一つのclassだけを包むinterfaceは作らない。`shared`にはclock、random、ID validator、Result等のdomain非依存primitiveだけを置く。
+各capabilityは必要なlayerだけを持つ。空のlayerや一つのclassだけを包むinterfaceは作らない。capabilityをまたぐbusiness ruleは、そのruleを実行する上位capabilityへ置く。
 
 ## 4. Capability ownership
 
@@ -66,7 +67,7 @@ src/
 | --------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
 | `discord`       | normalized message、scope metadata、Discord action、read query、typing lease | message normalize、action execute、Discord read、Gateway subscription | discord.js Gateway/REST、loopback MCP        |
 | `conversation`  | session、pending batch、idle/close状態、scope executor                       | `acceptMessage`、`acceptTyping`、`drain`                              | memory session store、timer                  |
-| `agent`         | app-server process、thread、turn、notification correlation、turn chain       | `openThread`、`runChain`、`steer`、`archive`、`deleteArchived`        | stdio child process、JSON-RPC、output schema |
+| `agent`         | app-server process、thread、turn、notification correlation                   | `openThread`、`startTurn`、`steer`、`archive`、`deleteArchived`       | stdio child process、JSON-RPC、output schema |
 | `automation`    | heartbeat state、schedule job、last-valid schedule                           | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`            | clock、random、cron scheduler、file watcher  |
 | `workspace`     | Luna home、strict config、instructions、cron document                        | initialize、read instructions、read/write schedule                    | filesystem、`smol-toml`、Zod                 |
 | `observability` | structured event、level、secret redaction、correlation context               | logger port                                                           | JSON Lines stdout                            |
@@ -83,9 +84,8 @@ capability間は所有側が公開したapplication portを直接`await`する�
 ```text
 conversation ──► agent
 conversation ──► discord
-agent        ──► discord action port
-agent        ──► workspace instruction port
 automation   ──► agent
+automation   ──► discord
 automation   ──► workspace
 all          ──► observability port
 runtime      ──► all modules
@@ -168,9 +168,9 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 
 会話scopeごとにmailbox型actorを一つ持つ。actorはstate mutationだけを短いcommandとして直列処理し、長時間の外部I/O Promiseをmailbox内でawaitしない。I/O開始時にstateとoperation tokenを記録し、完了を新しいmailbox messageとして戻す。これによりturn完了待機中もaccepted inputを処理し、即時steerできる。古いoperation tokenの完了は無視する。
 
-## 7. Agent turn chain
+## 7. Turn chain orchestration
 
-`agent.runChain`はDiscord会話とautomationの双方から使う。処理順は次である。
+`agent`はthread/turnのprotocol操作と相関だけを所有する。Discord会話では即時steerとmailbox stateを統合する必要があるため`conversation`がchainを進め、automationでは`automation`がjob単位のchainを進める。どちらも次の同一契約に従う。
 
 ```text
 validated input
@@ -249,7 +249,7 @@ final action executorは`Promise.allSettled`を使い、resultへaction index、
 
 ### 9.3 Typing
 
-typing registryはtargetとturn ownerに紐づくleaseをmemoryで保持し、Discord typing期限より短い固定間隔で更新する。MCP tool resultまたはagent tool-call notificationからleaseをturnへ相関する。final `start_typing`も同じturn ownerを使う。各turnのfinal action settle後、follow-up開始前にそのownerの残存leaseを解放する。明示`stop_typing`は指定targetの呼出owner leaseを解放する。
+typing registryはtargetとthread固有ownerに紐づくleaseをmemoryで保持し、Discord typing期限より短い固定間隔で更新する。一つのthreadにactive turnは一つだけなので、thread作成前に生成したowner IDをMCP HTTP headerとfinal actionへ共通利用し、各turnのfinal action settle後、follow-up開始前にそのownerの残存leaseを解放する。明示`stop_typing`は指定targetの呼出owner leaseを解放する。
 
 cleanupのDiscord API失敗はerror logへ残すが、完了済みchainを再開しない。session closeとprocess shutdownでは全leaseをbest effortで停止する。
 
