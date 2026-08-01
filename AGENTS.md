@@ -1,56 +1,53 @@
-# Repository Guidelines
+# Repository workflow
 
-Codex CLI app-serverとDiscord.jsを使ったDiscord Chat Botを作成します。
+このfileは作業規約であり、製品仕様の正本ではない。製品の外部契約は`docs/SPEC.md`、内部設計は`docs/ARCHITECTURE.md`を参照する。実装後はsource、SPEC、ARCHITECTUREを同じ変更で同期する。
 
-## ドキュメント導線
+## Communication
 
-- `docs/SPEC.md`: 要件定義（ルナ人格、許可チャンネル投稿をAI処理、履歴はDiscordから都度取得、自己改善はドキュメント運用中心）
-- `docs/PLAN.md`: マイルストーン、リスクレジスタ、DoD
-- `docs/ARCHITECTURE.md`: モジュール構成、データモデル、主要シーケンス、設定項目
-- `docs/RUNBOOK.md`: 常時遵守ルール、実行手順、失敗時対応、変更管理
-- `docs/STATUS.md`: 現在の真実、確定方針、直近タスク、再開コンテキスト
+- 利用者への返答、commit subject、commit bodyは日本語で書く。
+- 不明な製品判断は実装で補わず、利用者へ確認する。
+- 根拠のない曖昧な選択肢を並べず、確認済みの事実と制約から推奨を示す。
 
-## 開発スクリプト
+## Design
 
-- `pnpm run start`: ビルドされたスクリプトを実行する。
-- `pnpm run build`: ビルドを実行する。
-- `pnpm run dev`: 開発サーバーを実行する(ソースコード更新時に自動で再起動される)。
-- `pnpm run typecheck`: TypeScript型チェックを実行する。
-- `pnpm run lint`: lintを実行する。
-- `pnpm run lint:fix`: lintの自動修正を実行する。
-- `pnpm run knip`: 未使用ファイル・未使用export・未使用依存を検出する。
-- `pnpm run format`: フォーマットを実行する。
-- `pnpm run format:check`: フォーマット差分の有無のみを検査する。
+- modular hexagonal architecture、SOLID、DDDをproject規模に合わせて適用する。
+- YAGNI、KISS、DRYを優先する。
+- compatibility behavior、alias、silent fallback、default-value fallbackを追加しない。SPECで明示されたfallbackとdefaultだけを実装する。
+- module間はapplication portを直接`await`し、内部event busとDI frameworkを導入しない。
+- `shared`へ機能固有型を置かない。
 
-ソースコードを更新した場合、型チェック、lint、knip、フォーマットを実行し、問題がないことを確認してからコミットしてください。
+## Type safety
 
-## コミット
+- 未検証のenvironment、TOML、JSON、SDK/API responseに`as`を使わない。
+- `as unknown as`と`as any`を禁止する。
+- Codex generated discriminated union、Zod、type guardを使い、外部境界でruntime validationする。
+- 完全に自前で構築した送信payloadへの局所的な型補助だけを例外とする。
 
-履歴は Conventional Commits 形式に従うこと。
+## Tests
 
-- 形式: `<type>: <summary>`
-- コミットメッセージは件名・本文ともに日本語で記載すること（Conventional Commits の `type` は英語のままで可）。
-- 3行目以降には具体的な変更内容を記載すること。
-- 複数行のコミットメッセージを作成する場合は、コミットのコマンドの実行方法によってはうまく複数行になっていない場合がある。コミット後に必ず確認し、複数行になっていない場合は修正すること。
-- コミットメッセージ本文に改行を入れるときは、`-m` 引数内に `\n` を書かないこと。`git commit -m "<件名>" -m "<本文>"` のように `-m` を分けるか、メッセージファイルを使うこと。
-- 1コミット1目的を徹底すること。
-- 適切な粒度でコミットを行うこと。
-- GPG署名を無効化しないこと。署名関連でコミットエラーになった場合はユーザーに報告すること。
+- global coverage率ではなく、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testにする。
+- snapshotは固定developer instructionsと入力JSON組立だけに使う。
+- 実Discord・実CodexはREADMEのmanual live E2Eで確認する。
 
-## 設計
+## Commands
 
-- クリーンアーキテクチャ、SOLID原則に従うこと。
-- DDDの原則に従うこと。
-- ただしプロジェクトの規模に合わせ、最適な規模の設計を選択すること。
+```sh
+pnpm run gen
+pnpm run format:check
+pnpm run lint
+pnpm run knip
+pnpm run typecheck
+pnpm run test
+pnpm run build
+docker compose build
+```
 
-## 型安全ルール
+sourceを変更したら、commit前に関連testと全quality gateを通す。実装完了時はlocal Docker buildも通す。
 
-- 本番コードで未検証の外部入力（`JSON.parse`結果、SDKレスポンス、環境変数/設定値）に対して `as` を使わないこと。
-- `as unknown as` と `as any` は禁止すること。
-- `ClientRequest` / `ServerRequest` などの自動生成の判別ユニオン型を優先して利用すること。
-- 型不整合は `zod` や型ガード関数で解消し、ランタイムで妥当性を確認すること。
-- 例外として、完全に自前で構築した送信ペイロードへの局所的な型補助のみ許容すること。
+## Git
 
-## テスト方針
-
-- プロンプト生成ロジックのテストでは、文面の意図しない差分を検知しやすくするため、可能な限りスナップショットテストを追加すること。
+- Conventional Commitsの`<type>: <日本語summary>`を使う。
+- 3行目以降のbodyへ具体的な変更を書く。
+- 一commit一目的とし、文書、基盤、capability、cutover、旧実装削除を分ける。
+- GPG署名を無効化しない。署名失敗時は利用者へ報告する。
+- userの既存変更を上書き、reset、checkoutしない。

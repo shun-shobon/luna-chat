@@ -1,8 +1,1 @@
-# Cron prompt jobs for Luna.
-# Define jobs by [jobs.<id>] tables.
-#
-# Example:
-# [jobs.morning_check]
-# cron = "0 0 9 * * *"
-# prompt = "朝のチェックを実行してください"
-# oneshot = false
+jobs = []
