@@ -146,37 +146,37 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 
 ### 6.4 State transition contract
 
-| 現在                                            | event                              | 次                  | 作用                                                 |
-| ----------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------- |
-| absent                                          | accepted input                     | collecting          | session作成、idle reset、batchへ追加                 |
-| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce/idle reset                     |
-| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`    |
-| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                             |
-| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                |
-| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消               |
-| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer          |
-| turn active                                     | accepted input                     | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue  |
-| turn active                                     | turn success                       | actions active      | final JSON検証、action全件を並行開始                 |
-| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持 |
-| conversation actions active                     | accepted input                     | actions active      | queueへ追加、idle reset、close予約取消               |
-| conversation actions active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`    |
-| conversation actions active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化            |
-| conversation actions active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle reset。close予約時は記憶保存    |
-| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了             |
-| active state                                    | idle expired                       | 同じstate           | close予約のみ。後続accepted inputで取消可能          |
-| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                     |
-| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`         |
-| session memory start/turn/actions               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                       |
-| session memory turn                             | turn success                       | actions active      | 通常turnと同じfinal action実行                       |
-| session memory actions                          | failureあり                        | followup starting   | 同じ保存目的を保ったaction result follow-up          |
-| session memory actions                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                   |
-| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                     |
-| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄        |
-| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す             |
-| actions active                                  | app-server lost                    | actions orphaned    | thread参照破棄。開始済みactionは継続、follow-up禁止  |
-| actions orphaned                                | accepted input                     | actions orphaned    | queueへ追加、idle reset                              |
-| actions orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す   |
-| actions active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持      |
+| 現在                                            | event                              | 次                  | 作用                                                       |
+| ----------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------------- |
+| absent                                          | accepted input                     | collecting          | session作成、idle reset、batchへ追加                       |
+| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce/idle reset                           |
+| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`          |
+| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                                   |
+| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                      |
+| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消                     |
+| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer                |
+| turn active                                     | accepted input                     | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue        |
+| turn active                                     | turn success                       | actions active      | final JSON検証、action全件を並行開始                       |
+| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持       |
+| conversation actions active                     | accepted input                     | actions active      | queueへ追加、idle reset、close予約取消                     |
+| conversation actions active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`          |
+| conversation actions active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化                  |
+| conversation actions active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle reset。close予約/shutdown時は記憶保存 |
+| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了                   |
+| active state                                    | idle expired                       | 同じstate           | close予約のみ。後続accepted inputで取消可能                |
+| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                           |
+| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`               |
+| session memory start/turn/actions               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                             |
+| session memory turn                             | turn success                       | actions active      | 通常turnと同じfinal action実行                             |
+| session memory actions                          | failureあり                        | followup starting   | 同じ保存目的を保ったaction result follow-up                |
+| session memory actions                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                         |
+| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                           |
+| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄              |
+| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す                   |
+| actions active                                  | app-server lost                    | actions orphaned    | thread参照破棄。開始済みactionは継続、follow-up禁止        |
+| actions orphaned                                | accepted input                     | actions orphaned    | queueへ追加、idle reset                                    |
+| actions orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す         |
+| actions active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持            |
 
 会話scopeごとにmailbox型actorを一つ持つ。actorはstate mutationだけを短いcommandとして直列処理し、長時間の外部I/O Promiseをmailbox内でawaitしない。I/O開始時にstateとoperation tokenを記録し、完了を新しいmailbox messageとして戻す。これによりturn完了待機中もaccepted inputを処理し、即時steerできる。古いoperation tokenの完了は無視する。
 
@@ -208,7 +208,7 @@ MCP操作はCodexが呼んだ時点で実行する。final actionはturn完了�
 
 follow-up turn中に新しいDiscord投稿が来た場合、そのfollow-upが現在のactive turnなので即時steerする。follow-upの`turn/start` response前とaction実行中にはactive Codex turnがないため、投稿をqueueへ入れる。response後はstarting中queueを順にsteerし、chain終了時に残るqueueは新しいbatchとして処理する。
 
-session記憶保存は通常chainの完了後に同じthreadへ`{source:"session_memory",date}`を送る。turn purposeをconversationとsession memoryに分け、session memory purposeではstarting中queueをsteer対象へ移さない。action failure follow-upでもpurposeを保ち、全action成功後だけarchiveする。shutdownや通常chain失敗はsession記憶保存を経由しない。
+session記憶保存は通常chainの完了後に同じthreadへ`{source:"session_memory",date}`を送る。turn purposeをconversationとsession memoryに分け、session memory purposeではstarting中queueをsteer対象へ移さない。action failure follow-upでもpurposeを保ち、全action成功後だけarchiveする。graceful shutdownではidle中のthreadとsignal前に受理したqueue/active chainの正常完了後に同じ保存経路を通す。通常chain失敗とfatal abortはsession記憶保存を経由しない。
 
 ## 8. Codex app-server adapter
 
@@ -332,13 +332,14 @@ SIGINT / SIGTERM
   → stop Gateway intake, heartbeat timer, memory maintenance, and new schedule ticks
   → freeze accepted-work frontier
   → drain pre-signal conversation queues and active chains
+  → preserve each successfully completed conversation session
   → wait active heartbeat/schedule/memory maintenance chains
   → archive completed threads
   → stop typing leases, watchers, MCP, Discord, app-server
   → flush stdout logger
 ```
 
-drainへgrace timeoutを設けない。無限turnまたはfollow-upがある場合、後続closeへ到達しない。
+application内のdrainへgrace timeoutを設けない。無限turnまたはfollow-upがある場合、後続closeへ到達しない。Composeは`stop_grace_period: 60s`によりSIGTERMからSIGKILLまで60秒待つ。
 
 drain対象の未開始conversation queueが残る間にapp-serverが失われた場合は、通常のrestart budget内で再起動して新threadで処理する。active automationは失敗終了し、shutdown中に新しいautomation実行を作らない。budget超過はFATAL終了とする。
 

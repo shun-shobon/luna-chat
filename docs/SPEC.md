@@ -108,13 +108,13 @@ Discord messageはID、timestamp、投稿種別、Guild/channel/authorのIDと�
 
 idle期限は全scopeで共通の`session_idle_ms`とする。受理投稿の到着時と、turn chain全体の完了時に現在時刻から再設定する。
 
-idle期限がactive chain中に来た場合は処理を中断せず、close予約を付ける。後続のDiscord投稿が来ればclose予約を取り消す。予約が残ったままchainが完了した場合と、idle状態で期限が来た場合だけsession記憶保存を実行する。
+idle期限がactive chain中に来た場合は処理を中断せず、close予約を付ける。後続のDiscord投稿が来ればclose予約を取り消す。予約が残ったままchainが完了した場合、idle状態で期限が来た場合、またはgraceful shutdownでsignal前に受理したqueueとactive chainが正常完了した場合にsession記憶保存を実行する。
 
 session記憶保存が有効なら、保存開始日のprocess local dateを`YYYY-MM-DD`として同じCodex threadへ追加turnを送る。agentはthread全体から短い会話要約、嗜好、決定、未完了事項等を選び、既存内容を失わないsession単位のsectionとして`memory/YYYY-MM-DD.md`へ追記する。見出しと詳細構造はagentが決める。保存対象がなければfileを変更しない。`memory/`がなければagentが作る。
 
 保存turnとそのDiscord action failure follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
 
-複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。shutdown、通常turn失敗、connection loss、fatal abort等、idle終了以外の理由ではsession記憶保存を実行しない。
+複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。通常turn失敗、connection loss、fatal abortではsession記憶保存を実行しない。
 
 session、queue、close予約、次のheartbeat時刻はmemoryだけに置き、process再起動後に復元しない。
 
@@ -348,7 +348,7 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 
 app-server再起動delayは`min(restart_initial_delay_ms × 2^(n-1), restart_max_delay_ms)`とする。`n`は`restart_window_ms`内にRESTARTINGへ入った回数である。process exit、protocol破損、RPC timeout、spawn失敗、initialize失敗をそれぞれ一回として数え、READYへ戻ってもwindow内の記録を消さない。`restart_failure_limit`回までは再起動し、その次にRESTARTINGが必要になった時点でLuna全体をnon-zero終了する。既定では1秒から30秒、5分内に5回までを許す。
 
-SIGINTまたはSIGTERM後は新規Discord入力、heartbeat timer、schedule tick、日次整理tickを止める。signal前に受理した全queueとactive chainを、自然完了またはprocess異常まで待つ。shutdownを理由にsession記憶保存は開始しない。drain対象のconversation queueにapp-serverが必要なら再起動を続けるが、再起動budget超過時はnon-zero終了する。追加grace timeoutは設けないため、shutdownが永久に終わらない場合がある。
+SIGINTまたはSIGTERM後は新規Discord入力、heartbeat timer、schedule tick、日次整理tickを止める。signal前に受理した全queueとactive chainを、自然完了またはprocess異常まで待つ。正常完了した会話sessionは、idle期限前でもsession記憶保存を完了してからthreadをarchiveする。drain対象のconversation queueにapp-serverが必要なら再起動を続けるが、再起動budget超過時はnon-zero終了する。application内に追加grace timeoutは設けず、ComposeはSIGKILLまで60秒待つため、60秒を超えるshutdownはcontainer runtimeに終了される。
 
 同時turn数、queue件数、queue byte数、turn時間、follow-up回数に上限を設けない。memory exhaustion、Bot loop、同一eventの重複処理、Gateway切断中の欠落、non-terminating shutdownを仕様上許容する。
 

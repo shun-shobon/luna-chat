@@ -8,4 +8,5 @@ services:
     volumes:
       - ./data:/home/node
     init: true
+    stop_grace_period: 60s
     restart: unless-stopped

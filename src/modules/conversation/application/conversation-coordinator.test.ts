@@ -456,7 +456,7 @@ describe("ConversationCoordinator", () => {
     expect(completionFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
-  it("shutdown時はactive chainを待ってからarchiveする", async () => {
+  it("shutdown時はactive chainを待ってsession memory turnを完了してからarchiveする", async () => {
     vi.useFakeTimers();
     const completion = deferred<AgentTurnResult>();
     const runtime = createRuntime([completion.promise]);
@@ -476,8 +476,33 @@ describe("ConversationCoordinator", () => {
     await draining;
 
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
-    expect(runtime.startTurn).toHaveBeenCalledOnce();
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(runtime.startTurn.mock.calls[1]?.[1] ?? "null")).toEqual({
+      source: "session_memory",
+      date: "2026-07-24",
+    });
     expect(coordinator.hasSession(scope)).toBe(false);
+  });
+
+  it("shutdown時はidle期限前のthreadをsession memory turnで保存してからarchiveする", async () => {
+    vi.useFakeTimers();
+    const runtime = createRuntime([Promise.resolve(completed([])), Promise.resolve(completed([]))]);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+
+    await coordinator.drain();
+
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(runtime.startTurn.mock.calls[1]?.[1] ?? "null")).toEqual({
+      source: "session_memory",
+      date: "2026-07-24",
+    });
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
   it("turn失敗を記録し、typingを解放してからarchiveする", async () => {

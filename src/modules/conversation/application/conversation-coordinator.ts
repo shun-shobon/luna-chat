@@ -274,7 +274,7 @@ class ConversationActor {
       case "idle":
         if (command.token !== this.#idleToken) return;
         this.#idleTimer = undefined;
-        if (this.#phase === "idle") this.#finishIdleSession();
+        if (this.#phase === "idle") this.#preserveSessionMemory();
         else this.#closeRequested = true;
         return;
       case "thread_ready":
@@ -380,7 +380,7 @@ class ConversationActor {
         this.#shutdownRequested = true;
         this.#closeRequested = true;
         this.#clearTypingTimers();
-        if (this.#phase === "idle") this.#archive();
+        if (this.#phase === "idle") this.#preserveSessionMemory();
         else if (this.#phase === "collecting") {
           this.#debounceReady = true;
           if (this.#queue.length > 0) this.#tryBeginBatch();
@@ -622,8 +622,7 @@ class ConversationActor {
       return;
     }
     if (this.#closeRequested) {
-      if (this.#shutdownRequested) this.#archive();
-      else this.#finishIdleSession();
+      this.#preserveSessionMemory();
       return;
     }
     this.#resetIdleTimer();
@@ -631,7 +630,7 @@ class ConversationActor {
     else this.#phase = "idle";
   }
 
-  #finishIdleSession(): void {
+  #preserveSessionMemory(): void {
     if (!this.options.sessionMemory.enabled) {
       this.#archive();
       return;
