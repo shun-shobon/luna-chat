@@ -174,27 +174,6 @@ docker build -t luna-chat:local .
 
 CI gateはformat、lint、knip、typecheck、testです。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。
 
-## Manual live E2E
-
-実credentialを使う試験は自動化しません。専用の検証server、検証Bot、隔離した`LUNA_HOME`を用意して次を確認してください。
-
-1. `pnpm install --frozen-lockfile`、型生成、build、全quality gateを通す。
-2. 空の検証用`LUNA_HOME`とBot tokenで起動し、初期fileが生成されることを確認する。
-3. 常設channelでmentionなしの投稿、設定外channelでmentionから始まる投稿、独立thread、DMを試す。
-4. 人間の連投とtyping待機、active turn中の追加投稿を試す。
-5. Lunaへsend、reply、file添付、reaction追加・削除、typing開始・停止を依頼する。
-6. 存在しないreply、Discord文字数超過、読めないfileを指定し、action failure後のfollow-upを確認する。
-7. heartbeat間隔を短い検証値へ変更し、`HEARTBEAT.md`の実行とarchiveを確認する。
-8. recurring jobと未来のone-shotを登録し、one-shotが`turn/start`後にfileから消えることを確認する。
-9. session idleを短い検証値へ変更し、`memory/YYYY-MM-DD.md`への追記後にarchiveされることを確認する。
-10. session記憶保存中に投稿し、archive後の次threadで処理されることを確認する。
-11. `maintenance_cron`を近い検証時刻へ変更して再起動し、全日次記憶と`MEMORY.md`の整理、workspaceのfile操作、Git利用時のcommit、thread archiveを確認する。
-12. Gitを利用できない検証環境では、日次整理がfile操作だけを完了することを確認する。
-13. app-server child processを停止し、active turn失敗、未開始queueの新thread処理、backoffを確認する。
-14. SIGTERMを送り、受付停止とdrain順序を確認する。
-
-実Discordへの投稿、mention、添付、host commandが発生するため、production serverや重要dataで実施しないでください。
-
 ## Documents
 
 - [SPEC.md](./docs/SPEC.md): 外部動作、権限、設定、既定値、失敗契約の正本

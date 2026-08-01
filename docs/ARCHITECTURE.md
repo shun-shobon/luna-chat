@@ -4,9 +4,6 @@
 
 Lunaは、一つのprocess内で複数のDiscord会話と自律実行を並行処理するmodular hexagonal applicationとして構築する。設計上の優先順位は次のとおりである。
 
-記憶機能の用語と対象の対応は [MEMORY_LIFECYCLE_REFERENTS.md](./MEMORY_LIFECYCLE_REFERENTS.md) に固定する。
-Codex turn通知の所有権と相関範囲は [TURN_NOTIFICATION_REFERENTS.md](./TURN_NOTIFICATION_REFERENTS.md) に固定する。
-
 1. Discord、Codex、filesystem、clockをdomain/applicationから分離する。
 2. 会話scopeごとの状態変更を直列化し、異なるscopeは並行させる。
 3. 未検証の外部入力を境界でZod検証し、内部へ`unknown`を持ち込まない。
