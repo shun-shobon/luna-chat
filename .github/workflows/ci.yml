@@ -56,6 +56,9 @@ jobs:
 
       - name: Run | Knip
         run: pnpm run knip
+        env:
+          # oxc-parserのraw-transferは約6 GiBの仮想メモリを予約し、ubuntu-slimでは確保に失敗するため無効化する。
+          KNIP_DISABLE_RAW_TRANSFER: "1"
 
   typecheck:
     runs-on: ubuntu-slim
