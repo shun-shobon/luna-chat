@@ -21,29 +21,29 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/mcp": "0.2.4",
-    "@hono/node-server": "1.19.11",
-    "@modelcontextprotocol/sdk": "1.27.1",
-    "@openai/codex": "0.145.0",
+    "@hono/mcp": "0.3.1",
+    "@hono/node-server": "2.0.12",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@openai/codex": "0.146.0",
     "chokidar": "5.0.0",
     "cron": "4.4.0",
-    "discord.js": "14.25.1",
-    "hono": "4.12.5",
-    "smol-toml": "1.7.0",
-    "zod": "4.3.6"
+    "discord.js": "14.27.0",
+    "hono": "4.12.33",
+    "smol-toml": "1.7.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "24.0.0",
     "@tsconfig/strictest": "2.0.8",
-    "@types/node": "25.3.3",
-    "knip": "5.85.0",
-    "oxfmt": "0.36.0",
-    "oxlint": "1.51.0",
-    "oxlint-tsgolint": "0.16.0",
-    "tsdown": "0.20.3",
-    "tsx": "4.21.0",
-    "typescript": "5.9.3",
-    "vitest": "4.0.18"
+    "@types/node": "24.13.3",
+    "knip": "6.30.0",
+    "oxfmt": "0.61.0",
+    "oxlint": "1.76.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "tsdown": "0.22.14",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
   },
-  "packageManager": "pnpm@10.30.3"
+  "packageManager": "pnpm@11.18.0"
 }

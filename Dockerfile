@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24.14.0-trixie-slim AS base
+FROM node:24.18.1-trixie-slim AS base
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -26,7 +26,7 @@ FROM base AS prod-deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
-FROM node:24.14.0-trixie AS runtime
+FROM node:24.18.1-trixie AS runtime
 
 ENV NODE_ENV=production
 ENV PATH=/app/node_modules/.bin:$PATH

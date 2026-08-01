@@ -1,0 +1,24 @@
+name: "Setup development environment"
+description: "Setup development environment"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup | mise
+      uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.1.0
+
+    - name: Setup | Resolve pnpm store
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+    - name: Setup | Cache pnpm store
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: ${{ runner.os }}-pnpm-
+
+    - name: Setup | Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

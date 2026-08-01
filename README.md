@@ -18,8 +18,8 @@ LunaはDiscord利用者をhost権限から隔離しません。BotへDMできる
 
 - native macOS / Linux
 - Docker on linux/amd64 / linux/arm64
-- Node.js `24.14.0`
-- pnpm `10.30.3`
+- Node.js `24.18.1`
+- pnpm `11.18.0`
 
 Windows、公開CLI、systemd unit、launchd plist、HTTP health endpointは提供しません。
 
@@ -28,7 +28,7 @@ Windows、公開CLI、systemd unit、launchd plist、HTTP health endpointは提�
 - Discord Bot token
 - Discord Gatewayのmessage content、Guild/DM message、typingに必要なintent
 - Codex認証を保存できる永続directory
-- native実行ではNode.jsとpnpm
+- native実行ではmise（shell activation済み）
 - 日次整理をlocal commitへ残す場合はGit
 - Docker実行ではDocker EngineとCompose
 
@@ -104,7 +104,7 @@ prompt = "今日の会話を確認して、必要ならDiscordへ要約を送る
 ## Native setup
 
 ```sh
-corepack enable
+mise install
 pnpm install --frozen-lockfile
 pnpm run gen
 pnpm run build

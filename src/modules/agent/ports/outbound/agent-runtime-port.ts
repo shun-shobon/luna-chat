@@ -24,7 +24,7 @@ export type StartedAgentTurn = {
   turnId: TurnId;
 };
 
-export interface AgentThreadPort {
+interface AgentThreadPort {
   archiveThread(threadId: ThreadId): Promise<void>;
   deleteThread(threadId: ThreadId): Promise<void>;
   listThreads(input?: { archived?: boolean; cursor?: string; limit?: number }): Promise<{
@@ -39,7 +39,7 @@ export interface AgentThreadPort {
   }): Promise<ThreadId>;
 }
 
-export interface AgentTurnPort {
+interface AgentTurnPort {
   interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
   startTurn(threadId: ThreadId, input: string): Promise<StartedAgentTurn>;
   steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void>;

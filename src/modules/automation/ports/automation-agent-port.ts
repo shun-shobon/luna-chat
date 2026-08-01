@@ -1,12 +1,12 @@
 import type { AutomationInput } from "../domain/automation-input";
 
-export type AutomationThreadId = string;
+type AutomationThreadId = string;
 
 export type StartedAutomationTurn = {
   completion: Promise<void>;
 };
 
-export type ArchivedAgentThread = {
+type ArchivedAgentThread = {
   id: string;
   updatedAt: number | undefined;
 };

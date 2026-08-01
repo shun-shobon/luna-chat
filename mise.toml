@@ -1,6 +1,6 @@
 [tools]
-node = "24.14.0"
-pnpm = "10.30.3"
+node = "24.18.1"
+pnpm = "11.18.0"
 
 [env]
 '_'.file = '.env'

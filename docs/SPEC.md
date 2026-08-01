@@ -195,8 +195,7 @@ type SendFile = {
 };
 
 type DiscordEmoji =
-  | { kind: "unicode"; value: string }
-  | { kind: "custom"; id: string; name?: string };
+  { kind: "unicode"; value: string } | { kind: "custom"; id: string; name?: string };
 
 type DiscordAction =
   | { kind: "send_message"; target: DiscordTarget; content?: string; files?: SendFile[] }

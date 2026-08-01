@@ -3,8 +3,8 @@ minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@openai/codex"
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
 
 saveExact: true
 
