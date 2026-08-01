@@ -11,6 +11,7 @@ import { WorkspaceAutomationAdapter } from "../modules/automation/adapters/works
 import { AutomationExecutor } from "../modules/automation/application/automation-executor";
 import { AutomationService } from "../modules/automation/application/automation-service";
 import { HeartbeatController } from "../modules/automation/application/heartbeat-controller";
+import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
 import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
 import type { AutomationLogPort } from "../modules/automation/ports/automation-log-port";
@@ -159,6 +160,9 @@ export async function startLunaApplication(
       {
         debounceMs: workspace.config.discord.debounceMs,
         initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
+        sessionMemory: workspace.config.memory.enabled
+          ? { enabled: true, now: () => new Date() }
+          : { enabled: false },
         sessionIdleMs: workspace.config.discord.sessionIdleMs,
         typingIdleMs: workspace.config.discord.typingIdleMs,
       },
@@ -179,6 +183,7 @@ export async function startLunaApplication(
       workspaceDir: workspace.workspaceDir,
     });
     const executor = new AutomationExecutor({ agent: automationAgent, logger: automationLogger });
+    const scheduleTimer = new CronScheduleTimer();
     automation = new AutomationService({
       heartbeat: new HeartbeatController({
         clock,
@@ -189,6 +194,13 @@ export async function startLunaApplication(
         minimumIntervalMs: workspace.config.heartbeat.minIntervalMs,
         random: new SystemAutomationRandom(),
         workspace: automationWorkspace,
+      }),
+      memoryMaintenance: new MemoryMaintenanceController({
+        clock,
+        cron: workspace.config.memory.maintenanceCron,
+        enabled: workspace.config.memory.enabled,
+        executor,
+        scheduleTimer,
       }),
       retention: new ThreadRetentionCleaner({
         agent: automationAgent,
@@ -202,7 +214,7 @@ export async function startLunaApplication(
         executor,
         logger: automationLogger,
         reloadDebounceMs: SCHEDULE_RELOAD_DEBOUNCE_MS,
-        scheduleTimer: new CronScheduleTimer(),
+        scheduleTimer,
         watcher: new ChokidarScheduleWatcher(workspace.cronPath),
         workspace: automationWorkspace,
       }),

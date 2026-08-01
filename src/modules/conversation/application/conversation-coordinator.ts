@@ -22,9 +22,14 @@ export type ConversationThreadInput = Readonly<{
   developerInstructions: string;
 }>;
 
+export type ConversationSessionMemoryOptions =
+  | Readonly<{ enabled: false }>
+  | Readonly<{ enabled: true; now: () => Date }>;
+
 type ConversationCoordinatorOptions = Readonly<{
   debounceMs: number;
   initialHistoryLimit: number;
+  sessionMemory: ConversationSessionMemoryOptions;
   sessionIdleMs: number;
   typingIdleMs: number;
 }>;
@@ -129,6 +134,8 @@ type Phase =
   | "archiving"
   | "closed";
 
+type TurnPurpose = "conversation" | "session_memory";
+
 type Command =
   | Readonly<{ kind: "accept"; message: DiscordMessage }>
   | Readonly<{ kind: "typing"; userId: string }>
@@ -163,6 +170,7 @@ class ConversationActor {
   #actionOwnerId: string | undefined;
   #threadId: string | undefined;
   #turnId: string | undefined;
+  #turnPurpose: TurnPurpose | undefined;
   #turnCompletion: AgentTurnResult | undefined;
   #closeRequested = false;
   #debounceReady = false;
@@ -266,7 +274,7 @@ class ConversationActor {
       case "idle":
         if (command.token !== this.#idleToken) return;
         this.#idleTimer = undefined;
-        if (this.#phase === "idle") this.#archive();
+        if (this.#phase === "idle") this.#finishIdleSession();
         else this.#closeRequested = true;
         return;
       case "thread_ready":
@@ -286,6 +294,7 @@ class ConversationActor {
             history: command.history,
             messages: command.batch,
           }),
+          "conversation",
         );
         return;
       case "operation_failed":
@@ -305,8 +314,10 @@ class ConversationActor {
           threadId: this.#threadId,
           turnId: command.turn.turnId,
         });
-        this.#steerQueue.push(...this.#queue);
-        this.#queue = [];
+        if (this.#turnPurpose === "conversation") {
+          this.#steerQueue.push(...this.#queue);
+          this.#queue = [];
+        }
         this.#openingBatch = [];
         this.#kickSteer();
         void command.turn.completion.then(
@@ -355,6 +366,7 @@ class ConversationActor {
         this.#threadId = undefined;
         this.#actionOwnerId = undefined;
         this.#turnId = undefined;
+        this.#turnPurpose = undefined;
         this.dependencies.onEvent(
           "conversation.thread_archived",
           { scope: this.scope },
@@ -399,6 +411,10 @@ class ConversationActor {
   }
 
   #handleAccept(message: DiscordMessage): void {
+    if (this.#turnPurpose === "session_memory" || this.#phase === "archiving") {
+      this.#queue.push(message);
+      return;
+    }
     this.#closeRequested = false;
     this.#resetIdleTimer();
     if (this.#phase === "turn") {
@@ -449,6 +465,7 @@ class ConversationActor {
     if (this.#threadId !== undefined) {
       this.#startTurn(
         JSON.stringify({ source: "discord", scope: this.scope, history: [], messages: batch }),
+        "conversation",
       );
       return;
     }
@@ -487,11 +504,12 @@ class ConversationActor {
       );
   }
 
-  #startTurn(input: string): void {
+  #startTurn(input: string, purpose: TurnPurpose): void {
     const threadId = this.#threadId;
     if (threadId === undefined) throw new Error("Cannot start a turn without a thread");
     const token = ++this.#operationToken;
     this.#phase = "starting";
+    this.#turnPurpose = purpose;
     void this.dependencies.agent.startTurn(threadId, input).then(
       (turn) => this.#post({ kind: "turn_started", token, turn }),
       (error: unknown) =>
@@ -533,9 +551,10 @@ class ConversationActor {
     const result = this.#turnCompletion;
     this.#turnCompletion = undefined;
     const ownerId = this.#actionOwnerId;
+    const purpose = this.#turnPurpose;
     const turnId = this.#turnId;
     this.#turnId = undefined;
-    if (result.status !== "completed" || ownerId === undefined) {
+    if (result.status !== "completed" || ownerId === undefined || purpose === undefined) {
       if (result.status !== "completed") {
         this.dependencies.onError(
           new Error(result.errorMessage ?? `Agent turn ended with status: ${result.status}`),
@@ -585,19 +604,50 @@ class ConversationActor {
     if (this.#phase === "orphaned_actions") {
       this.#threadId = undefined;
       this.#actionOwnerId = undefined;
+      this.#turnPurpose = undefined;
       if (this.#queue.length > 0) this.#beginCollecting(true);
       else this.#close();
       return;
     }
     if (this.#phase !== "actions") return;
     if (results.some((result) => !result.success)) {
-      this.#startTurn(JSON.stringify({ source: "discord_action_results", results }));
+      const purpose = this.#turnPurpose;
+      if (purpose === undefined)
+        throw new Error("Completed action batch is missing its turn purpose");
+      this.#startTurn(JSON.stringify({ source: "discord_action_results", results }), purpose);
+      return;
+    }
+    if (this.#turnPurpose === "session_memory") {
+      this.#archive();
+      return;
+    }
+    if (this.#closeRequested) {
+      if (this.#shutdownRequested) this.#archive();
+      else this.#finishIdleSession();
       return;
     }
     this.#resetIdleTimer();
-    if (this.#closeRequested) this.#archive();
-    else if (this.#queue.length > 0) this.#beginCollecting(true);
+    if (this.#queue.length > 0) this.#beginCollecting(true);
     else this.#phase = "idle";
+  }
+
+  #finishIdleSession(): void {
+    if (!this.options.sessionMemory.enabled) {
+      this.#archive();
+      return;
+    }
+    let date: string;
+    try {
+      date = formatLocalDate(this.options.sessionMemory.now());
+    } catch (error: unknown) {
+      this.dependencies.onError(error, {
+        scope: this.scope,
+        operation: "session_memory/input",
+      });
+      this.#archive();
+      return;
+    }
+    this.#startTurn(JSON.stringify({ source: "session_memory", date }), "session_memory");
   }
 
   #resetIdleTimer(): void {
@@ -652,6 +702,7 @@ class ConversationActor {
     this.#threadId = undefined;
     this.#actionOwnerId = undefined;
     this.#turnId = undefined;
+    this.#turnPurpose = undefined;
     this.#operationToken += 1;
     if (ownerId !== undefined) void this.#releaseTyping(ownerId);
     if (this.#queue.length > 0) this.#beginCollecting(true);
@@ -691,6 +742,18 @@ class ConversationActor {
       this.dependencies.onError(error, { scope: this.scope, operation: "typing/release" });
     }
   }
+}
+
+function formatLocalDate(date: Date): string {
+  if (Number.isNaN(date.getTime())) throw new Error("Session memory date must be valid");
+  const localYear = date.getFullYear();
+  if (localYear < 0 || localYear > 9_999) {
+    throw new Error("Session memory date year must fit YYYY");
+  }
+  const year = String(localYear).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function compareMessages(left: DiscordMessage, right: DiscordMessage): number {

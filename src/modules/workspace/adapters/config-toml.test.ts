@@ -14,6 +14,10 @@ import {
 } from "./config-toml";
 
 const temporaryDirectories: string[] = [];
+const MEMORY_CONFIG_SOURCE = `[memory]
+enabled = true
+maintenance_cron = "0 4 * * *"
+`;
 
 afterEach(async () => {
   await Promise.all(
@@ -24,13 +28,13 @@ afterEach(async () => {
 });
 
 describe("workspace config TOML", () => {
-  it("空の設定には全デフォルト値を補う", () => {
-    expect(parseWorkspaceConfig("")).toEqual(DEFAULT_WORKSPACE_CONFIG);
+  it("memory設定を必須とし、他sectionのデフォルト値を補う", () => {
+    expect(parseWorkspaceConfig(MEMORY_CONFIG_SOURCE)).toEqual(DEFAULT_WORKSPACE_CONFIG);
   });
 
   it("指定値だけを上書きし、未指定フィールドにはデフォルト値を補う", () => {
     expect(
-      parseWorkspaceConfig(`
+      parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
 [discord]
 allowed_channel_ids = ["123", "456"]
 allow_dm = false
@@ -66,8 +70,17 @@ max_interval_ms = 2000
     ["negative history limit", "[discord]\ninitial_history_limit = -1"],
     ["zero duration", "[discord]\ndebounce_ms = 0"],
     ["unsafe integer", "[agent]\nrpc_timeout_ms = 9007199254740992"],
+    ["invalid memory cron", '[memory]\nenabled = true\nmaintenance_cron = "0 0 4 * * *"'],
   ])("%s を拒否する", (_title, source) => {
-    expect(() => parseWorkspaceConfig(source)).toThrow("config.toml is invalid");
+    expect(() =>
+      parseWorkspaceConfig(
+        source.includes("[memory]") ? source : `${MEMORY_CONFIG_SOURCE}${source}`,
+      ),
+    ).toThrow("config.toml is invalid");
+  });
+
+  it("memory sectionがなければ拒否する", () => {
+    expect(() => parseWorkspaceConfig("")).toThrow("config.toml is invalid");
   });
 
   it("全設定を TOML に直列化して往復できる", () => {
@@ -75,6 +88,7 @@ max_interval_ms = 2000
 
     expect(source).toContain("allowed_channel_ids = []");
     expect(source).toContain("thread_retention_ms = 2592000000");
+    expect(source).toContain('maintenance_cron = "0 4 * * *"');
     expect(parseWorkspaceConfig(source)).toEqual(DEFAULT_WORKSPACE_CONFIG);
   });
 

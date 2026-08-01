@@ -4,6 +4,8 @@
 
 Lunaは、一つのprocess内で複数のDiscord会話と自律実行を並行処理するmodular hexagonal applicationとして構築する。設計上の優先順位は次のとおりである。
 
+記憶機能の用語と対象の対応は [MEMORY_LIFECYCLE_REFERENTS.md](./MEMORY_LIFECYCLE_REFERENTS.md) に固定する。
+
 1. Discord、Codex、filesystem、clockをdomain/applicationから分離する。
 2. 会話scopeごとの状態変更を直列化し、異なるscopeは並行させる。
 3. 未検証の外部入力を境界でZod検証し、内部へ`unknown`を持ち込まない。
@@ -66,9 +68,9 @@ src/
 | Capability      | 所有する概念                                                                 | 公開するapplication境界                                               | Adapter                                      |
 | --------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------- |
 | `discord`       | normalized message、scope metadata、Discord action、read query、typing lease | message normalize、action execute、Discord read、Gateway subscription | discord.js Gateway/REST、loopback MCP        |
-| `conversation`  | session、pending batch、idle/close状態、scope executor                       | `acceptMessage`、`acceptTyping`、`drain`                              | memory session store、timer                  |
+| `conversation`  | session、pending batch、idle/close状態、session記憶保存、scope executor      | `acceptMessage`、`acceptTyping`、`drain`                              | memory session store、timer                  |
 | `agent`         | app-server process、thread、turn、notification correlation                   | `openThread`、`startTurn`、`steer`、`archive`、`deleteArchived`       | stdio child process、JSON-RPC、output schema |
-| `automation`    | heartbeat state、schedule job、last-valid schedule                           | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`            | clock、random、cron scheduler、file watcher  |
+| `automation`    | heartbeat state、schedule job、日次整理、last-valid schedule                 | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`            | clock、random、cron scheduler、file watcher  |
 | `workspace`     | Luna home、strict config、instructions、cron document                        | initialize、read instructions、read/write schedule                    | filesystem、`smol-toml`、Zod                 |
 | `observability` | structured event、level、secret redaction、correlation context               | logger port                                                           | JSON Lines stdout                            |
 | `runtime`       | object graph、startup/shutdown order                                         | process entry only                                                    | signal handler                               |
@@ -131,40 +133,49 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
      └──────── queued input after chain ────────────┴───────────┘
                                                                 │ idle deadline
                                                                 ▼
+                                                    SESSION_MEMORY_CHAIN
+                                                                │ actions/follow-up complete
+                                                                ▼
                                                            ARCHIVING ──► ABSENT
 ```
 
 `OPENING_THREAD`はsession初回だけ使う。既存threadを持つ`IDLE`からの次投稿は、履歴取得と`thread/start`を繰り返さず、debounce後に`STARTING_TURN`へ進む。
 
-全stateでidle expiryを受けられる。active stateでは`closeAfterCompletion = true`を付け、chainを中断しない。その後に受理投稿が来ればidle期限をresetしてclose予約を取り消す。chain完了時にqueueがあればarchiveよりqueue処理を優先する。
+全stateでidle expiryを受けられる。active stateでは`closeAfterCompletion = true`を付け、chainを中断しない。その後に受理投稿が来ればidle期限をresetしてclose予約を取り消す。close予約が残ったままchainを完了するかidle stateの期限が来ると、session記憶保存を開始する。保存開始後の投稿はclose予約を取り消さず、次thread用queueへ入れる。
 
 ### 6.4 State transition contract
 
-| 現在                                               | event                              | 次                  | 作用                                                 |
-| -------------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------- |
-| absent                                             | accepted input                     | collecting          | session作成、idle reset、batchへ追加                 |
-| collecting                                         | accepted input                     | collecting          | batchへ追加、debounce/idle reset                     |
-| collecting                                         | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`    |
-| collecting                                         | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                             |
-| idle                                               | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                |
-| opening thread / starting turn / followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消               |
-| starting turn / followup starting                  | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer          |
-| turn active                                        | accepted input                     | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue  |
-| turn active                                        | turn success                       | actions active      | final JSON検証、action全件を並行開始                 |
-| turn active                                        | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持 |
-| actions active                                     | accepted input                     | actions active      | queueへ追加、idle reset、close予約取消               |
-| actions active                                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`    |
-| actions active                                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化            |
-| actions active                                     | all success/empty、queueなし       | idleまたはarchiving | typing cleanup、idle reset。close予約時はarchive     |
-| opening/turn/followup start failure                | failure                            | archiving           | log、可能ならthread archive、session終了             |
-| active state                                       | idle expired                       | 同じstate           | close予約のみ。後続accepted inputで取消可能          |
-| idle                                               | idle expired                       | archiving           | `thread/archive`                                     |
-| archiving                                          | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄        |
-| archiving                                          | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す             |
-| actions active                                     | app-server lost                    | actions orphaned    | thread参照破棄。開始済みactionは継続、follow-up禁止  |
-| actions orphaned                                   | accepted input                     | actions orphaned    | queueへ追加、idle reset                              |
-| actions orphaned                                   | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す   |
-| actions active以外                                 | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持      |
+| 現在                                            | event                              | 次                  | 作用                                                 |
+| ----------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------- |
+| absent                                          | accepted input                     | collecting          | session作成、idle reset、batchへ追加                 |
+| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce/idle reset                     |
+| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`    |
+| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                             |
+| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                |
+| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消               |
+| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer          |
+| turn active                                     | accepted input                     | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue  |
+| turn active                                     | turn success                       | actions active      | final JSON検証、action全件を並行開始                 |
+| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持 |
+| conversation actions active                     | accepted input                     | actions active      | queueへ追加、idle reset、close予約取消               |
+| conversation actions active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`    |
+| conversation actions active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化            |
+| conversation actions active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle reset。close予約時は記憶保存    |
+| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了             |
+| active state                                    | idle expired                       | 同じstate           | close予約のみ。後続accepted inputで取消可能          |
+| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                     |
+| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`         |
+| session memory start/turn/actions               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                       |
+| session memory turn                             | turn success                       | actions active      | 通常turnと同じfinal action実行                       |
+| session memory actions                          | failureあり                        | followup starting   | 同じ保存目的を保ったaction result follow-up          |
+| session memory actions                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                   |
+| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                     |
+| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄        |
+| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す             |
+| actions active                                  | app-server lost                    | actions orphaned    | thread参照破棄。開始済みactionは継続、follow-up禁止  |
+| actions orphaned                                | accepted input                     | actions orphaned    | queueへ追加、idle reset                              |
+| actions orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す   |
+| actions active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持      |
 
 会話scopeごとにmailbox型actorを一つ持つ。actorはstate mutationだけを短いcommandとして直列処理し、長時間の外部I/O Promiseをmailbox内でawaitしない。I/O開始時にstateとoperation tokenを記録し、完了を新しいmailbox messageとして戻す。これによりturn完了待機中もaccepted inputを処理し、即時steerできる。古いoperation tokenの完了は無視する。
 
@@ -196,6 +207,8 @@ MCP操作はCodexが呼んだ時点で実行する。final actionはturn完了�
 
 follow-up turn中に新しいDiscord投稿が来た場合、そのfollow-upが現在のactive turnなので即時steerする。follow-upの`turn/start` response前とaction実行中にはactive Codex turnがないため、投稿をqueueへ入れる。response後はstarting中queueを順にsteerし、chain終了時に残るqueueは新しいbatchとして処理する。
 
+session記憶保存は通常chainの完了後に同じthreadへ`{source:"session_memory",date}`を送る。turn purposeをconversationとsession memoryに分け、session memory purposeではstarting中queueをsteer対象へ移さない。action failure follow-upでもpurposeを保ち、全action成功後だけarchiveする。shutdownや通常chain失敗はsession記憶保存を経由しない。
+
 ## 8. Codex app-server adapter
 
 ### 8.1 Process lifecycle
@@ -223,6 +236,7 @@ RESTARTINGへ入ったtimestampをsliding windowで保持する。process exit�
 ```text
 thread/start(ephemeral=false)
   └─ zero or more turn chains
+       ├─ idle終了する会話だけsession memory chain
        └─ session/job end
             └─ thread/archive
                  └─ retention elapsed
@@ -259,9 +273,9 @@ MCP adapterはDiscord read/action application portをtoolごとに薄く公開�
 
 ## 10. Workspace adapters
 
-startup initializerは`LUNA_HOME`が絶対pathであることを確認し、home、workspace、codex directoryを作る。`config.toml`と`cron.toml`がなければ完全な既定内容を生成する。directory作成、初期file生成、main config parse失敗はstartup failureである。
+startup initializerは`LUNA_HOME`が絶対pathであることを確認し、home、workspace、codex directoryを作る。`config.toml`と`cron.toml`がなければ完全な既定内容を生成する。`memory/`はinitializerで作らない。directory作成、初期file生成、main config parse失敗はstartup failureである。
 
-TOMLは`smol-toml`で`unknown`へparseし、strict Zod schemaで検証する。main configはstartup後に再読込しない。cron watcherは変更をdebounceして全fileを再検証し、成功時だけlast-valid snapshotを置換する。
+TOMLは`smol-toml`で`unknown`へparseし、strict Zod schemaで検証する。main configの`memory` sectionは必須とし、自動migrationしない。memory cronと利用者schedule cronは同じ5-field検証関数を使う。main configはstartup後に再読込しない。cron watcherは変更をdebounceして全fileを再検証し、成功時だけlast-valid snapshotを置換する。
 
 one-shot削除は最新snapshotを同期再読込し、IDで除外後に全体をserializeして同じpathへ直接writeする。write失敗後もscheduler上の発火済みjobは解除する。watcher reloadまたはprocess再起動後は時刻が過去なので実行せず、削除だけを再試行する。実行済みledgerは作らない。
 
@@ -283,6 +297,14 @@ recurring tickは同じjob IDでも独立実行し、global lockを取らない�
 
 past one-shotはreload時に実行対象へ登録せず、正規化writeで削除する。write失敗時はerror logを残し、次reloadで削除を再試行するが実行しない。
 
+### 11.3 記憶とworkspaceの日次整理
+
+memory maintenance controllerはstartup時の`enabled`と5-field cronを受け取り、有効時だけrecurring timerを一件登録する。tick時のprocess local dateを`{source:"memory_maintenance",date}`として共通automation executorへ渡す。専用threadのopen、turn/action follow-up、archive、失敗logはheartbeatとscheduleと同じexecutor/agent adapterを再利用する。
+
+controllerはactive executionをdrain対象として追跡するが、同時実行guardと完了timeoutを持たない。停止中tickのledgerとcatch-upも作らない。通常会話、session記憶保存、他automationとのworkspace排他を取らない。
+
+file整理とGit操作はapplication portへ分解せず、固定developer instructionsに従うCodex threadへ任せる。Git executableがなければGitだけを省略する明示的fallbackとする。成功・失敗報告だけを目的とするDiscord通知は禁止する。applicationはcommitの有無、stage対象、working tree状態を検証しない。
+
 ## 12. Startup and shutdown
 
 ### 12.1 Startup
@@ -297,7 +319,7 @@ validate env
   → spawn and initialize Codex app-server
   → login Discord and resolve Luna user
   → run archived-thread cleanup
-  → start Gateway intake, heartbeat, cron watcher/scheduler
+  → start Gateway intake, heartbeat, memory maintenance, cron watcher/scheduler
 ```
 
 途中失敗は作成済みresourceを逆順にcloseし、non-zero終了する。
@@ -306,10 +328,10 @@ validate env
 
 ```text
 SIGINT / SIGTERM
-  → stop Gateway intake, heartbeat timer, and new schedule ticks
+  → stop Gateway intake, heartbeat timer, memory maintenance, and new schedule ticks
   → freeze accepted-work frontier
   → drain pre-signal conversation queues and active chains
-  → wait active heartbeat/schedule chains
+  → wait active heartbeat/schedule/memory maintenance chains
   → archive completed threads
   → stop typing leases, watchers, MCP, Discord, app-server
   → flush stdout logger
@@ -322,7 +344,7 @@ drain対象の未開始conversation queueが残る間にapp-serverが失われ�
 ## 13. Concurrency and delivery
 
 - conversation scope内のstate mutationは直列、scope間は並列。
-- conversation、heartbeat、scheduleを合わせたglobal concurrency上限なし。
+- conversation、session記憶保存、heartbeat、schedule、日次整理を合わせたglobal concurrency上限なし。
 - recurring jobの同一ID tickも並列。
 - final actionは配列全件並列。
 - queue sizeとbyte上限なし。
@@ -354,17 +376,17 @@ logger portはstructured eventとcorrelation contextを受け取り、stdoutへ�
 
 旧test suiteは削除し、新しいcontractから作り直す。global coverage thresholdは設けない。
 
-| Test layer              | 必須範囲                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| domain unit             | 全session状態遷移、禁止遷移、scope equality、job union、action union             |
-| application contract    | batch/steer順序、idle/close、follow-up、heartbeat、one-shot、retention           |
-| adapter contract        | Gateway、REST、MCP、JSON-RPC、child process、filesystem、clock、random、logger   |
-| failure matrix          | 各外部境界のsuccess、timeout、不正response、exception                            |
-| concurrency             | scope別executor、並行turn、並行action、shutdown drain、restart中queue            |
-| config                  | strict key、全省略、全既定値、関係constraint、正規化rewrite                      |
-| snapshot                | 固定developer instructionsと入力JSON組立だけ                                     |
-| composition integration | fake Discord Gateway/APIとfake app-server child processでstartupからshutdownまで |
-| manual E2E              | 実Discordと実Codex。READMEの手順を利用者が実行                                   |
+| Test layer              | 必須範囲                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| domain unit             | 全session状態遷移、禁止遷移、scope equality、job union、action union               |
+| application contract    | batch/steer順序、idle記憶保存、follow-up、heartbeat、日次整理、one-shot、retention |
+| adapter contract        | Gateway、REST、MCP、JSON-RPC、child process、filesystem、clock、random、logger     |
+| failure matrix          | 各外部境界のsuccess、timeout、不正response、exception                              |
+| concurrency             | scope別executor、並行turn、並行action、shutdown drain、restart中queue              |
+| config                  | strict key、必須memory section、既定値、cron、関係constraint、正規化rewrite        |
+| snapshot                | 固定developer instructionsと入力JSON組立だけ                                       |
+| composition integration | fake Discord Gateway/APIとfake app-server child processでstartupからshutdownまで   |
+| manual E2E              | 実Discordと実Codex。READMEの手順を利用者が実行                                     |
 
 Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。build jobは通常CI gateへ加えず、image publishでamd64/arm64 buildを行う。
 
@@ -379,7 +401,7 @@ Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCI�
 3. Codex process、JSON-RPC、thread/turn adapter。
 4. agent turn chainとDiscord MCP。
 5. conversation state machineとGateway intake。
-6. heartbeat、schedule、retention cleaner。
+6. heartbeat、session記憶保存、日次整理、schedule、retention cleaner。
 7. observability、composition integration、Docker。
 8. composition rootを一度だけ新実装へ切り替える。
 9. 旧source、旧test、旧dependency、旧documentを削除する。

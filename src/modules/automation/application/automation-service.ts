@@ -19,18 +19,27 @@ interface RetentionAutomationControl {
   stopIntake(): void;
 }
 
+interface MemoryMaintenanceAutomationControl {
+  drain(): Promise<void>;
+  start(): void;
+  stopIntake(): void;
+}
+
 export class AutomationService {
   readonly #heartbeat: HeartbeatAutomationControl;
+  readonly #memoryMaintenance: MemoryMaintenanceAutomationControl;
   readonly #retention: RetentionAutomationControl;
   readonly #schedule: ScheduleAutomationControl;
   #started = false;
 
   constructor(input: {
     heartbeat: HeartbeatAutomationControl;
+    memoryMaintenance: MemoryMaintenanceAutomationControl;
     retention: RetentionAutomationControl;
     schedule: ScheduleAutomationControl;
   }) {
     this.#heartbeat = input.heartbeat;
+    this.#memoryMaintenance = input.memoryMaintenance;
     this.#retention = input.retention;
     this.#schedule = input.schedule;
   }
@@ -42,6 +51,7 @@ export class AutomationService {
     try {
       await this.#retention.start();
       await this.#schedule.start(initialSchedule);
+      this.#memoryMaintenance.start();
       this.#heartbeat.start();
       this.#started = true;
     } catch (error: unknown) {
@@ -56,11 +66,17 @@ export class AutomationService {
 
   async stopIntake(): Promise<void> {
     this.#heartbeat.stopIntake();
+    this.#memoryMaintenance.stopIntake();
     this.#retention.stopIntake();
     await this.#schedule.stopIntake();
   }
 
   async drain(): Promise<void> {
-    await Promise.all([this.#heartbeat.drain(), this.#schedule.drain(), this.#retention.drain()]);
+    await Promise.all([
+      this.#heartbeat.drain(),
+      this.#memoryMaintenance.drain(),
+      this.#schedule.drain(),
+      this.#retention.drain(),
+    ]);
   }
 }

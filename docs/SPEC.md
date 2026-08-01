@@ -16,6 +16,7 @@ Lunaは次を行う。
 - Codexが明示した型付きDiscordアクションを実行する。
 - heartbeatと利用者定義のscheduleから自律的にCodex turnを開始する。
 - `LUNA.md` と `MEMORY.md` を新しいCodex threadの人格・長期記憶として使う。
+- idle終了前の会話を日次記憶へ保存し、設定cronで記憶とworkspaceを整理する。
 
 multi-tenant service、Windows、公開CLI、Web UI、HTTP health endpoint、Discordからの過去thread再開は対象外とする。
 
@@ -41,6 +42,8 @@ Codexには次を明示する。
 - Discordアクション: Zodで検証後にDiscord APIへ反映する型付き命令。
 - 常設channel: `allowed_channel_ids` に含まれるGuild channel、その配下のthread、またはIDを直接含めたthread。mentionなしで常時受信する。
 - 一時session: 常設でないscopeにおいて、Lunaへのmentionで開始されたsession。
+- session記憶保存: idle終了する会話thread自身が、会話要約と将来役立つ事項を`memory/YYYY-MM-DD.md`へ追記するturn。
+- 日次整理: 組み込みscheduleが専用threadを作り、記憶とworkspaceを整理してlocal Gitへの保存を試みる実行。
 
 ## 5. Discord入力
 
@@ -92,7 +95,9 @@ type AgentInput =
       messages: DiscordMessage[];
     }
   | { source: "heartbeat"; checklist: string }
-  | { source: "schedule"; jobId: string; prompt: string };
+  | { source: "schedule"; jobId: string; prompt: string }
+  | { source: "session_memory"; date: string }
+  | { source: "memory_maintenance"; date: string };
 ```
 
 Discord messageはID、timestamp、投稿種別、Guild/channel/authorのIDと表示名、本文、添付metadata、sticker、reaction集計、mention対象、返信参照を型付きfieldとして持つ。DM返信参照は`channelId`と`messageId`、Guild返信参照はそれらに`guildId`を加えたunionとする。
@@ -103,7 +108,13 @@ Discord messageはID、timestamp、投稿種別、Guild/channel/authorのIDと�
 
 idle期限は全scopeで共通の`session_idle_ms`とする。受理投稿の到着時と、turn chain全体の完了時に現在時刻から再設定する。
 
-idle期限がactive chain中に来た場合は処理を中断せず、close予約を付ける。chain完了後にCodex threadをarchiveしてapplication上の参照を破棄する。次の入力は必ず新しいCodex threadを作る。
+idle期限がactive chain中に来た場合は処理を中断せず、close予約を付ける。後続のDiscord投稿が来ればclose予約を取り消す。予約が残ったままchainが完了した場合と、idle状態で期限が来た場合だけsession記憶保存を実行する。
+
+session記憶保存が有効なら、保存開始日のprocess local dateを`YYYY-MM-DD`として同じCodex threadへ追加turnを送る。agentはthread全体から短い会話要約、嗜好、決定、未完了事項等を選び、既存内容を失わないsession単位のsectionとして`memory/YYYY-MM-DD.md`へ追記する。見出しと詳細構造はagentが決める。保存対象がなければfileを変更しない。`memory/`がなければagentが作る。
+
+保存turnとそのDiscord action failure follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
+
+複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。shutdown、通常turn失敗、connection loss、fatal abort等、idle終了以外の理由ではsession記憶保存を実行しない。
 
 session、queue、close予約、次のheartbeat時刻はmemoryだけに置き、process再起動後に復元しない。
 
@@ -115,7 +126,9 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 - `MEMORY.md`: `# MEMORY.md`だけを持つ初期長期記憶。Luna自身が編集可能。
 - `HEARTBEAT.md`: `# HEARTBEAT.md`だけを持つ初期checklist。
 
-新しいDiscord、heartbeat、schedule threadを作るたびに`LUNA.md`と`MEMORY.md`の全文をbase instructionsへ加える。size上限と同時更新lockは設けず、最後のfilesystem writeを採用する。active threadへ途中変更を反映しない。
+`memory/`と日次記憶fileはstartup initializerで生成せず、session記憶保存または日次整理を行うagentが必要時に作る。日次記憶fileは日次整理後も同じpathに残す。
+
+新しいDiscord、heartbeat、schedule、日次整理threadを作るたびに`LUNA.md`と`MEMORY.md`の全文をbase instructionsへ加える。size上限と同時更新lockは設けず、最後のfilesystem writeを採用する。active threadへ途中変更を反映しない。通常threadからの`MEMORY.md`更新を禁止しない。
 
 起動後に`LUNA.md`または`MEMORY.md`を読めない場合は、読めたfileだけで処理を続ける。heartbeat直前に`HEARTBEAT.md`を読めない場合はその実行だけを失敗とし、turnを開始しない。
 
@@ -123,7 +136,7 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 
 ## 8. Codex実行
 
-一つの固定版`@openai/codex` app-server processを全会話、heartbeat、scheduleで共有する。PATH上の別Codexへfallbackしない。
+一つの固定版`@openai/codex` app-server processを全会話、heartbeat、schedule、日次整理で共有する。PATH上の別Codexへfallbackしない。
 
 model、reasoning effort、Codex組込みtoolはrequestで指定せず、専用`CODEX_HOME`のCodex defaultを使う。Discord MCPだけを追加する。全threadは`ephemeral: false`とする。
 
@@ -218,7 +231,19 @@ heartbeatは既定で有効とする。一つ前のheartbeatが成功または�
 
 各実行は`HEARTBEAT.md`を直前に読み、新しいCodex threadを作る。完了後はarchiveする。停止中の予定を補わない。失敗はJSON logだけに記録し、Discordへsystem messageを送らない。
 
-## 12. Schedule
+## 12. 記憶とworkspaceの日次整理
+
+`[memory].enabled = true`のとき、`maintenance_cron`を組み込みscheduleとして登録する。cronは分・時・日・月・曜日の5 fieldでprocess local timezoneを使う。設定はstartup時だけ読み、稼働中に再読込しない。停止中のtickを補わず、先行実行が次のtickまで終わらない場合も重複実行を抑止しない。
+
+tickごとに新しい専用Codex threadを作り、実行日のprocess local dateを渡す。agentは全`memory/YYYY-MM-DD.md`、現在の`MEMORY.md`、workspace全体を読み、長期記憶の整理、不要fileの削除、文書の移動・renameを判断する。通常threadと同じfilesystem、command、network、sudo、Discord権限を持ち、application側の保護path、排他、操作検証は設けない。全日次記憶fileは既存pathに残すよう指示する。
+
+通常会話、session記憶保存、heartbeat、利用者schedule、日次整理は互いに並行できる。日次整理中のworkspace変更を止めず、同時更新時は最後のfilesystem writeを採用する。
+
+file整理後、agentはGit executableが利用できる場合だけlocal Gitへ保存する。repositoryがなければ初期化し、local identityを`Luna <luna@localhost>`に設定する。整理前checkpoint、空commit、pushは行わず、整理後に最大一件のcommitを作る。commit message、stage対象、除外対象はagentが判断する。Git executableがなければGit操作だけを省略し、file整理を正常に続行する。applicationはcommit作成とworking tree状態を検証しない。
+
+日次整理turnの完了期限を設けない。成功または失敗後にthreadをarchiveする。成功・失敗の報告だけを目的とするDiscord通知は行わない。失敗はJSON logだけに記録し、即時retryを行わず、次のcron tickを待つ。
+
+## 13. Schedule
 
 `LUNA_HOME/workspace/cron.toml`をstrictに監視し、再起動なしでlast-valid job集合を更新する。jobは利用者指定の一意な安定ID、必須`enabled`、promptを持つ。
 
@@ -248,11 +273,11 @@ cronは分・時・日・月・曜日の5 fieldでprocess local timezoneを使�
 
 startup時の不正`cron.toml`は起動失敗とする。稼働中の不正変更は適用せず、last-valid jobを動かし続ける。
 
-## 13. 設定
+## 14. 設定
 
-### 13.1 `config.toml`
+### 14.1 `config.toml`
 
-`LUNA_HOME/config.toml`は起動時に一度だけ読む。全fieldは省略可能だが、未知sectionと未知keyは拒否する。fileがなければ次の完全設定を生成する。数値期間はすべてmillisecond整数である。
+`LUNA_HOME/config.toml`は起動時に一度だけ読む。`[memory]` sectionとその2 fieldは必須とし、他sectionとfieldは省略できる。未知sectionと未知keyは拒否する。既存configに`[memory]`がなければstartupを失敗させ、自動migrationしない。fileがなければ次の完全設定を生成する。数値期間はすべてmillisecond整数である。
 
 ```toml
 [discord]
@@ -268,6 +293,10 @@ enabled = true
 min_interval_ms = 900000
 max_interval_ms = 2700000
 
+[memory]
+enabled = true
+maintenance_cron = "0 4 * * *"
+
 [agent]
 rpc_timeout_ms = 30000
 thread_retention_ms = 2592000000
@@ -278,9 +307,9 @@ restart_window_ms = 300000
 restart_failure_limit = 5
 ```
 
-`min_interval_ms <= max_interval_ms`と`restart_initial_delay_ms <= restart_max_delay_ms`を必須とする。同値のheartbeat間隔は固定間隔である。`initial_history_limit`とrestart delayは0以上、それ以外のtimeoutと期間、`restart_failure_limit`は1以上のsafe integerとする。
+`memory.enabled`はsession記憶保存と日次整理を一括で切り替える。`maintenance_cron`は有効・無効にかかわらず正しい5-field cronを必須とする。`min_interval_ms <= max_interval_ms`と`restart_initial_delay_ms <= restart_max_delay_ms`を必須とする。同値のheartbeat間隔は固定間隔である。`initial_history_limit`とrestart delayは0以上、それ以外のtimeoutと期間、`restart_failure_limit`は1以上のsafe integerとする。
 
-### 13.2 環境変数
+### 14.2 環境変数
 
 | 変数                | 必須   | 既定値      | 契約                                                          |
 | ------------------- | ------ | ----------- | ------------------------------------------------------------- |
@@ -291,13 +320,13 @@ restart_failure_limit = 5
 
 `CODEX_HOME`は利用者入力として受けず、子processで`LUNA_HOME/codex`へ上書きする。子processは親環境を継承するが、`DISCORD_BOT_TOKEN`だけを除外する。
 
-## 14. Thread保存
+## 15. Thread保存
 
 全Codex threadをdiskへ保存し、会話sessionまたはautomation実行終了時に`thread/archive`する。保持期間はarchive済みthreadを`thread/list`した結果の`updatedAt`から測る。archive失敗時はerror logを残してapplication参照を破棄し、未archive threadが残ることを許す。
 
 startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごとに、保持期限を過ぎたarchive済みthreadへ`thread/delete`を送る。delete失敗はlogに残し、次回清掃で再試行する。Discordからarchive済みthreadをresumeしない。
 
-## 15. 障害、再起動、停止
+## 16. 障害、再起動、停止
 
 | 事象                                      | 結果                                                                                               |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -309,6 +338,9 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 | 相関ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |
 | app-server停止                            | active turnは再実行せず、thread参照を破棄。未開始queueは再起動後に新threadで処理。                 |
 | final action中のapp-server停止            | actionは全件settle。follow-upせずsession終了。未開始queueは新threadへ移す。                        |
+| session記憶保存失敗                       | error log後に再試行せずthreadをarchive。保存中のqueueは新threadへ移す。                            |
+| 日次整理失敗                              | error log後にthreadをarchive。即時retryせず次のcron tickを待つ。                                   |
+| 日次整理時にGit executableがない          | Git操作を省略し、file整理を続行。                                                                  |
 | `HEARTBEAT.md`読込失敗                    | 当該heartbeatだけ失敗し、次の間隔を抽選。                                                          |
 | 稼働中cron不正                            | error log、last-validを維持。                                                                      |
 | one-shot削除失敗                          | error log、同一processでは再実行なし。以後は過去定義として削除だけを再試行。                       |
@@ -316,17 +348,17 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 
 app-server再起動delayは`min(restart_initial_delay_ms × 2^(n-1), restart_max_delay_ms)`とする。`n`は`restart_window_ms`内にRESTARTINGへ入った回数である。process exit、protocol破損、RPC timeout、spawn失敗、initialize失敗をそれぞれ一回として数え、READYへ戻ってもwindow内の記録を消さない。`restart_failure_limit`回までは再起動し、その次にRESTARTINGが必要になった時点でLuna全体をnon-zero終了する。既定では1秒から30秒、5分内に5回までを許す。
 
-SIGINTまたはSIGTERM後は新規Discord入力、heartbeat timer、schedule tickを止める。signal前に受理した全queueとactive chainを、自然完了またはprocess異常まで待つ。drain対象のconversation queueにapp-serverが必要なら再起動を続けるが、再起動budget超過時はnon-zero終了する。追加grace timeoutは設けないため、shutdownが永久に終わらない場合がある。
+SIGINTまたはSIGTERM後は新規Discord入力、heartbeat timer、schedule tick、日次整理tickを止める。signal前に受理した全queueとactive chainを、自然完了またはprocess異常まで待つ。shutdownを理由にsession記憶保存は開始しない。drain対象のconversation queueにapp-serverが必要なら再起動を続けるが、再起動budget超過時はnon-zero終了する。追加grace timeoutは設けないため、shutdownが永久に終わらない場合がある。
 
 同時turn数、queue件数、queue byte数、turn時間、follow-up回数に上限を設けない。memory exhaustion、Bot loop、同一eventの重複処理、Gateway切断中の欠落、non-terminating shutdownを仕様上許容する。
 
-## 16. ログと監視
+## 17. ログと監視
 
 logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先へ委ねる。HTTP health endpointとstatus commandは提供せず、process livenessとexit codeだけで監視する。
 
 通常はevent名、level、timestamp、conversation scope、job ID、thread ID、turn ID、request ID、action index等のmetadataを記録する。`LOG_LEVEL=debug`または`trace`ではDiscord本文、prompt、tool引数、actionも記録する。`DISCORD_BOT_TOKEN`等の既知の専用secret fieldはredactするが、free-form本文やpromptへ埋め込まれたcredentialや個人情報の検出・除去は保証しない。
 
-## 17. 配置と品質
+## 18. 配置と品質
 
 native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。自動mountは`LUNA_HOME`だけで、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
 

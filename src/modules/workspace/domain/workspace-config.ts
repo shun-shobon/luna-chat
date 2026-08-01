@@ -21,6 +21,10 @@ export type WorkspaceConfig = {
     maxIntervalMs: number;
     minIntervalMs: number;
   };
+  memory: {
+    enabled: boolean;
+    maintenanceCron: string;
+  };
 };
 
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
@@ -45,5 +49,9 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
     enabled: true,
     maxIntervalMs: 2_700_000,
     minIntervalMs: 900_000,
+  },
+  memory: {
+    enabled: true,
+    maintenanceCron: "0 4 * * *",
   },
 };

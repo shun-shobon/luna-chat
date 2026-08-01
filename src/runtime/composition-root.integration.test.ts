@@ -10,7 +10,8 @@ const fakes = vi.hoisted(() => {
   };
   const managedClose = vi.fn(async () => undefined);
   const mcpClose = vi.fn(async () => undefined);
-  return { client, managedClose, mcpClose };
+  const recurringCrons: string[] = [];
+  return { client, managedClose, mcpClose, recurringCrons };
 });
 
 vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
@@ -35,6 +36,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
         typingIdleMs: 50,
       },
       heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
+      memory: { enabled: true, maintenanceCron: "0 4 * * *" },
     },
     configPath: "/tmp/luna-test/config.toml",
     cronPath: "/tmp/luna-test/workspace/cron.toml",
@@ -80,12 +82,26 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
   },
 }));
 
+vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
+  CronScheduleTimer: class {
+    scheduleOneShot(): never {
+      throw new Error("Unexpected one-shot schedule");
+    }
+
+    scheduleRecurring(cron: string): { stop(): void } {
+      fakes.recurringCrons.push(cron);
+      return { stop() {} };
+    }
+  },
+}));
+
 import { startLunaApplication } from "./composition-root";
 
 const originalEnvironment = { ...process.env };
 
 afterEach(() => {
   process.env = { ...originalEnvironment };
+  fakes.recurringCrons.length = 0;
   vi.clearAllMocks();
 });
 
@@ -102,6 +118,7 @@ describe("composition root integration", () => {
 
     expect(fakes.client.login).toHaveBeenCalledWith("discord-token");
     expect(fakes.client.on).toHaveBeenCalledTimes(2);
+    expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
 
     await application.shutdown();
 

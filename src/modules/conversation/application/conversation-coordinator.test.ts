@@ -13,7 +13,10 @@ import type {
 } from "../../discord/ports/discord-action-batch-port";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 
-import { ConversationCoordinator } from "./conversation-coordinator";
+import {
+  ConversationCoordinator,
+  type ConversationSessionMemoryOptions,
+} from "./conversation-coordinator";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -183,11 +186,283 @@ describe("ConversationCoordinator", () => {
     expect(coordinator.hasSession(scope)).toBe(false);
   });
 
+  it("idle終了時に同一threadでsession memory turnを完了してからarchiveする", async () => {
+    vi.useFakeTimers();
+    const memoryCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([Promise.resolve(completed([])), memoryCompletion.promise]);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: {
+        enabled: true,
+        now: () => new Date(2026, 6, 24, 3, 59, 0),
+      },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.startTurn.mock.calls[1]).toEqual([
+      "thread-1",
+      JSON.stringify({ source: "session_memory", date: "2026-07-24" }),
+    ]);
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    memoryCompletion.resolve(completed([]));
+    await flushPromises();
+
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+    expect(coordinator.hasSession(scope)).toBe(false);
+  });
+
+  it("active chain中のidle終了はchain完了後にsession memory turnを開始する", async () => {
+    vi.useFakeTimers();
+    const conversationCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([conversationCompletion.promise, Promise.resolve(completed([]))]);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
+
+    conversationCompletion.resolve(completed([]));
+    await flushPromises();
+
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+  });
+
+  it("idle終了予約後の新着は予約を取消してactive turnへsteerする", async () => {
+    vi.useFakeTimers();
+    const conversationCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([conversationCompletion.promise]);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(1_000);
+    coordinator.accept({ scope, message: message("101", "2026-07-23T00:00:01.000Z") });
+    await flushPromises();
+    conversationCompletion.resolve(completed([]));
+    await flushPromises();
+
+    expect(runtime.steerTurn).toHaveBeenCalledOnce();
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+  });
+
+  it("session memory turnの開始中と実行中の新着をarchive後の新threadへ渡す", async () => {
+    vi.useFakeTimers();
+    const memoryStarted = deferred<StartedAgentTurn>();
+    const memoryCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime();
+    runtime.startTurn
+      .mockResolvedValueOnce({ turnId: "turn-1", completion: Promise.resolve(completed([])) })
+      .mockImplementationOnce(async () => await memoryStarted.promise)
+      .mockResolvedValueOnce({ turnId: "turn-3", completion: Promise.resolve(completed([])) });
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    coordinator.accept({ scope, message: message("101", "2026-07-23T00:00:01.000Z") });
+    memoryStarted.resolve({ turnId: "turn-2", completion: memoryCompletion.promise });
+    await flushPromises();
+    coordinator.accept({ scope, message: message("102", "2026-07-23T00:00:02.000Z") });
+    memoryCompletion.resolve(completed([]));
+    await flushPromises();
+
+    expect(runtime.steerTurn).not.toHaveBeenCalled();
+    expect(runtime.openThread).toHaveBeenCalledTimes(2);
+    expect(
+      parseStartInput(runtime.startTurn.mock.calls[2]?.[1]).messages.map((item) => item.id),
+    ).toEqual(["101", "102"]);
+  });
+
+  it("session memory turnのDiscord action失敗を同じ目的のfollow-upで完了する", async () => {
+    vi.useFakeTimers();
+    const action = {
+      kind: "send_message" as const,
+      target: { kind: "channel" as const, channelId: "200" },
+      content: "saved",
+    };
+    const runtime = createRuntime([
+      Promise.resolve(completed([])),
+      Promise.resolve(completed([action])),
+      Promise.resolve(completed([])),
+    ]);
+    const execute = vi
+      .fn<DiscordActionBatchPort["execute"]>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          actionKind: "send_message",
+          index: 0,
+          success: false,
+          target: action.target,
+          error: "Discord unavailable",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const coordinator = createCoordinator(runtime.port, {
+      actions: { execute, releaseTyping: vi.fn(async () => undefined) },
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(runtime.startTurn).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(runtime.startTurn.mock.calls[2]?.[1] ?? "null")).toMatchObject({
+      source: "discord_action_results",
+    });
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+  });
+
+  it("session memory turn中のconnection loss後に新着queueを新threadへ渡す", async () => {
+    vi.useFakeTimers();
+    const memoryCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([
+      Promise.resolve(completed([])),
+      memoryCompletion.promise,
+      Promise.resolve(completed([])),
+    ]);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    coordinator.accept({ scope, message: message("101", "2026-07-23T00:00:01.000Z") });
+    coordinator.connectionLost(new Error("connection lost"));
+    await flushPromises();
+
+    expect(runtime.openThread).toHaveBeenCalledTimes(2);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(3);
+    expect(parseStartInput(runtime.startTurn.mock.calls[2]?.[1]).messages[0]?.id).toBe("101");
+  });
+
+  it("session memory action executor例外後に新着queueを新threadへ渡す", async () => {
+    vi.useFakeTimers();
+    const actionStarted = deferred<void>();
+    const actionFailure = deferred<void>();
+    const action = {
+      kind: "send_message" as const,
+      target: { kind: "channel" as const, channelId: "200" },
+      content: "saved",
+    };
+    const execute = vi
+      .fn<DiscordActionBatchPort["execute"]>()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async () => {
+        actionStarted.resolve();
+        await actionFailure.promise;
+        throw new Error("executor failed");
+      })
+      .mockResolvedValue([]);
+    const runtime = createRuntime([
+      Promise.resolve(completed([])),
+      Promise.resolve(completed([action])),
+      Promise.resolve(completed([])),
+    ]);
+    const onError = vi.fn();
+    const coordinator = createCoordinator(runtime.port, {
+      actions: { execute, releaseTyping: vi.fn(async () => undefined) },
+      onError,
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await actionStarted.promise;
+    coordinator.accept({ scope, message: message("101", "2026-07-23T00:00:01.000Z") });
+    actionFailure.resolve();
+    await flushPromises();
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+      scope,
+      operation: "actions/execute",
+    });
+    expect(runtime.openThread).toHaveBeenCalledTimes(2);
+    expect(parseStartInput(runtime.startTurn.mock.calls[2]?.[1]).messages[0]?.id).toBe("101");
+  });
+
+  it("session memory turnの開始または完了失敗を記録してarchiveする", async () => {
+    vi.useFakeTimers();
+    const startFailureRuntime = createRuntime();
+    startFailureRuntime.startTurn
+      .mockResolvedValueOnce({ turnId: "turn-1", completion: Promise.resolve(completed([])) })
+      .mockRejectedValueOnce(new Error("memory start failed"));
+    const startError = vi.fn();
+    const startFailureCoordinator = createCoordinator(startFailureRuntime.port, {
+      onError: startError,
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+    startFailureCoordinator.accept({
+      scope,
+      message: message("100", "2026-07-23T00:00:00.000Z"),
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(startError).toHaveBeenCalledWith(expect.any(Error), {
+      scope,
+      operation: "turn/start",
+    });
+    expect(startFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
+
+    const completionFailureRuntime = createRuntime([
+      Promise.resolve(completed([])),
+      Promise.resolve({ status: "failed", errorMessage: "memory failed" }),
+    ]);
+    const completionError = vi.fn();
+    const completionFailureCoordinator = createCoordinator(completionFailureRuntime.port, {
+      onError: completionError,
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+    completionFailureCoordinator.accept({
+      scope,
+      message: message("101", "2026-07-23T00:00:01.000Z"),
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(completionError).toHaveBeenCalledWith(expect.any(Error), {
+      scope,
+      operation: "turn/completion",
+    });
+    expect(completionFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
+  });
+
   it("shutdown時はactive chainを待ってからarchiveする", async () => {
     vi.useFakeTimers();
     const completion = deferred<AgentTurnResult>();
     const runtime = createRuntime([completion.promise]);
-    const coordinator = createCoordinator(runtime.port);
+    const coordinator = createCoordinator(runtime.port, {
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
 
     coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
     await flushPromises();
@@ -201,6 +476,7 @@ describe("ConversationCoordinator", () => {
     await draining;
 
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
     expect(coordinator.hasSession(scope)).toBe(false);
   });
 
@@ -215,7 +491,11 @@ describe("ConversationCoordinator", () => {
       releaseTyping,
     };
     const onError = vi.fn();
-    const coordinator = createCoordinator(runtime.port, { actions, onError });
+    const coordinator = createCoordinator(runtime.port, {
+      actions,
+      onError,
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
 
     coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
     await vi.advanceTimersByTimeAsync(100);
@@ -227,6 +507,7 @@ describe("ConversationCoordinator", () => {
     });
     expect(releaseTyping).toHaveBeenCalledWith("owner-1");
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
   });
 
   it("opening中のconnection lossでは未開始batchを一度だけ新runtimeへ渡す", async () => {
@@ -321,6 +602,7 @@ function createCoordinator(
     actions?: DiscordActionBatchPort;
     history?: ConversationHistoryPort;
     onError?: (error: unknown, context: { scope: ConversationScope; operation: string }) => void;
+    sessionMemory?: ConversationSessionMemoryOptions;
   } = {},
 ): ConversationCoordinator {
   return new ConversationCoordinator(
@@ -356,7 +638,13 @@ function createCoordinator(
       onError: overrides.onError ?? vi.fn(),
       onEvent: vi.fn(),
     },
-    { debounceMs: 100, typingIdleMs: 50, sessionIdleMs: 1_000, initialHistoryLimit: 20 },
+    {
+      debounceMs: 100,
+      typingIdleMs: 50,
+      sessionIdleMs: 1_000,
+      initialHistoryLimit: 20,
+      sessionMemory: overrides.sessionMemory ?? { enabled: false },
+    },
   );
 }
 
@@ -435,5 +723,5 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 }
 
 async function flushPromises(): Promise<void> {
-  for (let index = 0; index < 12; index += 1) await Promise.resolve();
+  for (let index = 0; index < 32; index += 1) await Promise.resolve();
 }

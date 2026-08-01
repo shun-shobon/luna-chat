@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { readFile as readFileAsync, writeFile as writeFileAsync } from "node:fs/promises";
 
-import { CronTime } from "cron";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
+import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { EMPTY_WORKSPACE_SCHEDULE, type WorkspaceSchedule } from "../domain/workspace-schedule";
 
 const ScheduleJobBaseSchema = z.strictObject({
@@ -126,17 +126,4 @@ export function removeWorkspaceScheduleJob(schedulePath: string, jobId: string):
 
   writeWorkspaceSchedule(schedulePath, { jobs });
   return true;
-}
-
-function isValidFiveFieldCron(value: string): boolean {
-  if (value.trim().split(/\s+/u).length !== 5) {
-    return false;
-  }
-
-  try {
-    new CronTime(value);
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
+import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { DEFAULT_WORKSPACE_CONFIG, type WorkspaceConfig } from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
@@ -61,6 +62,12 @@ const WorkspaceConfigTomlSchema = z
         ),
       })
       .prefault({}),
+    memory: z.strictObject({
+      enabled: z.boolean(),
+      maintenance_cron: z.string().refine(isValidFiveFieldCron, {
+        message: "memory.maintenance_cron must be a valid five-field cron expression.",
+      }),
+    }),
   })
   .superRefine((config, context) => {
     if (config.heartbeat.min_interval_ms > config.heartbeat.max_interval_ms) {
@@ -159,6 +166,10 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
       maxIntervalMs: config.heartbeat.max_interval_ms,
       minIntervalMs: config.heartbeat.min_interval_ms,
     },
+    memory: {
+      enabled: config.memory.enabled,
+      maintenanceCron: config.memory.maintenance_cron,
+    },
   };
 }
 
@@ -185,6 +196,10 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
       enabled: config.heartbeat.enabled,
       max_interval_ms: config.heartbeat.maxIntervalMs,
       min_interval_ms: config.heartbeat.minIntervalMs,
+    },
+    memory: {
+      enabled: config.memory.enabled,
+      maintenance_cron: config.memory.maintenanceCron,
     },
   };
 }

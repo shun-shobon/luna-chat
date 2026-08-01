@@ -7,4 +7,8 @@ export type AutomationInput =
       jobId: string;
       prompt: string;
       source: "schedule";
+    }
+  | {
+      date: string;
+      source: "memory_maintenance";
     };

@@ -58,6 +58,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
         typingIdleMs: 1,
       },
       heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
+      memory: { enabled: true, maintenanceCron: "0 4 * * *" },
     },
     configPath: `${fakes.lunaHome}/config.toml`,
     cronPath: `${fakes.workspaceDir}/cron.toml`,
@@ -84,6 +85,18 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
   ChokidarScheduleWatcher: class {
     async start(): Promise<void> {}
     async close(): Promise<void> {}
+  },
+}));
+
+vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
+  CronScheduleTimer: class {
+    scheduleOneShot(): never {
+      throw new Error("Unexpected one-shot schedule");
+    }
+
+    scheduleRecurring(): { stop(): void } {
+      return { stop() {} };
+    }
   },
 }));
 
@@ -125,6 +138,13 @@ describe("composition root child integration", () => {
 
     const application = await startLunaApplication();
     fakes.emit("messageCreate", discordMessage());
+    await vi.waitFor(
+      async () => {
+        const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
+        expect(methods.filter((method) => method === "turn/start")).toHaveLength(2);
+      },
+      { timeout: 3_000 },
+    );
     await application.shutdown();
 
     const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
