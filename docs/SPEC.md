@@ -144,7 +144,7 @@ Codexの`request_user_input`機能は有効化せず、中継しない。予期�
 
 全JSON-RPC requestに共通の`rpc_timeout_ms`を適用する。どのrequestでもtimeoutした時点でconnection全体を破損扱いにし、全active turnを失敗させ、全thread参照を破棄してapp-serverを再起動する。turn完了notificationを待つ時間には上限を設けない。
 
-turn固有notificationにはthread IDとturn IDを必須とする。欠落した通知、stdoutの不正JSON、未知response形式はprocess異常とし、全active turnを失敗させる。
+turn固有notificationにはthread IDとturn IDを必須とする。Lunaが開始してarchive処理を終えるまでの管理中threadだけをactive turnへ相関する。同じapp-server接続へ届くsubagent等の管理外thread通知はLunaのturn状態へ反映しない。管理中threadでactive turnへ相関できない通知、IDが欠落した通知、stdoutの不正JSON、未知response形式はprocess異常とし、全active turnを失敗させる。
 
 ## 9. Discord MCP
 
@@ -328,23 +328,23 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 
 ## 16. 障害、再起動、停止
 
-| 事象                                      | 結果                                                                                               |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Discord turn失敗                          | logのみ。利用者通知と自動再実行なし。threadをarchiveしてsession終了。未開始queueは新threadへ移す。 |
-| 初回履歴取得失敗                          | 現在batchだけで続行。                                                                              |
-| final output不正                          | actionを実行せず、threadをarchiveしてsession終了。                                                 |
-| Discord action失敗                        | 全action settle後、同一thread follow-up。                                                          |
-| RPC request timeout                       | connection破損。全active turn失敗、全thread参照破棄、再起動。                                      |
-| 相関ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |
-| app-server停止                            | active turnは再実行せず、thread参照を破棄。未開始queueは再起動後に新threadで処理。                 |
-| final action中のapp-server停止            | actionは全件settle。follow-upせずsession終了。未開始queueは新threadへ移す。                        |
-| session記憶保存失敗                       | error log後に再試行せずthreadをarchive。保存中のqueueは新threadへ移す。                            |
-| 日次整理失敗                              | error log後にthreadをarchive。即時retryせず次のcron tickを待つ。                                   |
-| 日次整理時にGit executableがない          | Git操作を省略し、file整理を続行。                                                                  |
-| `HEARTBEAT.md`読込失敗                    | 当該heartbeatだけ失敗し、次の間隔を抽選。                                                          |
-| 稼働中cron不正                            | error log、last-validを維持。                                                                      |
-| one-shot削除失敗                          | error log、同一processでは再実行なし。以後は過去定義として削除だけを再試行。                       |
-| thread archive/delete失敗                 | error log、他処理を継続。                                                                          |
+| 事象                                                          | 結果                                                                                               |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Discord turn失敗                                              | logのみ。利用者通知と自動再実行なし。threadをarchiveしてsession終了。未開始queueは新threadへ移す。 |
+| 初回履歴取得失敗                                              | 現在batchだけで続行。                                                                              |
+| final output不正                                              | actionを実行せず、threadをarchiveしてsession終了。                                                 |
+| Discord action失敗                                            | 全action settle後、同一thread follow-up。                                                          |
+| RPC request timeout                                           | connection破損。全active turn失敗、全thread参照破棄、再起動。                                      |
+| 管理中threadの相関不能、ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |
+| app-server停止                                                | active turnは再実行せず、thread参照を破棄。未開始queueは再起動後に新threadで処理。                 |
+| final action中のapp-server停止                                | actionは全件settle。follow-upせずsession終了。未開始queueは新threadへ移す。                        |
+| session記憶保存失敗                                           | error log後に再試行せずthreadをarchive。保存中のqueueは新threadへ移す。                            |
+| 日次整理失敗                                                  | error log後にthreadをarchive。即時retryせず次のcron tickを待つ。                                   |
+| 日次整理時にGit executableがない                              | Git操作を省略し、file整理を続行。                                                                  |
+| `HEARTBEAT.md`読込失敗                                        | 当該heartbeatだけ失敗し、次の間隔を抽選。                                                          |
+| 稼働中cron不正                                                | error log、last-validを維持。                                                                      |
+| one-shot削除失敗                                              | error log、同一processでは再実行なし。以後は過去定義として削除だけを再試行。                       |
+| thread archive/delete失敗                                     | error log、他処理を継続。                                                                          |
 
 app-server再起動delayは`min(restart_initial_delay_ms × 2^(n-1), restart_max_delay_ms)`とする。`n`は`restart_window_ms`内にRESTARTINGへ入った回数である。process exit、protocol破損、RPC timeout、spawn失敗、initialize失敗をそれぞれ一回として数え、READYへ戻ってもwindow内の記録を消さない。`restart_failure_limit`回までは再起動し、その次にRESTARTINGが必要になった時点でLuna全体をnon-zero終了する。既定では1秒から30秒、5分内に5回までを許す。
 

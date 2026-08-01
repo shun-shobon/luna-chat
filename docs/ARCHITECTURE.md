@@ -5,6 +5,7 @@
 Lunaは、一つのprocess内で複数のDiscord会話と自律実行を並行処理するmodular hexagonal applicationとして構築する。設計上の優先順位は次のとおりである。
 
 記憶機能の用語と対象の対応は [MEMORY_LIFECYCLE_REFERENTS.md](./MEMORY_LIFECYCLE_REFERENTS.md) に固定する。
+Codex turn通知の所有権と相関範囲は [TURN_NOTIFICATION_REFERENTS.md](./TURN_NOTIFICATION_REFERENTS.md) に固定する。
 
 1. Discord、Codex、filesystem、clockをdomain/applicationから分離する。
 2. 会話scopeごとの状態変更を直列化し、異なるscopeは並行させる。
@@ -225,7 +226,7 @@ STOPPED ── spawn/initialize ──► READY
 
 child executableはpnpm dependencyの`@openai/codex`だけから絶対pathで解決する。child environmentは親をcopyし、`DISCORD_BOT_TOKEN`を削除し、`CODEX_HOME`を上書きする。
 
-全RPC pending requestはrequest IDで管理し、共通timeoutを持つ。いずれか一件のtimeoutでもserver側だけ成功した未知状態を否定できないため、connection全体を破損とみなす。thread/turn notificationはthread IDとturn IDの両方でtrackerへroutingする。ID欠落、不一致、decode不能なstdout行、未知responseも同じprocess異常とする。
+全RPC pending requestはrequest IDで管理し、共通timeoutを持つ。いずれか一件のtimeoutでもserver側だけ成功した未知状態を否定できないため、connection全体を破損とみなす。Lunaが開始してarchive処理を終えるまでのthread IDを管理中集合へ置き、そのthreadのturn notificationだけをthread IDとturn IDの両方でtrackerへroutingする。Codexが同じconnectionへ配信するsubagent等の管理外thread notificationはtrackerへ渡さない。管理中threadのtracker不在、ID欠落、不一致、decode不能なstdout行、未知responseは同じprocess異常とする。
 
 process異常では全pending requestとactive turnをtyped errorでrejectし、全thread referenceを破棄する。未開始conversation queueは保持する。実行中のDiscord final actionはapp-serverと独立して全件settleさせるが、result follow-upは行わない。automation executionは失敗として再実行せず、heartbeatは次間隔を抽選し、recurring jobは次tickを待ち、one-shotは過去定義として削除だけを再試行する。
 

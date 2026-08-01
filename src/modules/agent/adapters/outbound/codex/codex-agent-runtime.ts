@@ -17,7 +17,11 @@ import {
   parseThreadList,
   parseTurnId,
 } from "./codex-response";
-import { CodexTurnTracker, isTurnScopedNotificationMethod } from "./codex-turn-tracker";
+import {
+  CodexTurnTracker,
+  isTurnScopedNotificationMethod,
+  parseTurnScopedNotificationThreadId,
+} from "./codex-turn-tracker";
 import { JsonRpcConnection, JsonRpcProtocolError } from "./json-rpc-connection";
 import { parseJsonConfig, parseJsonValue } from "./json-value";
 
@@ -45,11 +49,16 @@ const CLIENT_INFO: InitializeParams = {
 
 export class CodexAgentRuntime implements AgentRuntimePort {
   readonly #connection: JsonRpcConnection;
+  readonly #managedThreadIds = new Set<ThreadId>();
   readonly #trackers = new Map<ThreadId, CodexTurnTracker>();
 
   private constructor(connection: JsonRpcConnection) {
     this.#connection = connection;
     connection.onNotification((notification) => {
+      const notificationThreadId = parseTurnScopedNotificationThreadId(notification);
+      if (notificationThreadId !== undefined && !this.#managedThreadIds.has(notificationThreadId)) {
+        return;
+      }
       for (const tracker of this.#trackers.values()) {
         if (tracker.handleNotification(notification)) {
           return;
@@ -115,8 +124,12 @@ export class CodexAgentRuntime implements AgentRuntimePort {
   }
 
   public async archiveThread(threadId: ThreadId): Promise<void> {
-    const result = await this.#connection.request("thread/archive", { threadId });
-    parseResponse(this.#connection, () => parseEmptyResponse(result));
+    try {
+      const result = await this.#connection.request("thread/archive", { threadId });
+      parseResponse(this.#connection, () => parseEmptyResponse(result));
+    } finally {
+      this.#managedThreadIds.delete(threadId);
+    }
   }
 
   public async deleteThread(threadId: ThreadId): Promise<void> {
@@ -161,7 +174,9 @@ export class CodexAgentRuntime implements AgentRuntimePort {
       ephemeral: false,
       sandbox: "danger-full-access",
     });
-    return parseResponse(this.#connection, () => parseThreadId(result));
+    const threadId = parseResponse(this.#connection, () => parseThreadId(result));
+    this.#managedThreadIds.add(threadId);
+    return threadId;
   }
 
   public async startTurn(threadId: ThreadId, input: string): Promise<StartedAgentTurn> {
@@ -169,6 +184,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
       throw new Error(`Thread ${threadId} already has an active turn.`);
     }
     const tracker = new CodexTurnTracker(threadId);
+    this.#managedThreadIds.add(threadId);
     this.#trackers.set(threadId, tracker);
     // A connection failure can occur before turn/start returns; mark that internal
     // completion rejection as observed until ownership is returned to the caller.

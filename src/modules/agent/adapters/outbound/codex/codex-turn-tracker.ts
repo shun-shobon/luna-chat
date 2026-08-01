@@ -6,8 +6,10 @@ import type { AgentTurnResult, ThreadId, TurnId } from "../../../ports/outbound/
 
 import type { JsonRpcNotification, JsonRpcServerRequest } from "./json-rpc-connection";
 
-const turnReferenceSchema = z.looseObject({
+const threadReferenceSchema = z.looseObject({
   threadId: z.string().min(1),
+});
+const turnReferenceSchema = threadReferenceSchema.extend({
   turnId: z.string().min(1),
 });
 const turnStartedSchema = z.looseObject({
@@ -77,6 +79,15 @@ export function isTurnScopedNotificationMethod(method: string): boolean {
     method === "turn/completed" ||
     TURN_REFERENCE_NOTIFICATION_METHODS.has(method)
   );
+}
+
+export function parseTurnScopedNotificationThreadId(
+  notification: JsonRpcNotification,
+): ThreadId | undefined {
+  if (!isTurnScopedNotificationMethod(notification.method)) {
+    return undefined;
+  }
+  return threadReferenceSchema.parse(notification.params).threadId;
 }
 
 export class TurnCorrelationError extends Error {

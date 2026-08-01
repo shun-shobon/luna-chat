@@ -126,6 +126,86 @@ describe("CodexAgentRuntime", () => {
     });
   });
 
+  it("同じconnectionへ届く管理外threadのturn通知を管理中turnから分離する", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+
+    const starting = runtime.startTurn("thread-1", "hello");
+    transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+    const started = await starting;
+
+    transport.emit({
+      method: "turn/started",
+      params: { threadId: "subagent-thread", turn: { id: "subagent-turn" } },
+    });
+    transport.emit({
+      method: "item/completed",
+      params: {
+        item: { type: "agentMessage", phase: "final_answer", text: '{"actions":[]}' },
+        threadId: "subagent-thread",
+        turnId: "subagent-turn",
+      },
+    });
+    transport.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "subagent-thread",
+        turn: { error: null, id: "subagent-turn", status: "completed" },
+      },
+    });
+    transport.emit({
+      method: "item/completed",
+      params: {
+        item: { phase: "final_answer", text: '{"actions":[]}', type: "agentMessage" },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    });
+    transport.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { error: null, id: "turn-1", status: "completed" },
+      },
+    });
+
+    await expect(started.completion).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("管理中threadにactive trackerがないturn通知をprotocol fatalにする", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+
+    const starting = runtime.startTurn("thread-1", "hello");
+    transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+    const started = await starting;
+    transport.emit({
+      method: "item/completed",
+      params: {
+        item: { phase: "final_answer", text: '{"actions":[]}', type: "agentMessage" },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    });
+    transport.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { error: null, id: "turn-1", status: "completed" },
+      },
+    });
+    await started.completion;
+
+    transport.emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "unexpected-turn" } },
+    });
+
+    await expect(runtime.startTurn("thread-1", "next")).rejects.toBeInstanceOf(
+      JsonRpcProtocolError,
+    );
+  });
+
   it("turn/start response と先行通知の turn id 不一致を protocol fatal にする", async () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
