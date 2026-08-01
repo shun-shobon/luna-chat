@@ -16,7 +16,7 @@
     "knip": "knip",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "start": "node ./dist/index.mjs",
+    "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -37,6 +37,7 @@
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.13.3",
     "knip": "6.30.0",
+    "nf3": "0.3.23",
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",

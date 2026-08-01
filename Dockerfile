@@ -21,15 +21,10 @@ COPY src ./src
 COPY tsconfig.json tsdown.config.ts ./
 RUN pnpm run build
 
-FROM base AS prod-deps
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,target=/pnpm/store pnpm install --prod --frozen-lockfile
-
 FROM node:24.18.1-trixie AS runtime
 
 ENV NODE_ENV=production
-ENV PATH=/app/node_modules/.bin:$PATH
+ENV PATH=/app/dist/node_modules/.bin:$PATH
 ENV LUNA_HOME=/home/node/.luna
 
 WORKDIR /app
@@ -44,9 +39,11 @@ RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node && \
     chown node:node /home/node/.luna
 
 COPY --from=build /app/dist ./dist
-COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY templates ./templates
+
+RUN mkdir -p /app/dist/node_modules/.bin && \
+    ln -s ../@openai/codex/bin/codex.js /app/dist/node_modules/.bin/codex
 
 USER node
 
