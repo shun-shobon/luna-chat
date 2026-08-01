@@ -2,6 +2,7 @@ import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fakes = vi.hoisted(() => {
@@ -197,11 +198,10 @@ function discordMessage() {
     guild: { id: "300", name: "Luna Lab" },
     channel: {
       id: "200",
+      type: ChannelType.GuildText,
       name: "general",
       parentId: null,
       recipient: null,
-      isThread: () => false,
-      isDMBased: () => false,
     },
     author: { id: "100", username: "shun", globalName: "Shun", bot: false, system: false },
     member: { displayName: "Shun" },

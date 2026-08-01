@@ -1,3 +1,4 @@
+import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
@@ -115,11 +116,10 @@ function createMessage() {
 function createChannel() {
   return {
     id: "300",
+    type: ChannelType.GuildText,
     name: "general",
     parentId: null,
     recipient: null,
-    isThread: () => false,
-    isDMBased: () => false,
   };
 }
 

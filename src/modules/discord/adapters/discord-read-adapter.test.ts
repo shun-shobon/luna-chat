@@ -1,3 +1,4 @@
+import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { DiscordReadAdapter, type DiscordReadClient } from "./discord-read-adapter";
@@ -122,11 +123,10 @@ function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
     guild: { id: "200", name: "Luna Lab" },
     channel: {
       id: "300",
+      type: ChannelType.GuildText,
       name: "general",
       parentId: null,
       recipient: null,
-      isThread: () => false,
-      isDMBased: () => false,
     },
     author: {
       id: "400",

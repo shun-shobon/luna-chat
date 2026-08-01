@@ -1,3 +1,4 @@
+import { ChannelType } from "discord.js";
 import { z } from "zod";
 
 import {
@@ -9,7 +10,6 @@ import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
 
 type CollectionLike = Readonly<{ values: () => unknown }>;
-type Callable = (...arguments_: unknown[]) => unknown;
 
 const collectionSchema = z.custom<CollectionLike>(
   (value) =>
@@ -17,8 +17,6 @@ const collectionSchema = z.custom<CollectionLike>(
     value !== null &&
     typeof Reflect.get(value, "values") === "function",
 );
-const callableSchema = z.custom<Callable>((value) => typeof value === "function");
-
 const userSchema = z.object({
   id: z.string(),
   username: z.string(),
@@ -29,11 +27,10 @@ const userSchema = z.object({
 
 const channelSchema = z.object({
   id: z.string(),
+  type: z.enum(ChannelType),
   name: z.string().nullable().optional(),
   parentId: z.string().nullable().optional(),
   recipient: userSchema.nullable().optional(),
-  isThread: callableSchema,
-  isDMBased: callableSchema,
 });
 
 const sdkMessageSchema = z.object({
@@ -178,7 +175,7 @@ function resolveScope(input: {
   channel: z.infer<typeof channelSchema>;
   guildId: string | null;
 }): ConversationScope {
-  if (callBooleanMethod(input.channel, "isThread")) {
+  if (isThreadChannel(input.channel.type)) {
     return conversationScopeSchema.parse({
       kind: "guild_thread",
       guildId: input.guildId,
@@ -187,7 +184,7 @@ function resolveScope(input: {
     });
   }
 
-  if (callBooleanMethod(input.channel, "isDMBased")) {
+  if (isDmChannel(input.channel.type)) {
     return conversationScopeSchema.parse({
       kind: "dm",
       channelId: input.channel.id,
@@ -260,9 +257,14 @@ function isIterable(value: unknown): value is Iterable<unknown> {
   );
 }
 
-function callBooleanMethod(
-  target: z.infer<typeof channelSchema>,
-  method: "isDMBased" | "isThread",
-): boolean {
-  return z.boolean().parse(Reflect.apply(target[method], target, []));
+function isThreadChannel(type: ChannelType): boolean {
+  return (
+    type === ChannelType.AnnouncementThread ||
+    type === ChannelType.PublicThread ||
+    type === ChannelType.PrivateThread
+  );
+}
+
+function isDmChannel(type: ChannelType): boolean {
+  return type === ChannelType.DM || type === ChannelType.GroupDM;
 }

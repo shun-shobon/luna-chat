@@ -1,3 +1,4 @@
+import { ChannelType } from "discord.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -22,20 +23,33 @@ describe("discord message adapter", () => {
     });
   });
 
-  it("threadとDMを必要ID付きscopeへ解決する", () => {
-    const thread = createMessage({
-      channel: createChannel({ id: "301", name: "topic", parentId: "300", thread: true }),
-    });
-    expect(toDiscordGatewayMessage(thread).scope).toEqual({
-      kind: "guild_thread",
-      guildId: "200",
-      parentChannelId: "300",
-      threadId: "301",
-    });
+  it.each([ChannelType.AnnouncementThread, ChannelType.PublicThread, ChannelType.PrivateThread])(
+    "channel type %sをGuild thread scopeへ解決する",
+    (type) => {
+      expect(
+        toDiscordGatewayMessage(
+          createMessage({
+            channel: createChannel({ id: "301", name: "topic", parentId: "300", type }),
+          }),
+        ).scope,
+      ).toEqual({
+        kind: "guild_thread",
+        guildId: "200",
+        parentChannelId: "300",
+        threadId: "301",
+      });
+    },
+  );
 
+  it("DM messageを必要ID付きscopeへ解決する", () => {
     const dm = createMessage({
       guild: null,
-      channel: createChannel({ dm: true, id: "800", name: null, recipientId: "400" }),
+      channel: createChannel({
+        type: ChannelType.DM,
+        id: "800",
+        name: null,
+        recipientId: "400",
+      }),
       reference: { messageId: "99", channelId: "800", guildId: null },
     });
     expect(toDiscordGatewayMessage(dm).scope).toEqual({
@@ -81,6 +95,24 @@ describe("discord message adapter", () => {
         user: createUser({ id: "402", bot: true }),
       }).isHuman,
     ).toBe(false);
+
+    expect(
+      toDiscordGatewayTyping({
+        channel: createChannel({ type: ChannelType.DM, id: "800", recipientId: "401" }),
+        guild: null,
+        user: createUser({ id: "401" }),
+      }),
+    ).toEqual({
+      scope: { kind: "dm", channelId: "800", userId: "401" },
+      userId: "401",
+      isHuman: true,
+    });
+  });
+
+  it("未知のchannel typeを拒否する", () => {
+    expect(() =>
+      toDiscordGatewayMessage(createMessage({ channel: createChannel({ type: 999 }) })),
+    ).toThrow();
   });
 });
 
@@ -130,20 +162,19 @@ function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
 function createChannel(
   input: {
     id?: string;
+    type?: ChannelType | number;
     name?: string | null;
     parentId?: string | null;
-    thread?: boolean;
-    dm?: boolean;
     recipientId?: string;
   } = {},
 ) {
   return {
     id: input.id ?? "300",
+    type: input.type ?? ChannelType.GuildText,
     name: input.name === undefined ? "general" : input.name,
     parentId: input.parentId ?? null,
-    recipient: input.dm ? createUser({ id: input.recipientId ?? "400" }) : null,
-    isThread: () => input.thread === true,
-    isDMBased: () => input.dm === true,
+    recipient:
+      input.type === ChannelType.DM ? createUser({ id: input.recipientId ?? "400" }) : null,
   };
 }
 
