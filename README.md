@@ -42,7 +42,7 @@ CODEX_HOME="$HOME/.luna/codex" ./node_modules/.bin/codex login
 CODEX_HOME="$HOME/.luna/codex" ./node_modules/.bin/codex login status
 ```
 
-headlessなDocker hostではdevice authを使えます。Composeの永続volumeが同じ`LUNA_HOME`へmountされることを先に確認してください。
+headlessなDocker hostではdevice authを使えます。Composeが`./data`を`/home/node`へmountすることを先に確認してください。
 
 ```sh
 docker compose run --rm luna-chat codex login --device-auth
@@ -51,12 +51,12 @@ docker compose run --rm luna-chat codex login status
 
 ## Environment
 
-| 変数                | 必須   | 既定値      | 説明                                                            |
-| ------------------- | ------ | ----------- | --------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN` | はい   | なし        | Discord Bot token。Codex child processへ渡しません。            |
-| `LUNA_HOME`         | いいえ | `~/.luna`   | 絶対pathだけを指定できます。                                    |
-| `LOG_LEVEL`         | いいえ | `info`      | `trace` / `debug` / `info` / `warn` / `error`。                 |
-| `TZ`                | いいえ | process依存 | scheduleに使うNode.js local timezone。Dockerは未指定時UTCです。 |
+| 変数                | 必須   | 既定値      | 説明                                                                   |
+| ------------------- | ------ | ----------- | ---------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN` | はい   | なし        | Discord Bot token。Codex child processへ渡しません。                   |
+| `LUNA_HOME`         | いいえ | `~/.luna`   | 絶対pathだけを指定できます。                                           |
+| `LOG_LEVEL`         | いいえ | `info`      | `trace` / `debug` / `info` / `warn` / `error`。                        |
+| `TZ`                | いいえ | process依存 | scheduleに使うNode.js local timezone。Dockerは未指定時Asia/Tokyoです。 |
 
 `LOG_LEVEL=debug`または`trace`では、Discord本文、prompt、tool引数、actionがstdoutへ出ます。Bot token等の既知fieldはredactしますが、自由文へ埋め込まれたcredentialや個人情報の除去は保証しません。
 
@@ -121,14 +121,16 @@ pnpm run dev
 
 ## Docker setup
 
-DockerはGitを含み、専用non-root userでprocessを起動して、そのuserへpasswordless sudoを設定します。標準ではnamed volume `luna-data`だけをLuna homeへmountし、追加directoryはComposeで明示してください。host rootを自動mountしません。
+DockerはGitを含み、専用non-root userでprocessを起動して、そのuserへpasswordless sudoを設定します。Composeはhostの`./data`をcontainerの`/home/node`へmountします。
 
 ```sh
-docker compose build
-DISCORD_BOT_TOKEN=... docker compose up
+cp .env.example .env
+mkdir -p data
+# .envのDISCORD_BOT_TOKENを設定する
+docker compose up
 ```
 
-永続化先、追加mount、`TZ`は配置前にCompose設定を確認してください。
+`data`はcontainerのnode userから書き込める必要があります。必要に応じてhost側の所有者と権限を調整してください。追加mountと`TZ`は配置前にCompose設定を確認してください。
 
 ## Discordでの開始条件
 
@@ -167,7 +169,7 @@ pnpm run knip
 pnpm run typecheck
 pnpm run test
 pnpm run build
-docker compose build
+docker build -t luna-chat:local .
 ```
 
 CI gateはformat、lint、knip、typecheck、testです。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。

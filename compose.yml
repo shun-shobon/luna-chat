@@ -1,14 +1,11 @@
 services:
   luna-chat:
-    build: .
     image: ghcr.io/shun-shobon/luna-chat:latest
+    env_file:
+      - .env
     environment:
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN-}
-      TZ: ${TZ-UTC}
+      TZ: ${TZ:-Asia/Tokyo}
     volumes:
-      - luna-data:/home/node/.luna
+      - ./data:/home/node
     init: true
     restart: unless-stopped
-
-volumes:
-  luna-data:

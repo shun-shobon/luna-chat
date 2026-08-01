@@ -316,7 +316,7 @@ restart_failure_limit = 5
 | `DISCORD_BOT_TOKEN` | はい   | なし        | 空白だけを拒否する。Codex子processへ渡さない。                |
 | `LUNA_HOME`         | いいえ | `~/.luna`   | 絶対pathだけを受理する。                                      |
 | `LOG_LEVEL`         | いいえ | `info`      | `trace`、`debug`、`info`、`warn`、`error`。不正値は起動失敗。 |
-| `TZ`                | いいえ | process依存 | Node.js local timezoneを変更する。Docker既定はUTC。           |
+| `TZ`                | いいえ | process依存 | Node.js local timezoneを変更する。Docker既定はAsia/Tokyo。    |
 
 `CODEX_HOME`は利用者入力として受けず、子processで`LUNA_HOME/codex`へ上書きする。子processは親環境を継承するが、`DISCORD_BOT_TOKEN`だけを除外する。
 
@@ -360,6 +360,6 @@ logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先�
 
 ## 18. 配置と品質
 
-native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。自動mountは`LUNA_HOME`だけで、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
+native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
 
 受入れにはformat、lint、knip、typecheck、testとlocal Docker image buildの成功を要求する。全体coverage率は要求せず、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testで固定する。prompt snapshotは固定developer instructionsと入力JSON組立だけに使う。実credentialによるlive E2EはREADMEの手順で利用者が行う。

@@ -50,4 +50,4 @@ COPY templates ./templates
 
 USER node
 
-CMD ["node", "./dist/index.mjs"]
+CMD ["node", "--run", "start"]
