@@ -8,6 +8,7 @@ const base = {
   mentionsLuna: false,
   allowDm: true,
   allowedChannelIds: new Set<string>(),
+  lunaIsThreadMember: false,
   sessionExists: false,
 };
 
@@ -27,26 +28,49 @@ describe("shouldAcceptMessage", () => {
       shouldAcceptMessage({
         ...base,
         allowedChannelIds: new Set(["200"]),
+        lunaIsThreadMember: true,
         scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
       }),
     ).toBe(true);
   });
 
-  it("親channelの一時sessionを子threadへ継承しない", () => {
+  it("IDを直接許可したLuna参加中のthreadを常設として受理する", () => {
     expect(
       shouldAcceptMessage({
         ...base,
+        allowedChannelIds: new Set(["201"]),
+        lunaIsThreadMember: true,
+        scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
+      }),
+    ).toBe(true);
+  });
+
+  it("許可Guild channel配下でもLuna未参加のthreadを常設として受理しない", () => {
+    expect(
+      shouldAcceptMessage({
+        ...base,
+        allowedChannelIds: new Set(["200"]),
         scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
       }),
     ).toBe(false);
   });
 
-  it("同じscopeの一時sessionではmentionなし投稿を受理する", () => {
+  it("Luna未参加のthreadでも同じscopeの一時sessionではmentionなし投稿を受理する", () => {
     expect(
       shouldAcceptMessage({
         ...base,
         sessionExists: true,
-        scope: { kind: "guild_channel", guildId: "300", channelId: "200" },
+        scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
+      }),
+    ).toBe(true);
+  });
+
+  it("Luna未参加のthreadでもmention付き投稿を受理する", () => {
+    expect(
+      shouldAcceptMessage({
+        ...base,
+        mentionsLuna: true,
+        scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
       }),
     ).toBe(true);
   });

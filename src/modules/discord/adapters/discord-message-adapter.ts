@@ -25,12 +25,17 @@ const userSchema = z.object({
   system: z.boolean(),
 });
 
+const threadMemberManagerSchema = z.object({
+  me: z.object({ id: discordIdSchema }).nullable(),
+});
+
 const channelSchema = z.object({
   id: z.string(),
   type: z.enum(ChannelType),
   name: z.string().nullable().optional(),
   parentId: z.string().nullable().optional(),
   recipient: userSchema.nullable().optional(),
+  members: threadMemberManagerSchema.optional(),
 });
 
 const sdkMessageSchema = z.object({
@@ -101,10 +106,11 @@ const sdkTypingSchema = z.object({
 });
 
 export function toDiscordGatewayMessage(message: unknown): DiscordGatewayMessage {
-  const source = toDiscordMessageSource(message);
+  const parsed = sdkMessageSchema.parse(message);
   return {
-    message: normalizeDiscordMessage(source),
-    scope: resolveMessageScope(message),
+    lunaIsThreadMember: resolveLunaIsThreadMember(parsed.channel),
+    message: normalizeDiscordMessage(toDiscordMessageSourceFromParsed(parsed)),
+    scope: resolveScope({ channel: parsed.channel, guildId: parsed.guild?.id ?? null }),
   };
 }
 
@@ -119,6 +125,12 @@ export function toDiscordGatewayTyping(typing: unknown): DiscordGatewayTyping {
 
 export function toDiscordMessageSource(message: unknown): DiscordMessageSource {
   const parsed = sdkMessageSchema.parse(message);
+  return toDiscordMessageSourceFromParsed(parsed);
+}
+
+function toDiscordMessageSourceFromParsed(
+  parsed: z.infer<typeof sdkMessageSchema>,
+): DiscordMessageSource {
   const guild = parsed.guild === null ? null : { id: parsed.guild.id, name: parsed.guild.name };
 
   return {
@@ -166,9 +178,9 @@ export function toDiscordMessageSource(message: unknown): DiscordMessageSource {
   };
 }
 
-function resolveMessageScope(message: unknown): ConversationScope {
-  const parsed = sdkMessageSchema.parse(message);
-  return resolveScope({ channel: parsed.channel, guildId: parsed.guild?.id ?? null });
+function resolveLunaIsThreadMember(channel: z.infer<typeof channelSchema>): boolean {
+  if (!isThreadChannel(channel.type)) return false;
+  return threadMemberManagerSchema.parse(channel.members).me !== null;
 }
 
 function resolveScope(input: {

@@ -40,7 +40,7 @@ Codexには次を明示する。
 - 会話session: scopeごとのqueue、active turn、Codex thread ID、idle状態を持つmemory上の状態。
 - turn chain: 最初のCodex turnと、Discordアクション失敗から生じる同一thread上のfollow-up turn列。
 - Discordアクション: Zodで検証後にDiscord APIへ反映する型付き命令。
-- 常設channel: `allowed_channel_ids` に含まれるGuild channel、その配下のthread、またはIDを直接含めたthread。mentionなしで常時受信する。
+- 常設channel: `allowed_channel_ids` に含まれるGuild channel、または許可IDが親channelかthread自身に一致し、Discord.jsキャッシュ上でLuna自身がthread memberであるthread。mentionなしで常時受信する。
 - 一時session: 常設でないscopeにおいて、Lunaへのmentionで開始されたsession。
 - session記憶保存: idle終了する会話thread自身が、会話要約と将来役立つ事項を`memory/YYYY-MM-DD.md`へ追記するturn。
 - 日次整理: 組み込みscheduleが専用threadを作り、記憶とworkspaceを整理してlocal Gitへの保存を試みる実行。
@@ -58,7 +58,9 @@ Luna自身の投稿だけを除外し、次を受理する。
 
 人間、他Bot、Webhook、Discord system messageを区別して入力に含める。他Botとの相互応答loopを防止しない。message editとreaction eventはturnを開始しない。親channelの一時sessionを子threadへ継承せず、thread自身でmentionを必要とする。
 
-`allowed_channel_ids`にGuild channel IDがあれば、その配下のthreadも常設として扱う。常設でない親channelの一時sessionだけは子threadへ継承しない。
+`allowed_channel_ids`にGuild channel IDがあれば、その配下のthreadとフォーラム投稿は、`messageCreate`受信時にDiscord.jsキャッシュがLuna自身のthread memberを保持しているときだけ常設として扱う。thread IDを直接含めた場合も同じ条件とする。キャッシュにthread memberがなければ、Discord上の実際の参加状態を追加取得せず未参加と判定する。
+
+常設でないthreadでもLunaへのmentionで一時sessionを開始できる。同じthreadの一時session存続中は、Luna自身のthread member有無とmention有無にかかわらず投稿を受理する。親channelの一時sessionだけは子threadへ継承しない。
 
 `allowed_channel_ids`は空配列を許す。DMは全Discord利用者を対象とし、送信者allowlistを設けない。
 

@@ -2,6 +2,7 @@ import type { ConversationScope } from "../domain/conversation-scope";
 import type { DiscordMessage } from "../domain/discord-message";
 
 export type DiscordGatewayMessage = Readonly<{
+  lunaIsThreadMember: boolean;
   message: DiscordMessage;
   scope: ConversationScope;
 }>;

@@ -134,9 +134,10 @@ docker compose up
 
 ## Discordでの開始条件
 
-- `allowed_channel_ids`内では、Luna自身以外の全投稿を常時受け取ります。
-- 登録したGuild channelの子threadも常設として扱います。
+- `allowed_channel_ids`に登録したGuild channelでは、Luna自身以外の全投稿を常時受け取ります。
+- 登録したGuild channelの子threadとフォーラム投稿は、Discord.jsキャッシュ上でLuna自身がthread memberのときだけ常設として扱います。
 - 設定外channelとthreadでは、Lunaへのmentionで30分の一時sessionを開始します。
+- 一時sessionの存続中は、Lunaがthread memberでなくても同じthreadのmentionなし投稿を受け取ります。
 - 親channelの一時sessionは子threadへ継承しません。
 - DMは既定で全利用者から受け取ります。
 - 人間、他Bot、Webhook、system messageを入力に含めます。

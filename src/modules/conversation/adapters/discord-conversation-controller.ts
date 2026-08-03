@@ -40,6 +40,7 @@ export class DiscordConversationController implements DiscordGatewayPort {
       mentionsLuna: event.message.mentions.users.some((user) => user.id === this.lunaUserId),
       allowDm: this.allowDm,
       allowedChannelIds: this.#allowedChannelIds,
+      lunaIsThreadMember: event.lunaIsThreadMember,
       sessionExists: this.conversation.hasSession(event.scope),
     });
     if (accepted) {

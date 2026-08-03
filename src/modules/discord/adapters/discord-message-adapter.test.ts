@@ -26,20 +26,57 @@ describe("discord message adapter", () => {
   it.each([ChannelType.AnnouncementThread, ChannelType.PublicThread, ChannelType.PrivateThread])(
     "channel type %sをGuild thread scopeへ解決する",
     (type) => {
-      expect(
-        toDiscordGatewayMessage(
-          createMessage({
-            channel: createChannel({ id: "301", name: "topic", parentId: "300", type }),
-          }),
-        ).scope,
-      ).toEqual({
+      const event = toDiscordGatewayMessage(
+        createMessage({
+          channel: createChannel({ id: "301", name: "topic", parentId: "300", type }),
+        }),
+      );
+      expect(event.scope).toEqual({
         kind: "guild_thread",
         guildId: "200",
         parentChannelId: "300",
         threadId: "301",
       });
+      expect(event.lunaIsThreadMember).toBe(false);
     },
   );
+
+  it("Discord.jsキャッシュ上のLuna自身のthread memberをGateway eventへ載せる", () => {
+    expect(
+      toDiscordGatewayMessage(
+        createMessage({
+          channel: createChannel({
+            type: ChannelType.PublicThread,
+            parentId: "300",
+            lunaIsThreadMember: true,
+          }),
+        }),
+      ).lunaIsThreadMember,
+    ).toBe(true);
+  });
+
+  it("thread member managerがないthread messageを拒否する", () => {
+    expect(() =>
+      toDiscordGatewayMessage(
+        createMessage({
+          channel: { ...createChannel({ type: ChannelType.PublicThread }), members: undefined },
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it("thread member managerのmeがundefinedのthread messageを拒否する", () => {
+    expect(() =>
+      toDiscordGatewayMessage(
+        createMessage({
+          channel: {
+            ...createChannel({ type: ChannelType.PublicThread }),
+            members: { me: undefined },
+          },
+        }),
+      ),
+    ).toThrow();
+  });
 
   it("DM messageを必要ID付きscopeへ解決する", () => {
     const dm = createMessage({
@@ -166,15 +203,24 @@ function createChannel(
     name?: string | null;
     parentId?: string | null;
     recipientId?: string;
+    lunaIsThreadMember?: boolean;
   } = {},
 ) {
+  const type = input.type ?? ChannelType.GuildText;
+  const isThread =
+    type === ChannelType.AnnouncementThread ||
+    type === ChannelType.PublicThread ||
+    type === ChannelType.PrivateThread;
   return {
     id: input.id ?? "300",
-    type: input.type ?? ChannelType.GuildText,
+    type,
     name: input.name === undefined ? "general" : input.name,
     parentId: input.parentId ?? null,
     recipient:
       input.type === ChannelType.DM ? createUser({ id: input.recipientId ?? "400" }) : null,
+    ...(isThread
+      ? { members: { me: input.lunaIsThreadMember === true ? { id: "999" } : null } }
+      : {}),
   };
 }
 

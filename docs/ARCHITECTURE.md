@@ -108,7 +108,7 @@ type ConversationScope =
 
 ### 6.2 Message
 
-messageは`human`、`bot`、`webhook`、`system`の判別可能unionとする。共通fieldにmessage ID、timestamp、scope、author、content、attachment、sticker、reaction、mention、reply referenceを持つ。raw discord.js objectをdomainへ保持しない。
+messageは`human`、`bot`、`webhook`、`system`の判別可能unionとする。共通fieldにmessage ID、timestamp、scope、author、content、attachment、sticker、reaction、mention、reply referenceを持つ。Gateway入力はこれらに加え、Discord.jsキャッシュがLuna自身のthread memberを保持するかをbooleanで持つ。raw discord.js objectをdomainへ保持しない。
 
 ### 6.3 Session state
 
@@ -249,7 +249,7 @@ retention cleanerはstartup直後と前回完了から24時間後に、専用COD
 
 ### 9.1 Gateway
 
-Gateway adapterは必要intentsとDM channel partialを設定し、`messageCreate`とtyping eventだけを購読する。受付policy、session有無、batchingはconversation applicationに置く。
+Gateway adapterは必要intentsとDM channel partialを設定し、`messageCreate`とtyping eventだけを購読する。`messageCreate`変換時にthread channelの`members.me`を読み、Discord.jsキャッシュ上のLuna自身のthread member有無を検証済みbooleanとして渡す。RESTによる追加取得は行わない。受付policy、session有無、batchingはconversation applicationに置く。
 
 初回historyは最初のbatchより前をcursor指定して取得する。historyと起点event間だけIDでdedupeし、event同士はdedupeしない。
 

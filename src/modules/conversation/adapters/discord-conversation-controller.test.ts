@@ -27,6 +27,17 @@ describe("DiscordConversationController", () => {
     expect(conversation.accept).not.toHaveBeenCalled();
     expect(conversation.typing).not.toHaveBeenCalled();
   });
+
+  it("許可channel配下のthreadはLuna参加中だけmentionなしでconversationへ渡す", () => {
+    const conversation = createConversation(false);
+    const controller = createController(conversation);
+
+    controller.onMessage(threadEvent(true));
+    controller.onMessage(threadEvent(false));
+
+    expect(conversation.accept).toHaveBeenCalledOnce();
+    expect(conversation.accept).toHaveBeenCalledWith(threadEvent(true));
+  });
 });
 
 function createController(conversation: ReturnType<typeof createConversation>) {
@@ -48,6 +59,7 @@ function createConversation(sessionExists: boolean) {
 
 function event(channelId: string, mention: boolean, authorId = "100"): DiscordGatewayMessage {
   return {
+    lunaIsThreadMember: false,
     scope: { kind: "guild_channel", guildId: "300", channelId },
     message: {
       id: "400",
@@ -68,5 +80,14 @@ function event(channelId: string, mention: boolean, authorId = "100"): DiscordGa
       },
       replyTo: null,
     },
+  };
+}
+
+function threadEvent(lunaIsThreadMember: boolean): DiscordGatewayMessage {
+  const base = event("201", false);
+  return {
+    ...base,
+    lunaIsThreadMember,
+    scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
   };
 }
