@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CodexAgentRuntime } from "./codex-agent-runtime";
 import type { CodexLineTransport } from "./codex-stdio-process";
+import { TurnNotSteerableError } from "./codex-turn-tracker";
 import { JsonRpcConnection, JsonRpcProtocolError } from "./json-rpc-connection";
 
 class FakeTransport implements CodexLineTransport {
@@ -124,6 +125,77 @@ describe("CodexAgentRuntime", () => {
       output: { actions: [] },
       status: "completed",
     });
+  });
+
+  it("final_answer 受領後の steer を RPC 送信前に拒否し、先行outputを保持する", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+
+    const starting = runtime.startTurn("thread-1", "first");
+    transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+    const started = await starting;
+    transport.emit({
+      method: "item/completed",
+      params: {
+        item: {
+          phase: "final_answer",
+          text: '{"actions":[{"kind":"send_message","target":{"kind":"channel","channelId":"123456789012345678"},"content":"first answer","files":null}]}',
+          type: "agentMessage",
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    });
+
+    await expect(runtime.steerTurn("thread-1", "turn-1", "second")).rejects.toBeInstanceOf(
+      TurnNotSteerableError,
+    );
+    expect(
+      transport.writes.filter((write) => Reflect.get(write, "method") === "turn/steer"),
+    ).toHaveLength(0);
+
+    transport.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { error: null, id: "turn-1", status: "completed" },
+      },
+    });
+    await expect(started.completion).resolves.toEqual({
+      output: {
+        actions: [
+          {
+            kind: "send_message",
+            target: { kind: "channel", channelId: "123456789012345678" },
+            content: "first answer",
+          },
+        ],
+      },
+      status: "completed",
+    });
+  });
+
+  it("final_answer 受領前の steer は同じturnへ送信する", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+
+    const starting = runtime.startTurn("thread-1", "first");
+    transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+    await starting;
+
+    const steering = runtime.steerTurn("thread-1", "turn-1", "second");
+    expect(transport.writes).toContainEqual({
+      id: 3,
+      method: "turn/steer",
+      params: {
+        expectedTurnId: "turn-1",
+        input: [{ text: "second", text_elements: [], type: "text" }],
+        threadId: "thread-1",
+      },
+    });
+    transport.emit({ id: 3, result: { turnId: "turn-1" } });
+
+    await expect(steering).resolves.toBeUndefined();
   });
 
   it("同じconnectionへ届く管理外threadのturn通知を管理中turnから分離する", async () => {

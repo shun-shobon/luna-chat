@@ -122,6 +122,51 @@ describe("ConversationCoordinator", () => {
     expect(nextInput.messages.map((item) => item.id)).toEqual(["101"]);
   });
 
+  it("final確定後のsteer拒否時に先行actionを実行してから投稿を次turnへ移す", async () => {
+    vi.useFakeTimers();
+    const firstCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([firstCompletion.promise, Promise.resolve(completed([]))]);
+    runtime.steerTurn.mockRejectedValueOnce(new Error("turn already emitted final answer"));
+    const execute = vi.fn<DiscordActionBatchPort["execute"]>(async () => []);
+    const coordinator = createCoordinator(runtime.port, {
+      actions: {
+        execute,
+        releaseTyping: vi.fn(async () => undefined),
+      },
+    });
+
+    coordinator.accept({ scope, message: message("100", "2026-07-23T00:00:00.000Z") });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    coordinator.accept({ scope, message: message("101", "2026-07-23T00:00:01.000Z") });
+    await flushPromises();
+    firstCompletion.resolve(
+      completed([
+        {
+          kind: "send_message",
+          target: { kind: "channel", channelId: "200" },
+          content: "first answer",
+        },
+      ]),
+    );
+    await flushPromises();
+
+    expect(execute.mock.calls[0]?.[0]).toEqual([
+      {
+        kind: "send_message",
+        target: { kind: "channel", channelId: "200" },
+        content: "first answer",
+      },
+    ]);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
+      runtime.startTurn.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY,
+    );
+    const nextInput = parseStartInput(runtime.startTurn.mock.calls[1]?.[1]);
+    expect(nextInput.messages.map((item) => item.id)).toEqual(["101"]);
+  });
+
   it("action失敗結果を同じthreadのfollow-up turnへ渡す", async () => {
     vi.useFakeTimers();
     const runtime = createRuntime([

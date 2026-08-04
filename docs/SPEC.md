@@ -73,8 +73,9 @@ Guild channel、Guild thread、DMを必要ID付きの判別可能unionで表す�
 - 最後に受理した投稿から`debounce_ms`だけ待つ。
 - 会話内の人間がtyping中なら、そのtypingが`typing_idle_ms`途切れるまで待つ。
 - 待機中に受理した投稿をDiscord timestamp順に一つの入力batchへまとめる。同一timestampはmessage ID順とする。
-- active Codex turn中の投稿はbatch化せず、受信順に一件ずつ即時`turn/steer`する。
-- steer requestが失敗した投稿だけを次のturn用queueへ移す。現在turnが後で失敗してsessionを終了しても、この未開始queueは破棄せず、新しいthreadの最初のturnで処理する。
+- active Codex turn中の投稿は、final agent messageを未受領ならbatch化せず、受信順に一件ずつ即時`turn/steer`する。
+- final agent message受領後は、`turn/completed`未受領でも同じturnへのsteerを拒否する。拒否された投稿は次のturn用queueへ移し、確定済みのfinal actionを一度実行してから次のturnで処理する。
+- その他の理由でsteer requestが失敗した投稿も次のturn用queueへ移す。現在turnが後で失敗してsessionを終了しても、この未開始queueは破棄せず、新しいthreadの最初のturnで処理する。
 
 同じ`messageCreate`が複数回配送された場合、event同士は重複排除せず配送回数だけ処理する。新規sessionの初回履歴と起点eventの間だけmessage IDで重複を除く。
 

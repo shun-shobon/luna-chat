@@ -213,6 +213,11 @@ export class CodexAgentRuntime implements AgentRuntimePort {
   }
 
   public async steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void> {
+    const tracker = this.#trackers.get(threadId);
+    if (tracker === undefined) {
+      throw new Error(`Thread ${threadId} does not have an active turn.`);
+    }
+    tracker.assertSteerable(turnId);
     const result = await this.#connection.request("turn/steer", {
       expectedTurnId: turnId,
       input: [createTextInput(input)],

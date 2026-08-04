@@ -152,7 +152,8 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 | idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                      |
 | conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消                     |
 | starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer                |
-| turn active                                     | accepted input                     | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue        |
+| turn active                                     | accepted input、final未受領        | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue        |
+| turn active                                     | accepted input、final受領済み      | turn active         | runtimeがsteerをRPC送信前に拒否し、queueへ移す             |
 | turn active                                     | turn success                       | actions active      | final JSON検証、action全件を並行開始                       |
 | turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持       |
 | conversation actions active                     | accepted input                     | actions active      | queueへ追加、idle reset、close予約取消                     |
@@ -203,7 +204,7 @@ validated input
 
 MCP操作はCodexが呼んだ時点で実行する。final actionはturn完了後に全件並行実行する。MCP履歴を見てfinal actionを暗黙抑止しない。
 
-follow-up turn中に新しいDiscord投稿が来た場合、そのfollow-upが現在のactive turnなので即時steerする。follow-upの`turn/start` response前とaction実行中にはactive Codex turnがないため、投稿をqueueへ入れる。response後はstarting中queueを順にsteerし、chain終了時に残るqueueは新しいbatchとして処理する。
+follow-up turn中に新しいDiscord投稿が来た場合、そのfollow-upが現在のactive turnなのでfinal agent message受領前だけ即時steerする。follow-upの`turn/start` response前、final agent message受領後、action実行中にはsteer可能なCodex turnがないため、投稿をqueueへ入れる。response後はstarting中queueを順にsteerし、chain終了時に残るqueueは新しいbatchとして処理する。
 
 session記憶保存は通常chainの完了後に同じthreadへ`{source:"session_memory",date}`を送る。turn purposeをconversationとsession memoryに分け、session memory purposeではstarting中queueをsteer対象へ移さない。action failure follow-upでもpurposeを保ち、全action成功後だけarchiveする。graceful shutdownではidle中のthreadとsignal前に受理したqueue/active chainの正常完了後に同じ保存経路を通す。通常chain失敗とfatal abortはsession記憶保存を経由しない。
 
@@ -224,6 +225,8 @@ STOPPED ── spawn/initialize ──► READY
 child executableはpnpm dependencyの`@openai/codex`だけから絶対pathで解決する。child environmentは親をcopyし、`DISCORD_BOT_TOKEN`を削除し、`CODEX_HOME`を上書きする。
 
 全RPC pending requestはrequest IDで管理し、共通timeoutを持つ。いずれか一件のtimeoutでもserver側だけ成功した未知状態を否定できないため、connection全体を破損とみなす。Lunaが開始してarchive処理を終えるまでのthread IDを管理中集合へ置き、そのthreadのturn notificationだけをthread IDとturn IDの両方でtrackerへroutingする。Codexが同じconnectionへ配信するsubagent等の管理外thread notificationはtrackerへ渡さない。管理中threadのtracker不在、ID欠落、不一致、decode不能なstdout行、未知responseは同じprocess異常とする。
+
+trackerはfinal agent messageを受領した時点でturnをsteer不能として公開する。runtimeは`turn/steer`のRPC送信前にこの状態を検査して拒否し、application側は失敗した入力を次turn用queueへ戻す。これにより`turn/completed`待機中に後続steerがfinal messageを上書きせず、確定したactionを先に実行する。
 
 process異常では全pending requestとactive turnをtyped errorでrejectし、全thread referenceを破棄する。未開始conversation queueは保持する。実行中のDiscord final actionはapp-serverと独立して全件settleさせるが、result follow-upは行わない。automation executionは失敗として再実行せず、heartbeatは次間隔を抽選し、recurring jobは次tickを待ち、one-shotは過去定義として削除だけを再試行する。
 

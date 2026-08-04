@@ -97,6 +97,13 @@ export class TurnCorrelationError extends Error {
   }
 }
 
+export class TurnNotSteerableError extends Error {
+  public constructor(threadId: ThreadId, turnId: TurnId) {
+    super(`Turn ${turnId} on thread ${threadId} has already emitted its final answer.`);
+    this.name = "TurnNotSteerableError";
+  }
+}
+
 class UnexpectedUserInputRequestError extends Error {
   public constructor() {
     super("Codex requested interactive user input during an unattended turn.");
@@ -125,6 +132,13 @@ export class CodexTurnTracker {
 
   public get completion(): Promise<AgentTurnResult> {
     return this.#completion;
+  }
+
+  public assertSteerable(turnId: TurnId): void {
+    this.#correlateTurn(turnId);
+    if (this.#finalMessage !== undefined) {
+      throw new TurnNotSteerableError(this.#threadId, turnId);
+    }
   }
 
   public bindTurnId(turnId: TurnId): void {
