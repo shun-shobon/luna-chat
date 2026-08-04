@@ -55,6 +55,24 @@ describe("discord message adapter", () => {
     ).toBe(true);
   });
 
+  it.each([
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.GuildVoice,
+    ChannelType.GuildStageVoice,
+  ])("channel type %sのGuild member collectionを受理する", (type) => {
+    const channel = createChannel({ type });
+
+    expect(toDiscordGatewayMessage(createMessage({ channel })).lunaIsThreadMember).toBe(false);
+    expect(
+      toDiscordGatewayTyping({
+        channel,
+        guild: { id: "200" },
+        user: createUser({ id: "401" }),
+      }).scope,
+    ).toEqual({ kind: "guild_channel", guildId: "200", channelId: "300" });
+  });
+
   it("thread member managerがないthread messageを拒否する", () => {
     expect(() =>
       toDiscordGatewayMessage(
@@ -211,6 +229,7 @@ function createChannel(
     type === ChannelType.AnnouncementThread ||
     type === ChannelType.PublicThread ||
     type === ChannelType.PrivateThread;
+  const isDm = type === ChannelType.DM || type === ChannelType.GroupDM;
   return {
     id: input.id ?? "300",
     type,
@@ -220,7 +239,9 @@ function createChannel(
       input.type === ChannelType.DM ? createUser({ id: input.recipientId ?? "400" }) : null,
     ...(isThread
       ? { members: { me: input.lunaIsThreadMember === true ? { id: "999" } : null } }
-      : {}),
+      : isDm
+        ? {}
+        : { members: collection([]) }),
   };
 }
 

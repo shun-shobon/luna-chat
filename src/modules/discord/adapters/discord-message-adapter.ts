@@ -35,7 +35,7 @@ const channelSchema = z.object({
   name: z.string().nullable().optional(),
   parentId: z.string().nullable().optional(),
   recipient: userSchema.nullable().optional(),
-  members: threadMemberManagerSchema.optional(),
+  members: z.unknown().optional(),
 });
 
 const sdkMessageSchema = z.object({
