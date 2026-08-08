@@ -362,6 +362,6 @@ logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先�
 
 ## 18. 配置と品質
 
-native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
+native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Docker runtimeはGitとGitHub CLIを含み、専用non-root userで実行して、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
 
 受入れにはformat、lint、knip、typecheck、testとlocal Docker image buildの成功を要求する。配布用buildはruntimeで参照する外部依存だけを`dist/node_modules`へ配置し、Docker runtime imageへそのまま収容する。全体coverage率は要求せず、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testで固定する。prompt snapshotは固定developer instructionsと入力JSON組立だけに使う。実credentialによるlive E2EはREADMEの手順で利用者が行う。

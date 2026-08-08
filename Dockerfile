@@ -31,7 +31,7 @@ WORKDIR /app
 
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y git sudo
+    apt-get install -y gh git sudo
 
 RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node && \
     chmod 0440 /etc/sudoers.d/node && \

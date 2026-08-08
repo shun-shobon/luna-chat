@@ -390,7 +390,7 @@ logger portはstructured eventとcorrelation contextを受け取り、stdoutへ�
 | composition integration | fake Discord Gateway/APIとfake app-server child processでstartupからshutdownまで   |
 | manual E2E              | 実Discordと実Codex。READMEの手順を利用者が実行                                     |
 
-Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。tsdown buildではnf3 pluginがruntimeで参照する外部依存を追跡し、`dist/node_modules`へ必要なfileだけを配置する。Docker runtime imageはこの追跡済み依存を使い、production依存全体を再installしない。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。build jobは通常CI gateへ加えず、image publishでamd64/arm64 buildを行う。
+Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。tsdown buildではnf3 pluginがruntimeで参照する外部依存を追跡し、`dist/node_modules`へ必要なfileだけを配置する。Docker runtime imageはこの追跡済み依存に加えて、workspaceのGitHub操作に必要なGitとGitHub CLIを含め、production依存全体は再installしない。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。build jobは通常CI gateへ加えず、image publishでamd64/arm64 buildを行う。
 
 ## 17. Composition and cutover
 
