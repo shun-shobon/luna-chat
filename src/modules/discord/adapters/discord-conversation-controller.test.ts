@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { DiscordGatewayMessage } from "../../discord/ports/discord-gateway-port";
+import { DISCORD_EVENT_SOURCE, DISCORD_MESSAGE_CREATED_EVENT_TYPE } from "../domain/discord-event";
+import type { DiscordGatewayMessage } from "../ports/discord-gateway-port";
 
 import { DiscordConversationController } from "./discord-conversation-controller";
 
 describe("DiscordConversationController", () => {
-  it("常設channelとmention開始sessionをconversationへ渡す", () => {
+  it("常設channelとmention開始sessionをConversationEventへ変換する", () => {
     const conversation = createConversation(false);
     const controller = createController(conversation);
 
@@ -14,6 +15,20 @@ describe("DiscordConversationController", () => {
     controller.onMessage(event("202", false));
 
     expect(conversation.accept).toHaveBeenCalledTimes(2);
+    expect(conversation.accept).toHaveBeenNthCalledWith(1, {
+      session: {
+        key: "discord:guild_channel:300:200",
+        source: DISCORD_EVENT_SOURCE,
+        context: { kind: "guild_channel", guildId: "300", channelId: "200" },
+      },
+      event: expect.objectContaining({
+        id: "400",
+        type: DISCORD_MESSAGE_CREATED_EVENT_TYPE,
+        source: DISCORD_EVENT_SOURCE,
+        subject: "discord:guild_channel:300:200",
+      }),
+    });
+    expect(conversation.hasSession).toHaveBeenCalledWith("discord:guild_channel:300:201");
   });
 
   it("Luna自身のmessageとbot typingを除外する", () => {
@@ -28,7 +43,27 @@ describe("DiscordConversationController", () => {
     expect(conversation.typing).not.toHaveBeenCalled();
   });
 
-  it("許可channel配下のthreadはLuna参加中だけmentionなしでconversationへ渡す", () => {
+  it("human typingをConversationSessionへ変換する", () => {
+    const conversation = createConversation(false);
+    const controller = createController(conversation);
+
+    controller.onTyping({
+      scope: { kind: "dm", channelId: "800", userId: "100" },
+      userId: "100",
+      isHuman: true,
+    });
+
+    expect(conversation.typing).toHaveBeenCalledWith(
+      {
+        key: "discord:dm:800:100",
+        source: DISCORD_EVENT_SOURCE,
+        context: { kind: "dm", channelId: "800", userId: "100" },
+      },
+      "100",
+    );
+  });
+
+  it("許可channel配下のthreadはLuna参加中だけmentionなしで受理する", () => {
     const conversation = createConversation(false);
     const controller = createController(conversation);
 
@@ -36,7 +71,6 @@ describe("DiscordConversationController", () => {
     controller.onMessage(threadEvent(false));
 
     expect(conversation.accept).toHaveBeenCalledOnce();
-    expect(conversation.accept).toHaveBeenCalledWith(threadEvent(true));
   });
 });
 

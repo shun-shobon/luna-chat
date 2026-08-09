@@ -1,4 +1,4 @@
-import type { ConversationScope } from "../../discord/domain/conversation-scope";
+import type { ConversationScope } from "./conversation-scope";
 
 type MessageAcceptanceInput = Readonly<{
   scope: ConversationScope;

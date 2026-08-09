@@ -29,36 +29,47 @@ const messageLocationShape = {
   messageId: discordIdSchema,
 };
 
-const sendMessageSchema = z.strictObject({
+export const sendMessageSchema = z.strictObject({
   kind: z.literal("send_message"),
   target: discordTargetSchema,
   content: z.string().min(1).max(2_000).optional(),
   files: z.array(sendFileSchema).min(1).optional(),
 });
 
-const replyMessageSchema = z.strictObject({
+export const replyMessageSchema = z.strictObject({
   kind: z.literal("reply_message"),
   ...messageLocationShape,
   content: z.string().min(1).max(2_000).optional(),
   files: z.array(sendFileSchema).min(1).optional(),
 });
 
+export const addReactionSchema = z.strictObject({
+  kind: z.literal("add_reaction"),
+  ...messageLocationShape,
+  emoji: discordEmojiSchema,
+});
+export const removeReactionSchema = z.strictObject({
+  kind: z.literal("remove_reaction"),
+  ...messageLocationShape,
+  emoji: discordEmojiSchema,
+});
+export const startTypingSchema = z.strictObject({
+  kind: z.literal("start_typing"),
+  target: discordTargetSchema,
+});
+export const stopTypingSchema = z.strictObject({
+  kind: z.literal("stop_typing"),
+  target: discordTargetSchema,
+});
+
 export const discordActionSchema = z
   .discriminatedUnion("kind", [
     sendMessageSchema,
     replyMessageSchema,
-    z.strictObject({
-      kind: z.literal("add_reaction"),
-      ...messageLocationShape,
-      emoji: discordEmojiSchema,
-    }),
-    z.strictObject({
-      kind: z.literal("remove_reaction"),
-      ...messageLocationShape,
-      emoji: discordEmojiSchema,
-    }),
-    z.strictObject({ kind: z.literal("start_typing"), target: discordTargetSchema }),
-    z.strictObject({ kind: z.literal("stop_typing"), target: discordTargetSchema }),
+    addReactionSchema,
+    removeReactionSchema,
+    startTypingSchema,
+    stopTypingSchema,
   ])
   .superRefine((action, context) => {
     if (
@@ -70,12 +81,7 @@ export const discordActionSchema = z
     }
   });
 
-export const agentOutputSchema = z.strictObject({
-  actions: z.array(discordActionSchema),
-});
-
 export type DiscordTarget = z.infer<typeof discordTargetSchema>;
 export type SendFile = z.infer<typeof sendFileSchema>;
 export type DiscordEmoji = z.infer<typeof discordEmojiSchema>;
 export type DiscordAction = z.infer<typeof discordActionSchema>;
-export type AgentOutput = z.infer<typeof agentOutputSchema>;

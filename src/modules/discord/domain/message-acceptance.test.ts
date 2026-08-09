@@ -13,7 +13,7 @@ const base = {
 };
 
 describe("shouldAcceptMessage", () => {
-  it("Luna自身だけを除外する", () => {
+  it("Luna自身を拒否する", () => {
     expect(
       shouldAcceptMessage({
         ...base,
@@ -21,6 +21,19 @@ describe("shouldAcceptMessage", () => {
         scope: { kind: "dm", channelId: "200", userId: "100" },
       }),
     ).toBe(false);
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])("DMの受付設定が%sなら受付結果は%sになる", (allowDm, accepted) => {
+    expect(
+      shouldAcceptMessage({
+        ...base,
+        allowDm,
+        scope: { kind: "dm", channelId: "200", userId: "100" },
+      }),
+    ).toBe(accepted);
   });
 
   it("許可Guild channel配下のthreadを常設として受理する", () => {
