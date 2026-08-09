@@ -1,10 +1,10 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 
-import type { AutomationExecutionPort } from "./automation-executor";
 import { HeartbeatController } from "./heartbeat-controller";
 
 describe("HeartbeatController", () => {
@@ -18,6 +18,7 @@ describe("HeartbeatController", () => {
     const random = { integerInclusive: vi.fn(() => 15) };
     const controller = new HeartbeatController({
       clock,
+      createEventId: () => "heartbeat-event-1",
       enabled: true,
       executor,
       logger: createLogger(),
@@ -32,8 +33,11 @@ describe("HeartbeatController", () => {
     const tick = clock.fireNext();
     await vi.waitFor(() => {
       expect(executor.execute).toHaveBeenCalledWith({
-        checklist: "checklist",
-        source: "heartbeat",
+        id: "heartbeat-event-1",
+        type: "system.heartbeat.fired.v1",
+        source: "system/heartbeat",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        data: { checklist: "checklist" },
       });
     });
     expect(clock.delays).toEqual([]);
@@ -57,6 +61,7 @@ describe("HeartbeatController", () => {
     });
     const controller = new HeartbeatController({
       clock,
+      createEventId: () => "heartbeat-event-read-failure",
       enabled: true,
       executor,
       logger,
@@ -82,6 +87,7 @@ describe("HeartbeatController", () => {
     const disabledClock = new FakeClock();
     new HeartbeatController({
       clock: disabledClock,
+      createEventId: () => "heartbeat-event-disabled",
       enabled: false,
       executor: createExecutor(),
       logger: createLogger(),
@@ -96,6 +102,7 @@ describe("HeartbeatController", () => {
     const completion = createDeferred<void>();
     const controller = new HeartbeatController({
       clock,
+      createEventId: () => "heartbeat-event-drain",
       enabled: true,
       executor: createExecutor(async () => {
         await completion.promise;
@@ -153,8 +160,8 @@ class FakeClock implements AutomationClockPort {
 }
 
 function createExecutor(
-  implementation: AutomationExecutionPort["execute"] = async () => ({ status: "completed" }),
-): { execute: Mock<AutomationExecutionPort["execute"]> } {
+  implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
+): { execute: Mock<EventExecutionPort["execute"]> } {
   return { execute: vi.fn(implementation) };
 }
 

@@ -1,11 +1,11 @@
-import type { AutomationAgentPort } from "../ports/automation-agent-port";
+import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationLogPort } from "../ports/automation-log-port";
 
 import { ActiveExecutionSet } from "./active-execution-set";
 
 export class ThreadRetentionCleaner {
-  readonly #agent: AutomationAgentPort;
+  readonly #agent: AgentRuntimePort;
   readonly #clock: AutomationClockPort;
   readonly #cleanupIntervalMs: number;
   readonly #executions: ActiveExecutionSet;
@@ -16,7 +16,7 @@ export class ThreadRetentionCleaner {
   #timer: AutomationTimerHandle | undefined;
 
   constructor(input: {
-    agent: AutomationAgentPort;
+    agent: AgentRuntimePort;
     cleanupIntervalMs: number;
     clock: AutomationClockPort;
     executions?: ActiveExecutionSet;
@@ -70,7 +70,7 @@ export class ThreadRetentionCleaner {
 
     try {
       do {
-        const page = await this.#agent.listArchivedThreads({ cursor });
+        const page = await this.#agent.listThreads({ archived: true, cursor });
         const expiredThreadIds: string[] = [];
 
         for (const thread of page.data) {
@@ -87,7 +87,7 @@ export class ThreadRetentionCleaner {
 
         await Promise.all(
           expiredThreadIds.map(async (threadId) => {
-            await this.#agent.deleteArchivedThread(threadId).catch((error: unknown) => {
+            await this.#agent.deleteThread(threadId).catch((error: unknown) => {
               this.#logger.error("automation.thread_retention.delete_failed", {
                 error,
                 threadId,

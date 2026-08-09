@@ -1,12 +1,12 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type {
   AutomationScheduleTimerPort,
   ScheduledAutomationJob,
 } from "../ports/automation-schedule-port";
 
-import type { AutomationExecutionPort } from "./automation-executor";
 import { MemoryMaintenanceController } from "./memory-maintenance-controller";
 
 describe("MemoryMaintenanceController", () => {
@@ -15,6 +15,7 @@ describe("MemoryMaintenanceController", () => {
     const executor = createExecutor();
     const controller = new MemoryMaintenanceController({
       clock: createClock(new Date(2026, 7, 1, 4, 0, 0)),
+      createEventId: () => "memory-maintenance-event-1",
       cron: "0 4 * * *",
       enabled: true,
       executor,
@@ -26,8 +27,11 @@ describe("MemoryMaintenanceController", () => {
 
     expect(scheduleTimer.cron).toBe("0 4 * * *");
     expect(executor.execute).toHaveBeenCalledWith({
-      date: "2026-08-01",
-      source: "memory_maintenance",
+      id: "memory-maintenance-event-1",
+      type: "system.memory_maintenance.fired.v1",
+      source: "system/memory-maintenance",
+      occurredAt: new Date(2026, 7, 1, 4, 0, 0).toISOString(),
+      data: { date: "2026-08-01" },
     });
   });
 
@@ -36,6 +40,7 @@ describe("MemoryMaintenanceController", () => {
     const executor = createExecutor();
     const controller = new MemoryMaintenanceController({
       clock: createClock(new Date(Number.NaN)),
+      createEventId: () => "memory-maintenance-event-invalid-date",
       cron: "0 4 * * *",
       enabled: true,
       executor,
@@ -59,6 +64,7 @@ describe("MemoryMaintenanceController", () => {
     });
     const controller = new MemoryMaintenanceController({
       clock: createClock(new Date(2026, 7, 1, 4, 0, 0)),
+      createEventId: () => "memory-maintenance-event-concurrent",
       cron: "0 4 * * *",
       enabled: true,
       executor,
@@ -79,6 +85,7 @@ describe("MemoryMaintenanceController", () => {
     const disabledTimer = new FakeScheduleTimer();
     new MemoryMaintenanceController({
       clock: createClock(new Date()),
+      createEventId: () => "memory-maintenance-event-disabled",
       cron: "0 4 * * *",
       enabled: false,
       executor: createExecutor(),
@@ -94,6 +101,7 @@ describe("MemoryMaintenanceController", () => {
     });
     const controller = new MemoryMaintenanceController({
       clock: createClock(new Date()),
+      createEventId: () => "memory-maintenance-event-drain",
       cron: "0 4 * * *",
       enabled: true,
       executor,
@@ -145,8 +153,8 @@ function createClock(now: Date): AutomationClockPort {
 }
 
 function createExecutor(
-  implementation: AutomationExecutionPort["execute"] = async () => ({ status: "completed" }),
-): { execute: Mock<AutomationExecutionPort["execute"]> } {
+  implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
+): { execute: Mock<EventExecutionPort["execute"]> } {
   return { execute: vi.fn(implementation) };
 }
 

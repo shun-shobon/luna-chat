@@ -1,5 +1,6 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedule";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationLogPort } from "../ports/automation-log-port";
@@ -10,7 +11,6 @@ import type {
 } from "../ports/automation-schedule-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 
-import type { AutomationExecutionPort } from "./automation-executor";
 import { ScheduleController } from "./schedule-controller";
 
 describe("ScheduleController", () => {
@@ -83,7 +83,14 @@ describe("ScheduleController", () => {
     await Promise.all([firstTick, secondTick]);
     expect(executor.execute).toHaveBeenNthCalledWith(
       1,
-      { jobId: "daily", prompt: "prompt-daily", source: "schedule" },
+      {
+        id: "schedule-event-1",
+        type: "system.schedule.fired.v1",
+        source: "system/schedule",
+        subject: "daily",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        data: { jobId: "daily", prompt: "prompt-daily", kind: "recurring" },
+      },
       undefined,
     );
   });
@@ -110,6 +117,17 @@ describe("ScheduleController", () => {
 
     expect(scheduleTimer.oneShots[0]?.stop).toHaveBeenCalledTimes(1);
     expect(order).toEqual(["turn-started", "delete", "completion"]);
+    expect(executor.execute).toHaveBeenCalledWith(
+      {
+        id: "schedule-event-1",
+        type: "system.schedule.fired.v1",
+        source: "system/schedule",
+        subject: "once",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        data: { jobId: "once", prompt: "prompt-once", kind: "one_shot" },
+      },
+      expect.any(Function),
+    );
     expect(workspace.removeScheduleJob).toHaveBeenCalledWith("once");
     await controller.reloadSchedule();
     expect(executor.execute).toHaveBeenCalledTimes(1);
@@ -300,15 +318,17 @@ class FakeWatcher implements AutomationScheduleWatcherPort {
 function createController(
   input: {
     clock?: AutomationClockPort;
-    executor?: AutomationExecutionPort;
+    executor?: EventExecutionPort;
     logger?: AutomationLogPort;
     scheduleTimer?: AutomationScheduleTimerPort;
     watcher?: AutomationScheduleWatcherPort;
     workspace?: AutomationWorkspacePort;
   } = {},
 ): ScheduleController {
+  let eventSequence = 0;
   return new ScheduleController({
     clock: input.clock ?? new FakeClock(),
+    createEventId: () => `schedule-event-${String(++eventSequence)}`,
     executor: input.executor ?? createExecutor(),
     logger: input.logger ?? createLogger(),
     reloadDebounceMs: 25,
@@ -319,8 +339,8 @@ function createController(
 }
 
 function createExecutor(
-  implementation: AutomationExecutionPort["execute"] = async () => ({ status: "completed" }),
-): { execute: Mock<AutomationExecutionPort["execute"]> } {
+  implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
+): { execute: Mock<EventExecutionPort["execute"]> } {
   return { execute: vi.fn(implementation) };
 }
 

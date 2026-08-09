@@ -5,14 +5,14 @@ import type {
 } from "../ports/automation-schedule-port";
 
 import { ActiveExecutionSet } from "./active-execution-set";
-import type { AutomationExecutionPort } from "./automation-executor";
 
 export class MemoryMaintenanceController {
   readonly #clock: AutomationClockPort;
+  readonly #createEventId: () => string;
   readonly #cron: string;
   readonly #enabled: boolean;
   readonly #executions: ActiveExecutionSet;
-  readonly #executor: AutomationExecutionPort;
+  readonly #executor: EventExecutionPort;
   readonly #scheduleTimer: AutomationScheduleTimerPort;
 
   #accepting = false;
@@ -20,13 +20,15 @@ export class MemoryMaintenanceController {
 
   constructor(input: {
     clock: AutomationClockPort;
+    createEventId?: (() => string) | undefined;
     cron: string;
     enabled: boolean;
     executions?: ActiveExecutionSet;
-    executor: AutomationExecutionPort;
+    executor: EventExecutionPort;
     scheduleTimer: AutomationScheduleTimerPort;
   }) {
     this.#clock = input.clock;
+    this.#createEventId = input.createEventId ?? randomUUID;
     this.#cron = input.cron;
     this.#enabled = input.enabled;
     this.#executions = input.executions ?? new ActiveExecutionSet();
@@ -43,10 +45,15 @@ export class MemoryMaintenanceController {
       if (!this.#accepting) {
         return;
       }
+      const now = this.#clock.now();
+      const date = formatLocalDate(now);
       const execution = this.#executor
         .execute({
-          date: formatLocalDate(this.#clock.now()),
-          source: "memory_maintenance",
+          id: this.#createEventId(),
+          type: "system.memory_maintenance.fired.v1",
+          source: "system/memory-maintenance",
+          occurredAt: now.toISOString(),
+          data: { date },
         })
         .then(() => undefined);
       this.#executions.track(execution);
@@ -76,3 +83,6 @@ function formatLocalDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+import { randomUUID } from "node:crypto";
+
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
