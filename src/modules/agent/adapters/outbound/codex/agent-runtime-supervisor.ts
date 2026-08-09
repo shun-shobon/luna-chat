@@ -1,5 +1,6 @@
 import type {
   AgentRuntimePort,
+  AgentTurnRequest,
   StartedAgentTurn,
   ThreadId,
   TurnId,
@@ -121,8 +122,8 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
     await this.#getRuntime();
   }
 
-  public async startTurn(threadId: ThreadId, input: string): Promise<StartedAgentTurn> {
-    return await (await this.#getRuntime()).startTurn(threadId, input);
+  public async startTurn(threadId: ThreadId, request: AgentTurnRequest): Promise<StartedAgentTurn> {
+    return await (await this.#getRuntime()).startTurn(threadId, request);
   }
 
   public async steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void> {

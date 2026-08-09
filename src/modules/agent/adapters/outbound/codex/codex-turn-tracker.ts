@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type { ServerNotification } from "../../../../../generated/codex/ServerNotification";
-import { parseAgentOutputText } from "../../../domain/agent-output";
 import type { AgentTurnResult, ThreadId, TurnId } from "../../../ports/outbound/agent-runtime-port";
 
 import type { JsonRpcNotification, JsonRpcServerRequest } from "./json-rpc-connection";
@@ -260,17 +259,7 @@ export class CodexTurnTracker {
       });
       return;
     }
-    try {
-      this.#resolveCompletion({
-        output: parseAgentOutputText(this.#finalMessage),
-        status: "completed",
-      });
-    } catch (error: unknown) {
-      this.#resolveCompletion({
-        errorMessage: error instanceof Error ? error.message : "Agent output is invalid.",
-        status: "failed",
-      });
-    }
+    this.#resolveCompletion({ outputText: this.#finalMessage, status: "completed" });
   }
 
   #correlateTurn(turnId: string): void {

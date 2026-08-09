@@ -1,7 +1,10 @@
-import type { AgentOutput } from "../../../discord/domain/discord-action";
-
 export type ThreadId = string;
 export type TurnId = string;
+
+export type AgentTurnRequest = Readonly<{
+  input: string;
+  outputSchema: Record<string, unknown>;
+}>;
 
 export type AgentThreadSummary = {
   archived: boolean;
@@ -10,19 +13,27 @@ export type AgentThreadSummary = {
 };
 
 export type AgentTurnResult =
-  | {
-      output: AgentOutput;
+  | Readonly<{
+      outputText: string;
       status: "completed";
-    }
-  | {
+    }>
+  | Readonly<{
       errorMessage?: string;
       status: "failed" | "interrupted";
-    };
+    }>;
 
 export type StartedAgentTurn = {
   completion: Promise<AgentTurnResult>;
   turnId: TurnId;
 };
+
+export type AgentThreadInput = Readonly<{
+  baseInstructions: string;
+  config: Record<string, unknown>;
+  cwd: string;
+  developerInstructions: string;
+  executionOwnerId: string;
+}>;
 
 interface AgentThreadPort {
   archiveThread(threadId: ThreadId): Promise<void>;
@@ -31,17 +42,12 @@ interface AgentThreadPort {
     data: AgentThreadSummary[];
     nextCursor?: string;
   }>;
-  openThread(input: {
-    baseInstructions: string;
-    config: Record<string, unknown>;
-    cwd: string;
-    developerInstructions: string;
-  }): Promise<ThreadId>;
+  openThread(input: Omit<AgentThreadInput, "executionOwnerId">): Promise<ThreadId>;
 }
 
 interface AgentTurnPort {
   interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
-  startTurn(threadId: ThreadId, input: string): Promise<StartedAgentTurn>;
+  startTurn(threadId: ThreadId, request: AgentTurnRequest): Promise<StartedAgentTurn>;
   steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void>;
 }
 
