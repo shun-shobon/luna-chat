@@ -180,7 +180,7 @@ lines.on("line", (line) => {
     send({ id: message.id, result: { thread: { id: "thread-1" } } });
   } else if (message.method === "turn/start") {
     send({ id: message.id, result: { turn: { id: "turn-1" } } });
-    send({ method: "item/completed", params: { item: { phase: "final_answer", text: JSON.stringify({ actions: [] }), type: "agentMessage" }, threadId: "thread-1", turnId: "turn-1" } });
+    send({ method: "item/completed", params: { item: { phase: "final_answer", text: JSON.stringify({ effects: [] }), type: "agentMessage" }, threadId: "thread-1", turnId: "turn-1" } });
     send({ method: "turn/completed", params: { threadId: "thread-1", turn: { error: null, id: "turn-1", status: "completed" } } });
   } else if (message.method === "turn/steer") {
     send({ id: message.id, result: { turnId: message.params.expectedTurnId } });

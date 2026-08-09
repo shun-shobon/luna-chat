@@ -1,6 +1,5 @@
 import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
 import { startManagedCodexRuntime } from "../modules/agent/adapters/outbound/codex/managed-codex-runtime";
-import { AutomationAgentAdapter } from "../modules/automation/adapters/automation-agent-adapter";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
 import {
@@ -8,17 +7,17 @@ import {
   SystemAutomationRandom,
 } from "../modules/automation/adapters/system-clock";
 import { WorkspaceAutomationAdapter } from "../modules/automation/adapters/workspace-automation-adapter";
-import { AutomationExecutor } from "../modules/automation/application/automation-executor";
 import { AutomationService } from "../modules/automation/application/automation-service";
 import { HeartbeatController } from "../modules/automation/application/heartbeat-controller";
 import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
 import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
 import type { AutomationLogPort } from "../modules/automation/ports/automation-log-port";
-import { DiscordConversationController } from "../modules/conversation/adapters/discord-conversation-controller";
-import { DiscordConversationHistory } from "../modules/conversation/adapters/discord-conversation-history";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
+import { DiscordConversationController } from "../modules/discord/adapters/discord-conversation-controller";
+import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
+import { createDiscordEffectProvider } from "../modules/discord/adapters/discord-effect-provider";
 import {
   createDiscordGatewayClient,
   createDiscordGatewayEventClient,
@@ -30,9 +29,14 @@ import {
   DiscordReadAdapter,
 } from "../modules/discord/adapters/discord-read-adapter";
 import { FilesystemSendFileResolver } from "../modules/discord/adapters/filesystem-send-file-resolver";
-import { createDiscordActionBatchPort } from "../modules/discord/application/execute-discord-actions";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
+import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
+import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
+import { createEffectRegistry } from "../modules/effect/application/effect-registry";
+import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
+import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
+import { EventExecutor } from "../modules/event/application/event-executor";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
 
@@ -59,7 +63,9 @@ export async function startLunaApplication(
     logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
   });
   const actionAdapter = new DiscordActionAdapter(client, new FilesystemSendFileResolver(), typing);
-  const actionBatch = createDiscordActionBatchPort(actionAdapter);
+  const effectRegistry = createEffectRegistry([createDiscordEffectProvider(actionAdapter)]);
+  const effectOutput = createEffectOutputContract(effectRegistry);
+  const effects = createEffectBatchExecutor(effectRegistry, logger);
   const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
   const mcp = await startDiscordMcpServer({
     actions: actionAdapter,
@@ -71,7 +77,7 @@ export async function startLunaApplication(
   });
 
   let conversation: ConversationCoordinator | undefined;
-  let automationAgent: AutomationAgentAdapter | undefined;
+  let eventAgent: EventAgentAdapter | undefined;
   const fatal = deferred<Error>();
   const supervisor = new AgentRuntimeSupervisor(
     {
@@ -96,7 +102,7 @@ export async function startLunaApplication(
   supervisor.onFailure((error) => {
     logger.log("error", "agent.connection_failed", {}, { error });
     conversation?.connectionLost(error);
-    automationAgent?.connectionLost();
+    eventAgent?.connectionLost();
   });
   supervisor.onFatal((error) => {
     logger.log("error", "agent.restart_budget_exceeded", {}, { error });
@@ -125,20 +131,27 @@ export async function startLunaApplication(
     options.startupSignal?.throwIfAborted();
     const lunaUserId = discordIdSchema.parse(client.user?.id);
     const createThreadInput = createThreadInputFactory({
-      discordMcpServerUrl: mcp.url,
+      buildMcpServers: (executionOwnerId) => ({
+        discord: {
+          url: mcp.url,
+          http_headers: { "X-Luna-Typing-Owner": executionOwnerId },
+        },
+      }),
+      capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
       workspaceDir: workspace.workspaceDir,
     });
     conversation = new ConversationCoordinator(
       {
-        actions: actionBatch,
         agent: supervisor,
         createThreadInput,
+        effectOutput,
+        effects,
         history: new DiscordConversationHistory(readAdapter),
         onError: (error, context) => {
           logger.log(
             "error",
             "conversation.operation_failed",
-            { conversationScope: JSON.stringify(context.scope) },
+            { conversationSession: context.session.key },
             { error, operation: context.operation },
           );
         },
@@ -147,8 +160,8 @@ export async function startLunaApplication(
             "info",
             event,
             {
-              ...(context.actionIndex === undefined ? {} : { actionIndex: context.actionIndex }),
-              conversationScope: JSON.stringify(context.scope),
+              ...(context.effectIndex === undefined ? {} : { effectIndex: context.effectIndex }),
+              conversationSession: context.session.key,
               ...(context.threadId === undefined ? {} : { threadId: context.threadId }),
               ...(context.turnId === undefined ? {} : { turnId: context.turnId }),
             },
@@ -170,19 +183,20 @@ export async function startLunaApplication(
 
     const automationLogger = createAutomationLogger(logger);
     const clock = new SystemAutomationClock();
-    automationAgent = new AutomationAgentAdapter(
-      supervisor,
-      actionBatch,
+    eventAgent = new EventAgentAdapter({
+      agent: supervisor,
       createThreadInput,
-      (error, operation) => {
-        logger.log("error", "automation.operation_failed", {}, { error, operation });
+      effectOutput,
+      effects,
+      onError: (error, operation) => {
+        logger.log("error", "event.operation_failed", {}, { error, operation });
       },
-    );
+    });
     const automationWorkspace = new WorkspaceAutomationAdapter({
       schedulePath: workspace.cronPath,
       workspaceDir: workspace.workspaceDir,
     });
-    const executor = new AutomationExecutor({ agent: automationAgent, logger: automationLogger });
+    const executor = new EventExecutor({ agent: eventAgent, logger });
     const scheduleTimer = new CronScheduleTimer();
     automation = new AutomationService({
       heartbeat: new HeartbeatController({
@@ -203,7 +217,7 @@ export async function startLunaApplication(
         scheduleTimer,
       }),
       retention: new ThreadRetentionCleaner({
-        agent: automationAgent,
+        agent: supervisor,
         cleanupIntervalMs: workspace.config.agent.threadCleanupIntervalMs,
         clock,
         logger: automationLogger,

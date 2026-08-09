@@ -10,7 +10,17 @@ describe("thread input factory", () => {
   });
 
   it("Discord MCPとtrusted workspaceだけをthread configへ入れる", () => {
-    expect(buildCodexThreadConfig("http://127.0.0.1:43123/mcp", "/workspace", "owner-1")).toEqual({
+    expect(
+      buildCodexThreadConfig(
+        {
+          discord: {
+            url: "http://127.0.0.1:43123/mcp",
+            http_headers: { "X-Luna-Typing-Owner": "owner-1" },
+          },
+        },
+        "/workspace",
+      ),
+    ).toEqual({
       mcp_servers: {
         discord: {
           url: "http://127.0.0.1:43123/mcp",
