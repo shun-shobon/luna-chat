@@ -1,9 +1,9 @@
 import type { InitializeParams } from "../../../../../generated/codex/InitializeParams";
 import type { ThreadSourceKind } from "../../../../../generated/codex/v2/ThreadSourceKind";
 import type { UserInput } from "../../../../../generated/codex/v2/UserInput";
-import { AGENT_OUTPUT_JSON_SCHEMA } from "../../../domain/agent-output";
 import {
   type AgentRuntimePort,
+  type AgentTurnRequest,
   type StartedAgentTurn,
   type ThreadId,
   type TurnId,
@@ -179,7 +179,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
     return threadId;
   }
 
-  public async startTurn(threadId: ThreadId, input: string): Promise<StartedAgentTurn> {
+  public async startTurn(threadId: ThreadId, request: AgentTurnRequest): Promise<StartedAgentTurn> {
     if (this.#trackers.has(threadId)) {
       throw new Error(`Thread ${threadId} already has an active turn.`);
     }
@@ -192,8 +192,8 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 
     try {
       const result = await this.#connection.request("turn/start", {
-        input: [createTextInput(input)],
-        outputSchema: parseJsonValue(AGENT_OUTPUT_JSON_SCHEMA, "agent output schema"),
+        input: [createTextInput(request.input)],
+        outputSchema: parseJsonValue(request.outputSchema, "agent output schema"),
         threadId,
       });
       const turnId = parseResponse(this.#connection, () => parseTurnId(result));

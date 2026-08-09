@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
-import type { ConversationThreadInput } from "../modules/conversation/application/conversation-coordinator";
+import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
 
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
@@ -14,37 +14,34 @@ export function buildBaseInstructions(input: {
 }
 
 export function buildCodexThreadConfig(
-  discordMcpServerUrl: string,
+  mcpServers: Readonly<Record<string, unknown>>,
   workspaceDir: string,
-  actionOwnerId: string,
 ): Record<string, unknown> {
   const resolvedWorkspaceDir = resolve(workspaceDir);
   return {
-    mcp_servers: {
-      discord: {
-        url: discordMcpServerUrl,
-        http_headers: { "X-Luna-Typing-Owner": actionOwnerId },
-      },
-    },
+    mcp_servers: mcpServers,
     projects: { [resolvedWorkspaceDir]: { trust_level: "trusted" } },
   };
 }
 
 export function createThreadInputFactory(input: {
-  discordMcpServerUrl: string;
+  buildMcpServers: (executionOwnerId: string) => Readonly<Record<string, unknown>>;
+  capabilityInstructions: readonly string[];
   workspaceDir: string;
-  createActionOwnerId?: (() => string) | undefined;
-}): () => Promise<ConversationThreadInput> {
-  const createActionOwnerId = input.createActionOwnerId ?? randomUUID;
+  createExecutionOwnerId?: (() => string) | undefined;
+}): () => Promise<AgentThreadInput> {
+  const createExecutionOwnerId = input.createExecutionOwnerId ?? randomUUID;
   return async () => {
-    const actionOwnerId = createActionOwnerId();
+    const executionOwnerId = createExecutionOwnerId();
     const instructions = await readWorkspaceBaseInstructions(input.workspaceDir);
     return {
-      actionOwnerId,
       baseInstructions: buildBaseInstructions(instructions),
-      config: buildCodexThreadConfig(input.discordMcpServerUrl, input.workspaceDir, actionOwnerId),
+      config: buildCodexThreadConfig(input.buildMcpServers(executionOwnerId), input.workspaceDir),
       cwd: input.workspaceDir,
-      developerInstructions: LUNA_DEVELOPER_INSTRUCTIONS,
+      developerInstructions: [LUNA_DEVELOPER_INSTRUCTIONS, ...input.capabilityInstructions].join(
+        "\n\n",
+      ),
+      executionOwnerId,
     };
   };
 }

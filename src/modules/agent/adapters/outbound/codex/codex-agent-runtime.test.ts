@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { AgentTurnRequest } from "../../../ports/outbound/agent-runtime-port";
+
 import { CodexAgentRuntime } from "./codex-agent-runtime";
 import type { CodexLineTransport } from "./codex-stdio-process";
 import { TurnNotSteerableError } from "./codex-turn-tracker";
@@ -46,6 +48,18 @@ async function initializeRuntime(transport: FakeTransport): Promise<CodexAgentRu
     },
   });
   return await initializing;
+}
+
+function turnRequest(input: string): AgentTurnRequest {
+  return {
+    input,
+    outputSchema: {
+      additionalProperties: false,
+      properties: { value: { type: "string" } },
+      required: ["value"],
+      type: "object",
+    },
+  };
 }
 
 describe("CodexAgentRuntime", () => {
@@ -96,7 +110,8 @@ describe("CodexAgentRuntime", () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "hello");
+    const request = turnRequest("hello");
+    const starting = runtime.startTurn("thread-1", request);
     transport.emit({
       method: "turn/started",
       params: { threadId: "thread-1", turn: { id: "turn-1" } },
@@ -121,17 +136,41 @@ describe("CodexAgentRuntime", () => {
     });
 
     expect(started.turnId).toBe("turn-1");
+    expect(transport.writes).toContainEqual({
+      id: 2,
+      method: "turn/start",
+      params: {
+        input: [{ text: "hello", text_elements: [], type: "text" }],
+        outputSchema: request.outputSchema,
+        threadId: "thread-1",
+      },
+    });
     await expect(started.completion).resolves.toEqual({
-      output: { actions: [] },
+      outputText: '{"actions":[]}',
       status: "completed",
     });
+  });
+
+  it("caller supplied output schema が JSON value でなければ turn/start を送信しない", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+
+    await expect(
+      runtime.startTurn("thread-1", {
+        input: "hello",
+        outputSchema: { type: "object", invalid: undefined },
+      }),
+    ).rejects.toThrow("agent output schema.invalid must not be undefined");
+    expect(
+      transport.writes.filter((write) => Reflect.get(write, "method") === "turn/start"),
+    ).toHaveLength(0);
   });
 
   it("final_answer 受領後の steer を RPC 送信前に拒否し、先行outputを保持する", async () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "first");
+    const starting = runtime.startTurn("thread-1", turnRequest("first"));
     transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
     const started = await starting;
     transport.emit({
@@ -162,15 +201,8 @@ describe("CodexAgentRuntime", () => {
       },
     });
     await expect(started.completion).resolves.toEqual({
-      output: {
-        actions: [
-          {
-            kind: "send_message",
-            target: { kind: "channel", channelId: "123456789012345678" },
-            content: "first answer",
-          },
-        ],
-      },
+      outputText:
+        '{"actions":[{"kind":"send_message","target":{"kind":"channel","channelId":"123456789012345678"},"content":"first answer","files":null}]}',
       status: "completed",
     });
   });
@@ -179,7 +211,7 @@ describe("CodexAgentRuntime", () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "first");
+    const starting = runtime.startTurn("thread-1", turnRequest("first"));
     transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
     await starting;
 
@@ -202,7 +234,7 @@ describe("CodexAgentRuntime", () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "hello");
+    const starting = runtime.startTurn("thread-1", turnRequest("hello"));
     transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
     const started = await starting;
 
@@ -248,7 +280,7 @@ describe("CodexAgentRuntime", () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "hello");
+    const starting = runtime.startTurn("thread-1", turnRequest("hello"));
     transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
     const started = await starting;
     transport.emit({
@@ -273,7 +305,7 @@ describe("CodexAgentRuntime", () => {
       params: { threadId: "thread-1", turn: { id: "unexpected-turn" } },
     });
 
-    await expect(runtime.startTurn("thread-1", "next")).rejects.toBeInstanceOf(
+    await expect(runtime.startTurn("thread-1", turnRequest("next"))).rejects.toBeInstanceOf(
       JsonRpcProtocolError,
     );
   });
@@ -282,7 +314,7 @@ describe("CodexAgentRuntime", () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
 
-    const starting = runtime.startTurn("thread-1", "hello");
+    const starting = runtime.startTurn("thread-1", turnRequest("hello"));
     transport.emit({
       method: "turn/started",
       params: { threadId: "thread-1", turn: { id: "turn-from-notification" } },

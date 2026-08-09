@@ -14,7 +14,6 @@ import type {
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 
 import { ActiveExecutionSet } from "./active-execution-set";
-import type { AutomationExecutionPort } from "./automation-executor";
 
 type RegisteredScheduleJob = {
   definition: WorkspaceScheduleJob;
@@ -25,8 +24,9 @@ type FiredOneShotState = "starting" | "delete_only";
 
 export class ScheduleController {
   readonly #clock: AutomationClockPort;
+  readonly #createEventId: () => string;
   readonly #executions: ActiveExecutionSet;
-  readonly #executor: AutomationExecutionPort;
+  readonly #executor: EventExecutionPort;
   readonly #logger: AutomationLogPort;
   readonly #reloadDebounceMs: number;
   readonly #scheduleTimer: AutomationScheduleTimerPort;
@@ -41,8 +41,9 @@ export class ScheduleController {
 
   constructor(input: {
     clock: AutomationClockPort;
+    createEventId?: (() => string) | undefined;
     executions?: ActiveExecutionSet;
-    executor: AutomationExecutionPort;
+    executor: EventExecutionPort;
     logger: AutomationLogPort;
     reloadDebounceMs: number;
     scheduleTimer: AutomationScheduleTimerPort;
@@ -50,6 +51,7 @@ export class ScheduleController {
     workspace: AutomationWorkspacePort;
   }) {
     this.#clock = input.clock;
+    this.#createEventId = input.createEventId ?? randomUUID;
     this.#executions = input.executions ?? new ActiveExecutionSet();
     this.#executor = input.executor;
     this.#logger = input.logger;
@@ -219,7 +221,14 @@ export class ScheduleController {
 
   async #runJob(job: WorkspaceScheduleJob): Promise<void> {
     await this.#executor.execute(
-      { jobId: job.id, prompt: job.prompt, source: "schedule" },
+      {
+        id: this.#createEventId(),
+        type: "system.schedule.fired.v1",
+        source: "system/schedule",
+        subject: job.id,
+        occurredAt: this.#clock.now().toISOString(),
+        data: { jobId: job.id, prompt: job.prompt, kind: job.kind },
+      },
       job.kind === "one_shot"
         ? async () => {
             await this.#deleteStartedOneShot(job.id);
@@ -275,3 +284,6 @@ function isSameRecurringDefinition(
 function isSameOneShotDefinition(left: OneShotScheduleJob, right: OneShotScheduleJob): boolean {
   return left.at === right.at;
 }
+import { randomUUID } from "node:crypto";
+
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";

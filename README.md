@@ -1,6 +1,6 @@
 # Luna
 
-Lunaは、Discordを入口にCodexを動かす個人用workspace agentです。Discordの会話、host上のfilesystemとcommand、記憶保存、heartbeat、時刻指定jobを一つのLuna workspaceへ接続します。
+Lunaは、Discordだけを外部chat入口としてCodexを動かす個人用workspace agentです。Discord投稿を共通Eventへ変換し、会話、host上のfilesystemとcommand、記憶保存、heartbeat、時刻指定jobを一つのLuna workspaceへ接続します。Codexの最終出力は登録済みEffectとして検証し、Discord送信、返信、reaction、typingを実行します。
 
 ## 最初に読む注意
 
@@ -58,7 +58,7 @@ docker compose run --rm luna-chat codex login status
 | `LOG_LEVEL`         | いいえ | `info`      | `trace` / `debug` / `info` / `warn` / `error`。                        |
 | `TZ`                | いいえ | process依存 | scheduleに使うNode.js local timezone。Dockerは未指定時Asia/Tokyoです。 |
 
-`LOG_LEVEL=debug`または`trace`では、Discord本文、prompt、tool引数、actionがstdoutへ出ます。Bot token等の既知fieldはredactしますが、自由文へ埋め込まれたcredentialや個人情報の除去は保証しません。
+`LOG_LEVEL=debug`または`trace`では、Discord本文、prompt、tool引数、Effectがstdoutへ出ます。Bot token等の既知fieldはredactしますが、自由文へ埋め込まれたcredentialや個人情報の除去は保証しません。
 
 ## Data layout
 
@@ -142,7 +142,9 @@ docker compose up
 - DMは既定で全利用者から受け取ります。
 - 人間、他Bot、Webhook、system messageを入力に含めます。
 
-同時turn、queue、turn時間、action失敗follow-upに上限はありません。Bot loop、memory exhaustion、永久に完了しないshutdownを防ぐ仕組みもありません。
+同時turn、queue、turn時間、Effect失敗follow-upに上限はありません。Bot loop、memory exhaustion、永久に完了しないshutdownを防ぐ仕組みもありません。
+
+会話は`discord.message.created.v1` Eventとしてsessionへ渡されます。heartbeat、schedule、日次整理はそれぞれ一件のsystem Eventを生成し、専用Codex threadでone-shot実行します。Eventを配送する内部busや永続queueはありません。
 
 ## 記憶保存と日次整理
 

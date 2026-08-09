@@ -1,10 +1,10 @@
-import type { ConversationScope } from "../../discord/domain/conversation-scope";
-import type { DiscordMessage } from "../../discord/domain/discord-message";
+import type { LunaEvent } from "../../event/domain/luna-event";
+import type { ConversationSession } from "../domain/conversation-session";
 
 export interface ConversationHistoryPort {
   fetchBefore(
-    scope: ConversationScope,
-    beforeMessageId: string,
+    session: ConversationSession,
+    beforeEvent: LunaEvent,
     limit: number,
-  ): Promise<readonly DiscordMessage[]>;
+  ): Promise<readonly LunaEvent[]>;
 }

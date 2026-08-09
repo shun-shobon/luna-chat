@@ -11,7 +11,8 @@ const fakes = vi.hoisted(() => {
   const managedClose = vi.fn(async () => undefined);
   const mcpClose = vi.fn(async () => undefined);
   const recurringCrons: string[] = [];
-  return { client, managedClose, mcpClose, recurringCrons };
+  const runtime = { failure: undefined as ((error: Error) => void) | undefined };
+  return { client, managedClose, mcpClose, recurringCrons, runtime };
 });
 
 vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
@@ -49,7 +50,10 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => ({
   startManagedCodexRuntime: vi.fn(async () => ({
     close: fakes.managedClose,
-    onFailure: vi.fn(() => () => undefined),
+    onFailure: vi.fn((handler: (error: Error) => void) => {
+      fakes.runtime.failure = handler;
+      return () => undefined;
+    }),
     port: {
       archiveThread: vi.fn(async () => undefined),
       deleteThread: vi.fn(async () => undefined),
@@ -95,13 +99,20 @@ vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
   },
 }));
 
+import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
+import * as effectOutputModule from "../modules/effect/application/effect-output-contract";
+import * as effectRegistryModule from "../modules/effect/application/effect-registry";
+import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
+
 import { startLunaApplication } from "./composition-root";
+import * as threadInputModule from "./thread-input-factory";
 
 const originalEnvironment = { ...process.env };
 
 afterEach(() => {
   process.env = { ...originalEnvironment };
   fakes.recurringCrons.length = 0;
+  fakes.runtime.failure = undefined;
   vi.clearAllMocks();
 });
 
@@ -114,11 +125,25 @@ describe("composition root integration", () => {
       LUNA_HOME: "/tmp/luna-test",
     };
 
+    const registry = vi.spyOn(effectRegistryModule, "createEffectRegistry");
+    const outputContract = vi.spyOn(effectOutputModule, "createEffectOutputContract");
+    const threadInputFactory = vi.spyOn(threadInputModule, "createThreadInputFactory");
     const application = await startLunaApplication();
 
     expect(fakes.client.login).toHaveBeenCalledWith("discord-token");
     expect(fakes.client.on).toHaveBeenCalledTimes(2);
     expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
+    expect(registry).toHaveBeenCalledOnce();
+    expect(registry.mock.calls[0]?.[0][0]?.definitions).toHaveLength(6);
+    expect(outputContract).toHaveBeenCalledWith(registry.mock.results[0]?.value);
+    const factoryInput = threadInputFactory.mock.calls[0]?.[0];
+    expect(factoryInput?.capabilityInstructions).toHaveLength(1);
+    expect(factoryInput?.buildMcpServers("owner-1")).toEqual({
+      discord: {
+        url: "http://127.0.0.1:12345/mcp",
+        http_headers: { "X-Luna-Typing-Owner": "owner-1" },
+      },
+    });
 
     await application.shutdown();
 
@@ -150,6 +175,29 @@ describe("composition root integration", () => {
     expect(fakes.client.destroy).toHaveBeenCalled();
     expect(fakes.managedClose).toHaveBeenCalled();
     expect(fakes.mcpClose).toHaveBeenCalled();
+  });
+
+  it("app-server connection lossを両実行経路へ通知し、fatal shutdownでは会話をabortする", async () => {
+    process.env = {
+      ...originalEnvironment,
+      DISCORD_BOT_TOKEN: "discord-token",
+      LOG_LEVEL: "error",
+      LUNA_HOME: "/tmp/luna-test",
+    };
+    const conversationLost = vi.spyOn(ConversationCoordinator.prototype, "connectionLost");
+    const eventLost = vi.spyOn(EventAgentAdapter.prototype, "connectionLost");
+    const abort = vi.spyOn(ConversationCoordinator.prototype, "abort");
+    const drain = vi.spyOn(ConversationCoordinator.prototype, "drain");
+    const application = await startLunaApplication();
+    const failure = new Error("connection lost");
+
+    fakes.runtime.failure?.(failure);
+
+    expect(conversationLost).toHaveBeenCalledWith(failure);
+    expect(eventLost).toHaveBeenCalledOnce();
+    await application.shutdown(true);
+    expect(abort).toHaveBeenCalledOnce();
+    expect(drain).not.toHaveBeenCalled();
   });
 });
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CodexTurnTracker, TurnCorrelationError } from "./codex-turn-tracker";
 
 describe("CodexTurnTracker", () => {
-  it("final_answer を AgentOutput として検証して完了する", async () => {
+  it("final_answer のraw textを返して完了する", async () => {
     const tracker = new CodexTurnTracker("thread-1");
     tracker.bindTurnId("turn-1");
     tracker.handleNotification({
@@ -27,7 +27,11 @@ describe("CodexTurnTracker", () => {
       },
     });
 
-    await expect(tracker.completion).resolves.toMatchObject({ status: "completed" });
+    await expect(tracker.completion).resolves.toEqual({
+      outputText:
+        '{"actions":[{"kind":"start_typing","target":{"kind":"channel","channelId":"123"}}]}',
+      status: "completed",
+    });
   });
 
   it("同一 thread の異なる turn id を拒否する", () => {
@@ -59,13 +63,13 @@ describe("CodexTurnTracker", () => {
     ).toThrow();
   });
 
-  it("final_answer が schema 違反なら turn failure にする", async () => {
+  it("final_answer がJSONでなくても解釈せずraw textを返す", async () => {
     const tracker = new CodexTurnTracker("thread-1");
     tracker.bindTurnId("turn-1");
     tracker.handleNotification({
       method: "item/completed",
       params: {
-        item: { phase: "final_answer", text: '{"actions":"invalid"}', type: "agentMessage" },
+        item: { phase: "final_answer", text: "not-json", type: "agentMessage" },
         threadId: "thread-1",
         turnId: "turn-1",
       },
@@ -78,7 +82,10 @@ describe("CodexTurnTracker", () => {
       },
     });
 
-    await expect(tracker.completion).resolves.toMatchObject({ status: "failed" });
+    await expect(tracker.completion).resolves.toEqual({
+      outputText: "not-json",
+      status: "completed",
+    });
   });
 
   it("request_user_input を当該 turn の failure にする", async () => {

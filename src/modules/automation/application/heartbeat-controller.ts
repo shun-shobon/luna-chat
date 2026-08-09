@@ -7,13 +7,13 @@ import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 
 import { ActiveExecutionSet } from "./active-execution-set";
-import type { AutomationExecutionPort } from "./automation-executor";
 
 export class HeartbeatController {
   readonly #clock: AutomationClockPort;
   readonly #enabled: boolean;
   readonly #executions: ActiveExecutionSet;
-  readonly #executor: AutomationExecutionPort;
+  readonly #createEventId: () => string;
+  readonly #executor: EventExecutionPort;
   readonly #logger: AutomationLogPort;
   readonly #maximumIntervalMs: number;
   readonly #minimumIntervalMs: number;
@@ -25,9 +25,10 @@ export class HeartbeatController {
 
   constructor(input: {
     clock: AutomationClockPort;
+    createEventId?: (() => string) | undefined;
     enabled: boolean;
     executions?: ActiveExecutionSet;
-    executor: AutomationExecutionPort;
+    executor: EventExecutionPort;
     logger: AutomationLogPort;
     maximumIntervalMs: number;
     minimumIntervalMs: number;
@@ -35,6 +36,7 @@ export class HeartbeatController {
     workspace: AutomationWorkspacePort;
   }) {
     this.#clock = input.clock;
+    this.#createEventId = input.createEventId ?? randomUUID;
     this.#enabled = input.enabled;
     this.#executions = input.executions ?? new ActiveExecutionSet();
     this.#executor = input.executor;
@@ -87,6 +89,15 @@ export class HeartbeatController {
       return;
     }
 
-    await this.#executor.execute({ checklist, source: "heartbeat" });
+    await this.#executor.execute({
+      id: this.#createEventId(),
+      type: "system.heartbeat.fired.v1",
+      source: "system/heartbeat",
+      occurredAt: this.#clock.now().toISOString(),
+      data: { checklist },
+    });
   }
 }
+import { randomUUID } from "node:crypto";
+
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";

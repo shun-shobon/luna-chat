@@ -3,6 +3,8 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 export type LogContext = Readonly<{
   actionIndex?: number | undefined;
   conversationScope?: string | undefined;
+  conversationSession?: string | undefined;
+  effectIndex?: number | undefined;
   jobId?: string | undefined;
   requestId?: string | number | undefined;
   threadId?: string | undefined;

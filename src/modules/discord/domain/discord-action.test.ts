@@ -1,22 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { agentOutputSchema, discordActionSchema } from "./discord-action";
+import { discordActionSchema } from "./discord-action";
 
 describe("discordActionSchema", () => {
   it("対応済みactionだけを検証する", () => {
     expect(
-      agentOutputSchema.parse({
-        actions: [
-          { kind: "send_message", target: { kind: "dm_user", userId: "123" }, content: "hi" },
-          {
-            kind: "add_reaction",
-            channelId: "456",
-            messageId: "789",
-            emoji: { kind: "unicode", value: "🌙" },
-          },
-        ],
-      }).actions,
-    ).toHaveLength(2);
+      discordActionSchema.parse({
+        kind: "send_message",
+        target: { kind: "dm_user", userId: "123" },
+        content: "hi",
+      }),
+    ).toMatchObject({ kind: "send_message" });
+    expect(
+      discordActionSchema.parse({
+        kind: "add_reaction",
+        channelId: "456",
+        messageId: "789",
+        emoji: { kind: "unicode", value: "🌙" },
+      }),
+    ).toMatchObject({ kind: "add_reaction" });
   });
 
   it("本文もfileもないmessageを拒否する", () => {
