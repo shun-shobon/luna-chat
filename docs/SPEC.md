@@ -4,8 +4,6 @@
 
 この文書は、再設計後のLunaについて、利用者と外部systemから観測できる振る舞いを定める正本である。内部のmodule構成と実現方法は [ARCHITECTURE.md](./ARCHITECTURE.md) に定める。
 
-この仕様は旧実装との互換性、自動migration、旧設定の読替えを要求しない。旧形式を受理するalias、silent fallback、互換layerは設けない。
-
 ## 2. 製品責務
 
 Lunaは、Discordを入口とする一人用workspace agentである。一つの配置につき、一つのDiscord Bot、一つのLuna workspace、一つの専用Codex homeを持つ。
@@ -13,12 +11,12 @@ Lunaは、Discordを入口とする一人用workspace agentである。一つの
 Lunaは次を行う。
 
 - Discord投稿を会話単位に集約し、Codex app-serverへ渡す。
-- Codexが明示した型付きDiscordアクションを実行する。
+- Codexが明示した型付きEffectを実行する。
 - heartbeatと利用者定義のscheduleから自律的にCodex turnを開始する。
 - `LUNA.md` と `MEMORY.md` を新しいCodex threadの人格・長期記憶として使う。
 - idle終了前の会話を日次記憶へ保存し、設定cronで記憶とworkspaceを整理する。
 
-multi-tenant service、Windows、公開CLI、Web UI、HTTP health endpoint、Discordからの過去thread再開は対象外とする。
+外部chat入口はDiscordだけである。multi-tenant service、Windows、公開CLI、Web UI、HTTP health endpoint、Discordからの過去thread再開は対象外とする。
 
 ## 3. 信頼境界
 
@@ -38,8 +36,10 @@ Codexには次を明示する。
 
 - 会話scope: Guild channel、Guild thread、DMのいずれか一つ。
 - 会話session: scopeごとのqueue、active turn、Codex thread ID、idle状態を持つmemory上の状態。
-- turn chain: 最初のCodex turnと、Discordアクション失敗から生じる同一thread上のfollow-up turn列。
-- Discordアクション: Zodで検証後にDiscord APIへ反映する型付き命令。
+- `LunaEvent`: 入力源に依存しないEvent envelope。`id`、`type`、`source`、任意の`subject`、offset付き`occurredAt`、JSONの`data`を持つ。
+- `ConversationSession`: 会話を識別する`key`と`source`、provider固有のJSON `context`を持つ。
+- turn chain: 最初のCodex turnと、Effect失敗から生じる同一thread上のfollow-up turn列。
+- Effect: providerが型、入力schema、実行、target記述を登録する外部作用。
 - 常設channel: `allowed_channel_ids` に含まれるGuild channel、または許可IDが親channelかthread自身に一致し、Discord.jsキャッシュ上でLuna自身がthread memberであるthread。mentionなしで常時受信する。
 - 一時session: 常設でないscopeにおいて、Lunaへのmentionで開始されたsession。
 - session記憶保存: idle終了する会話thread自身が、会話要約と将来役立つ事項を`memory/YYYY-MM-DD.md`へ追記するturn。
@@ -74,7 +74,7 @@ Guild channel、Guild thread、DMを必要ID付きの判別可能unionで表す�
 - 会話内の人間がtyping中なら、そのtypingが`typing_idle_ms`途切れるまで待つ。
 - 待機中に受理した投稿をDiscord timestamp順に一つの入力batchへまとめる。同一timestampはmessage ID順とする。
 - active Codex turn中の投稿は、final agent messageを未受領ならbatch化せず、受信順に一件ずつ即時`turn/steer`する。
-- final agent message受領後は、`turn/completed`未受領でも同じturnへのsteerを拒否する。拒否された投稿は次のturn用queueへ移し、確定済みのfinal actionを一度実行してから次のturnで処理する。
+- final agent message受領後は、`turn/completed`未受領でも同じturnへのsteerを拒否する。拒否された投稿は次のturn用queueへ移し、確定済みのEffectを一度実行してから次のturnで処理する。
 - その他の理由でsteer requestが失敗した投稿も次のturn用queueへ移す。現在turnが後で失敗してsessionを終了しても、この未開始queueは破棄せず、新しいthreadの最初のturnで処理する。
 
 同じ`messageCreate`が複数回配送された場合、event同士は重複排除せず配送回数だけ処理する。新規sessionの初回履歴と起点eventの間だけmessage IDで重複を除く。
@@ -92,18 +92,21 @@ Codexへ渡すuser inputは、検証済みobjectを`JSON.stringify`したJSONと
 ```ts
 type AgentInput =
   | {
-      source: "discord";
-      scope: ConversationScope;
-      history: DiscordMessage[];
-      messages: DiscordMessage[];
+      source: "conversation";
+      session: { key: string; source: string };
+      history: LunaEvent[];
+      events: LunaEvent[];
     }
-  | { source: "heartbeat"; checklist: string }
-  | { source: "schedule"; jobId: string; prompt: string }
+  | { source: "event"; event: LunaEvent }
   | { source: "session_memory"; date: string }
-  | { source: "memory_maintenance"; date: string };
+  | { source: "effect_results"; results: EffectResult[] };
 ```
 
-Discord messageはID、timestamp、投稿種別、Guild/channel/authorのIDと表示名、本文、添付metadata、sticker、reaction集計、mention対象、返信参照を型付きfieldとして持つ。DM返信参照は`channelId`と`messageId`、Guild返信参照はそれらに`guildId`を加えたunionとする。
+`ConversationSession.context`はprovider adapterがsession復元に使い、Agent入力には含めない。`session`には`key`と`source`だけを渡す。`history`と`events`は`occurredAt`昇順、同値ならEvent ID昇順に整列する。
+
+Discord `messageCreate`は`discord.message.created.v1` Eventへ変換する。Event IDはmessage ID、`occurredAt`はmessage timestamp、`subject`はsession keyであり、`data`はscopeとnormalized messageを持つ。messageは投稿種別、Guild/channel/authorのIDと表示名、本文、添付metadata、sticker、reaction集計、mention対象、返信参照を型付きfieldとして持つ。
+
+heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、`system.schedule.fired.v1`、`system.memory_maintenance.fired.v1`を一件生成し、`source:"event"`として共通one-shot実行へ渡す。Event envelopeの`source`は順に`system/heartbeat`、`system/schedule`、`system/memory-maintenance`である。
 
 入力添付は名前、URL、byte size、MIME type等だけを含め、runtimeは内容をdownloadしない。
 
@@ -115,7 +118,7 @@ idle期限がactive chain中に来た場合は処理を中断せず、close予�
 
 session記憶保存が有効なら、保存開始日のprocess local dateを`YYYY-MM-DD`として同じCodex threadへ追加turnを送る。agentはthread全体から短い会話要約、嗜好、決定、未完了事項等を選び、既存内容を失わないsession単位のsectionとして`memory/YYYY-MM-DD.md`へ追記する。見出しと詳細構造はagentが決める。保存対象がなければfileを変更しない。`memory/`がなければagentが作る。
 
-保存turnとそのDiscord action failure follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
+保存turnとそのEffect failure follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
 
 複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。通常turn失敗、connection loss、fatal abortではsession記憶保存を実行しない。
 
@@ -141,6 +144,8 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 
 一つの固定版`@openai/codex` app-server processを全会話、heartbeat、schedule、日次整理で共有する。PATH上の別Codexへfallbackしない。
 
+Agent Runtimeは呼出側が指定したJSON文字列の`input`と`outputSchema`をCodexへ渡し、完了時にraw final textを返す。DiscordやEffectの型、最終出力のparseはAgent Runtimeの責務ではない。thread作成時は共通factoryがworkspace instructions、固定developer instructions、capability instructions、execution ownerごとのMCP設定を組み立てる。
+
 model、reasoning effort、Codex組込みtoolはrequestで指定せず、専用`CODEX_HOME`のCodex defaultを使う。Discord MCPだけを追加する。全threadは`ephemeral: false`とする。
 
 Codexの`request_user_input`機能は有効化せず、中継しない。予期せぬ利用者入力requestはprotocol errorとして該当turnを失敗させ、そのthreadをarchiveしてsessionを終了する。
@@ -148,6 +153,8 @@ Codexの`request_user_input`機能は有効化せず、中継しない。予期�
 全JSON-RPC requestに共通の`rpc_timeout_ms`を適用する。どのrequestでもtimeoutした時点でconnection全体を破損扱いにし、全active turnを失敗させ、全thread参照を破棄してapp-serverを再起動する。turn完了notificationを待つ時間には上限を設けない。
 
 turn固有notificationにはthread IDとturn IDを必須とする。Lunaが開始してarchive処理を終えるまでの管理中threadだけをactive turnへ相関する。同じapp-server接続へ届くsubagent等の管理外thread通知はLunaのturn状態へ反映しない。管理中threadでactive turnへ相関できない通知、IDが欠落した通知、stdoutの不正JSON、未知response形式はprocess異常とし、全active turnを失敗させる。
+
+connection lossでは会話とEvent one-shotのthread参照を破棄し、各execution ownerのEffect resourceをreleaseする。すでに開始したEffectはsettleまで待つが、失われたthreadへのfollow-upは開始しない。
 
 ## 9. Discord MCP
 
@@ -159,30 +166,31 @@ Discord MCPは`127.0.0.1`だけへbindし、HTTP認証を持たない。想定cl
 - `list_guild_emojis`: Guild emojiを列挙する。
 - `get_guild_emoji`: Guild emojiの詳細を読む。
 
-また、第10節の各Discordアクションをturn途中に呼べる型付きwrite toolとして提供する。MCPで実行済みの操作とfinal actionを重複判定せず、明示された全操作を累積実行する。
+また、第10節のDiscord操作をturn途中に呼べる型付きwrite toolとして提供する。MCPで実行済みの操作とfinal Effectを重複判定せず、明示された全操作を累積実行する。
 
-## 10. 最終出力とDiscordアクション
+## 10. 最終出力とEffect
 
 ### 10.1 出力envelope
 
 `turn/start.outputSchema`で最終assistant messageを次へ制約し、runtimeでもJSON parseとZod検証を行う。
 
 ```ts
-type AgentOutput = { actions: DiscordAction[] };
+type EffectRequest = { type: string; input: JsonValue };
+type EffectOutput = { effects: EffectRequest[] };
 ```
 
-空の`actions`はmentionまたはDMへの応答でも正常である。parseまたは検証に失敗した場合は一件も実行せず、turnを失敗とする。
+Effect registryに登録された全providerから`turn/start.outputSchema`を組み立てる。raw final textをJSON parseし、Effect typeとprovider固有inputをZod検証する。空の`effects`は正常である。parseまたは検証に失敗した場合は一件も実行せず、turnを失敗とする。
 
-### 10.2 初期アクション
+### 10.2 Discord Effect provider
 
-初期版は次の判別可能unionだけを実装する。
+Discord providerは次の6 Effectだけを登録する。
 
-- `send_message`: channel/thread IDまたはDM user IDへ本文とfileを送る。
-- `reply_message`: channel IDとmessage IDを明示して返信する。
-- `add_reaction`: messageへUnicodeまたはcustom emoji reactionを付ける。
-- `remove_reaction`: Luna自身のreactionを外す。
-- `start_typing`: 対象でtyping更新を開始する。
-- `stop_typing`: 対象のtyping更新を止める。
+- `discord.send_message`: channel/thread IDまたはDM user IDへ本文とfileを送る。
+- `discord.reply_message`: channel IDとmessage IDを明示して返信する。
+- `discord.add_reaction`: messageへUnicodeまたはcustom emoji reactionを付ける。
+- `discord.remove_reaction`: Luna自身のreactionを外す。
+- `discord.start_typing`: 対象でtyping更新を開始する。
+- `discord.stop_typing`: 対象のtyping更新を止める。
 
 外部schemaは次を基準とする。全IDは空でないDiscord snowflake文字列である。
 
@@ -200,44 +208,50 @@ type SendFile = {
 type DiscordEmoji =
   { kind: "unicode"; value: string } | { kind: "custom"; id: string; name?: string };
 
-type DiscordAction =
-  | { kind: "send_message"; target: DiscordTarget; content?: string; files?: SendFile[] }
-  | ({ kind: "reply_message"; content?: string; files?: SendFile[] } & MessageLocation)
-  | ({ kind: "add_reaction"; emoji: DiscordEmoji } & MessageLocation)
-  | ({ kind: "remove_reaction"; emoji: DiscordEmoji } & MessageLocation)
-  | { kind: "start_typing"; target: DiscordTarget }
-  | { kind: "stop_typing"; target: DiscordTarget };
+type DiscordEffect =
+  | {
+      type: "discord.send_message";
+      input: { target: DiscordTarget; content: string | null; files: SendFile[] | null };
+    }
+  | {
+      type: "discord.reply_message";
+      input: MessageLocation & { content: string | null; files: SendFile[] | null };
+    }
+  | { type: "discord.add_reaction"; input: MessageLocation & { emoji: DiscordEmoji } }
+  | { type: "discord.remove_reaction"; input: MessageLocation & { emoji: DiscordEmoji } }
+  | { type: "discord.start_typing"; input: { target: DiscordTarget } }
+  | { type: "discord.stop_typing"; input: { target: DiscordTarget } };
 ```
 
 `reply_message`、reactionの`channelId`にはGuild channel、thread、DM channelのいずれも指定できる。DM user IDは新しいDMを開く`send_message`とtyping targetだけで使い、既存messageの位置指定には使わない。
 
-message edit/delete、thread作成、role操作、embed、component、pollは初期版の対象外とする。generic Discord REST actionは提供しない。
+message edit/delete、thread作成、role操作、embed、component、pollは対象外とする。generic Discord REST Effectは提供しない。
 
 送信と返信はplain textとfile attachmentだけを扱い、少なくとも一方を必須とする。fileは絶対path、任意の表示file名、任意の説明を持つ。realpath解決後に通常fileかつ読取可能であることを検証する。URLの取得・再添付はしない。
 
-Discord文字数上限は送信前に検証する。超過を自動分割しない。返信先が参照不能でも通常投稿へ変換しない。いずれもaction failureとしてfollow-upへ渡す。
+Discord文字数上限は送信前に検証する。超過を自動分割しない。返信先が参照不能でも通常投稿へ変換しない。いずれもEffect failureとしてfollow-upへ渡す。
 
 ### 10.3 実行とfollow-up
 
-final actionは全件を同時開始し、全件settleを待つ。一件の失敗で他actionをcancelしない。結果は元の配列indexと対応づける。相互に依存するactionの順序は保証しない。
+Effect batchは全件を同時開始し、全件settleを待つ。一件の失敗で他Effectをcancelしない。結果は元の配列index、type、targetと対応づける。相互に依存するEffectの順序は保証しない。
 
-一件以上失敗した場合だけ、成功・失敗の全結果を同じCodex threadの新しいfollow-up turnへ渡す。follow-upのfinal actionにも同じ規則を適用する。全action成功または空actionまで続け、回数、時間、同一error反復の上限を設けない。失敗をDiscordへ暗黙通知しない。
+一件以上失敗した場合だけ、成功・失敗の全結果を`{source:"effect_results",results}`として同じCodex threadの新しいfollow-up turnへ渡す。follow-upのEffectにも同じ規則を適用する。全Effect成功または空Effectまで続け、回数、時間、同一error反復の上限を設けない。失敗をDiscordへ暗黙通知しない。
 
-final actionのsettle待機中にapp-server connectionを失った場合も、開始済みDiscord actionはcancelしない。ただし同一threadが失われるため、失敗resultのfollow-upは行わずlogだけに記録し、sessionを終了する。未開始queueはapp-server再起動後に新threadで処理する。
+Effectのsettle待機中にapp-server connectionを失った場合も、開始済みEffectはcancelしない。ただし同一threadが失われるため、失敗resultのfollow-upは行わずlogだけに記録し、sessionを終了する。未開始queueはapp-server再起動後に新threadで処理する。
 
-Lunaが開始したtypingは、明示stopに加え、各turnのfinal actionが全件settleした時点で、そのturnが所有する残存typingをruntimeがbest effortでcleanupする。cleanup後に必要ならfollow-up turnを開始する。RPC timeout、session終了、process shutdownでも残存typingをcleanupする。
+Lunaが開始したtypingは、`discord.stop_typing`に加え、各Effect batchが全件settleした時点で、そのexecution ownerが所有する残存typingをreleaseする。release後に必要ならfollow-up turnを開始する。RPC timeout、session終了、process shutdownでも残存typingをcleanupする。
 
 ## 11. Heartbeat
 
 heartbeatは既定で有効とする。一つ前のheartbeatが成功または失敗して完了した後、`[heartbeat].min_interval_ms`以上`[heartbeat].max_interval_ms`以下から一様ランダムに次の間隔を選ぶ。同じheartbeatを並行実行しない。
 
-各実行は`HEARTBEAT.md`を直前に読み、新しいCodex threadを作る。完了後はarchiveする。停止中の予定を補わない。失敗はJSON logだけに記録し、Discordへsystem messageを送らない。
+各実行は`HEARTBEAT.md`を直前に読み、`system.heartbeat.fired.v1` Eventを生成する。共通Event one-shot実行は新しいCodex threadを作り、同じEffect出力契約とfailure follow-upを処理してからarchiveする。停止中の予定を補わない。失敗はJSON logだけに記録し、Discordへsystem messageを送らない。
 
 ## 12. 記憶とworkspaceの日次整理
 
 `[memory].enabled = true`のとき、`maintenance_cron`を組み込みscheduleとして登録する。cronは分・時・日・月・曜日の5 fieldでprocess local timezoneを使う。設定はstartup時だけ読み、稼働中に再読込しない。停止中のtickを補わず、先行実行が次のtickまで終わらない場合も重複実行を抑止しない。
 
-tickごとに新しい専用Codex threadを作り、実行日のprocess local dateを渡す。agentは全`memory/YYYY-MM-DD.md`、現在の`MEMORY.md`、workspace全体を読み、長期記憶の整理、不要fileの削除、文書の移動・renameを判断する。通常threadと同じfilesystem、command、network、sudo、Discord権限を持ち、application側の保護path、排他、操作検証は設けない。全日次記憶fileは既存pathに残すよう指示する。
+tickごとに実行日のprocess local dateを持つ`system.memory_maintenance.fired.v1` Eventを生成し、新しい専用Codex threadで一度実行する。agentは全`memory/YYYY-MM-DD.md`、現在の`MEMORY.md`、workspace全体を読み、長期記憶の整理、不要fileの削除、文書の移動・renameを判断する。通常threadと同じfilesystem、command、network、sudo、Discord権限を持ち、application側の保護path、排他、操作検証は設けない。全日次記憶fileは既存pathに残すよう指示する。
 
 通常会話、session記憶保存、heartbeat、利用者schedule、日次整理は互いに並行できる。日次整理中のworkspace変更を止めず、同時更新時は最後のfilesystem writeを採用する。
 
@@ -269,7 +283,7 @@ prompt = "指定されたリマインドを実行する"
 
 cronは分・時・日・月・曜日の5 fieldでprocess local timezoneを使う。one-shotはoffset付きISO 8601文字列を必須とする。`enabled = false`は登録も実行もしない。
 
-同一recurring jobのtickも独立threadで並行実行できる。停止中tickを補わない。過去のone-shotは実行もerror logもせずfileから削除する。
+各tickはjob ID、prompt、job kindを持つ`system.schedule.fired.v1` Eventを生成する。同一recurring jobのtickも独立threadで並行実行できる。停止中tickを補わない。過去のone-shotは実行もerror logもせずfileから削除する。
 
 予定時刻のone-shotは`turn/start` response直後に最新fileを再読込し、同じIDを削除して、`smol-toml`で全体を正規化し対象pathへ直接同期writeする。コメント、順序、format、開始後の同一ID変更を保持しない。temporary fileとatomic renameは使わない。削除失敗はlogだけに残すが、同じprocessではjobを再度実行しない。reloadまたは再起動後は過去one-shotとして実行せず、削除だけを再試行する。
 
@@ -334,12 +348,12 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Discord turn失敗                                              | logのみ。利用者通知と自動再実行なし。threadをarchiveしてsession終了。未開始queueは新threadへ移す。 |
 | 初回履歴取得失敗                                              | 現在batchだけで続行。                                                                              |
-| final output不正                                              | actionを実行せず、threadをarchiveしてsession終了。                                                 |
-| Discord action失敗                                            | 全action settle後、同一thread follow-up。                                                          |
+| final output不正                                              | Effectを実行せず、threadをarchiveしてsession終了。                                                 |
+| Effect失敗                                                    | 全Effect settle後、同一thread follow-up。                                                          |
 | RPC request timeout                                           | connection破損。全active turn失敗、全thread参照破棄、再起動。                                      |
 | 管理中threadの相関不能、ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |
 | app-server停止                                                | active turnは再実行せず、thread参照を破棄。未開始queueは再起動後に新threadで処理。                 |
-| final action中のapp-server停止                                | actionは全件settle。follow-upせずsession終了。未開始queueは新threadへ移す。                        |
+| Effect実行中のapp-server停止                                  | Effectは全件settle。follow-upせずsession終了。未開始queueは新threadへ移す。                        |
 | session記憶保存失敗                                           | error log後に再試行せずthreadをarchive。保存中のqueueは新threadへ移す。                            |
 | 日次整理失敗                                                  | error log後にthreadをarchive。即時retryせず次のcron tickを待つ。                                   |
 | 日次整理時にGit executableがない                              | Git操作を省略し、file整理を続行。                                                                  |
@@ -358,7 +372,7 @@ SIGINTまたはSIGTERM後は新規Discord入力、heartbeat timer、schedule tic
 
 logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先へ委ねる。HTTP health endpointとstatus commandは提供せず、process livenessとexit codeだけで監視する。
 
-通常はevent名、level、timestamp、conversation scope、job ID、thread ID、turn ID、request ID、action index等のmetadataを記録する。`LOG_LEVEL=debug`または`trace`ではDiscord本文、prompt、tool引数、actionも記録する。`DISCORD_BOT_TOKEN`等の既知の専用secret fieldはredactするが、free-form本文やpromptへ埋め込まれたcredentialや個人情報の検出・除去は保証しない。
+通常はevent名、level、timestamp、conversation scope、job ID、thread ID、turn ID、request ID、Effect index等のmetadataを記録する。`LOG_LEVEL=debug`または`trace`ではDiscord本文、prompt、tool引数、Effectも記録する。`DISCORD_BOT_TOKEN`等の既知の専用secret fieldはredactするが、free-form本文やpromptへ埋め込まれたcredentialや個人情報の検出・除去は保証しない。
 
 ## 18. 配置と品質
 
