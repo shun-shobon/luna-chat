@@ -121,7 +121,7 @@ pnpm run dev
 
 ## Docker setup
 
-DockerはGitを含み、専用non-root userでprocessを起動して、そのuserへpasswordless sudoを設定します。Composeはhostの`./data`をcontainerの`/home/node`へmountします。
+DockerはGitとGitHub CLIを含み、専用non-root userでprocessを起動して、そのuserへpasswordless sudoを設定します。Composeはhostの`./data`をcontainerの`/home/node`へmountします。
 
 ```sh
 cp .env.example .env
