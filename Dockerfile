@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1.7
-
-FROM node:24.18.1-trixie-slim AS base
+FROM node:24.18.1-trixie-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -9,17 +8,16 @@ WORKDIR /app
 
 RUN corepack enable
 
-FROM base AS deps
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile
-RUN pnpm run gen
-
-FROM deps AS build
+RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
+    --mount=type=cache,target=/root/.cache/pnpm,sharing=locked \
+    pnpm install --frozen-lockfile
 
 COPY src ./src
 COPY tsconfig.json tsdown.config.ts ./
+RUN pnpm run gen
 RUN pnpm run build
+
 
 FROM node:24.18.1-trixie AS runtime
 
@@ -29,9 +27,11 @@ ENV LUNA_HOME=/home/node/.luna
 
 WORKDIR /app
 
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y ca-certificates git sudo wget && \
+    apt-get --no-install-recommends install -y ca-certificates git sudo wget tini && \
     mkdir -p -m 755 /etc/apt/keyrings && \
     wget -nv -O /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg && \
     chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
@@ -53,4 +53,5 @@ RUN mkdir -p /app/dist/node_modules/.bin && \
 
 USER node
 
-CMD ["node", "--run", "start"]
+ENTRYPOINT ["tini", "--"]
+CMD ["node", "--enable-source-maps", "./dist/index.mjs"]
