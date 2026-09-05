@@ -24,7 +24,7 @@
     "@hono/mcp": "0.3.1",
     "@hono/node-server": "2.0.12",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@openai/codex": "0.146.0",
+    "@openai/codex": "0.153.4",
     "chokidar": "5.0.0",
     "cron": "4.4.0",
     "discord.js": "14.27.0",
