@@ -87,7 +87,7 @@ max_interval_ms = 2000
     const source = serializeWorkspaceConfig(DEFAULT_WORKSPACE_CONFIG);
 
     expect(source).toContain("allowed_channel_ids = []");
-    expect(source).toContain("thread_retention_ms = 2592000000");
+    expect(source).toContain("thread_retention_ms = 604800000");
     expect(source).toContain('maintenance_cron = "0 4 * * *"');
     expect(parseWorkspaceConfig(source)).toEqual(DEFAULT_WORKSPACE_CONFIG);
   });

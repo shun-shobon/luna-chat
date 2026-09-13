@@ -315,7 +315,7 @@ maintenance_cron = "0 4 * * *"
 
 [agent]
 rpc_timeout_ms = 30000
-thread_retention_ms = 2592000000
+thread_retention_ms = 604800000
 thread_cleanup_interval_ms = 86400000
 restart_initial_delay_ms = 1000
 restart_max_delay_ms = 30000

@@ -48,7 +48,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
         restartWindowMs: 10_000,
         rpcTimeoutMs: 1_000,
         threadCleanupIntervalMs: 86_400_000,
-        threadRetentionMs: 2_592_000_000,
+        threadRetentionMs: 604_800_000,
       },
       discord: {
         allowDm: true,

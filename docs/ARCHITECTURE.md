@@ -277,7 +277,7 @@ thread/start(ephemeral=false)
 
 applicationの`close`は「新規入力を受けず、chain完了後にarchiveし、memory参照を破棄する」操作である。Codex protocolに`thread/close`を想定しない。
 
-retention cleanerはstartup直後と前回完了から24時間後に、専用CODEX_HOMEのarchive済みthreadを列挙する。`thread/list`結果の`updatedAt`から保持期間を測り、期限超過だけをdeleteする。時刻が得られないthreadは削除せずwarningを記録する。失敗itemは次回へ残す。
+retention cleanerはstartup直後と前回完了から24時間後に、専用CODEX_HOMEのarchive済みthreadを列挙する。`thread/list`結果の`updatedAt`から保持期間（既定7日）を測り、期限超過だけをdeleteする。時刻が得られないthreadは削除せずwarningを記録する。失敗itemは次回へ残す。
 
 ## 9. Discord adapters
 

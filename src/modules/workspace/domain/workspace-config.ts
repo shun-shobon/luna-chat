@@ -35,7 +35,7 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
     restartWindowMs: 300_000,
     rpcTimeoutMs: 30_000,
     threadCleanupIntervalMs: 86_400_000,
-    threadRetentionMs: 2_592_000_000,
+    threadRetentionMs: 604_800_000,
   },
   discord: {
     allowDm: true,
