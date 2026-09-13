@@ -112,9 +112,9 @@ heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、
 
 ## 6. 会話session
 
-idle期限は全scopeで共通の`session_idle_ms`とする。受理投稿の到着時と、turn chain全体の完了時に現在時刻から再設定する。
+idle待機期間は全scopeで共通の`session_idle_ms`（既定30分）とする。Effectとfollow-upを含む通常turn chain全体が完了し、queueが空のidle状態になった時点から計測する。新しいDiscord投稿を受理したら待機timerを取り消し、次のchain全体が完了してqueueが空になってから再び期間全体を待つ。処理中はidle期限を設けない。
 
-idle期限がactive chain中に来た場合は処理を中断せず、close予約を付ける。後続のDiscord投稿が来ればclose予約を取り消す。予約が残ったままchainが完了した場合、idle状態で期限が来た場合、またはgraceful shutdownでsignal前に受理したqueueとactive chainが正常完了した場合にsession記憶保存を実行する。
+idle状態で期限が来た場合、またはgraceful shutdownでsignal前に受理したqueueとactive chainが正常完了した場合にsession記憶保存を実行する。
 
 session記憶保存が有効なら、保存開始日のprocess local dateを`YYYY-MM-DD`として同じCodex threadへ追加turnを送る。agentはthread全体から短い会話要約、嗜好、決定、未完了事項等を選び、既存内容を失わないsession単位のsectionとして`memory/YYYY-MM-DD.md`へ追記する。見出しと詳細構造はagentが決める。保存対象がなければfileを変更しない。`memory/`がなければagentが作る。
 
@@ -122,7 +122,7 @@ session記憶保存が有効なら、保存開始日のprocess local dateを`YYY
 
 複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。通常turn失敗、connection loss、fatal abortではsession記憶保存を実行しない。
 
-session、queue、close予約、次のheartbeat時刻はmemoryだけに置き、process再起動後に復元しない。
+session、queue、idle期限、次のheartbeat時刻はmemoryだけに置き、process再起動後に復元しない。
 
 ## 7. Workspace
 

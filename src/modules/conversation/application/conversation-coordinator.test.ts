@@ -278,7 +278,7 @@ describe("ConversationCoordinator", () => {
     expect(coordinator.hasSession(session.key)).toBe(false);
   });
 
-  it("active chain中のidle終了はchain完了後にsession memory turnを開始する", async () => {
+  it("idle期間を超えるturnも完了後に期間全体を待ってsession memory turnを開始する", async () => {
     vi.useFakeTimers();
     const conversationCompletion = deferred<AgentTurnResult>();
     const runtime = createRuntime([conversationCompletion.promise, Promise.resolve(completed([]))]);
@@ -287,35 +287,112 @@ describe("ConversationCoordinator", () => {
     });
 
     coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
-    await vi.advanceTimersByTimeAsync(1_000);
-    await flushPromises();
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(runtime.startTurn).toHaveBeenCalledOnce();
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
 
     conversationCompletion.resolve(completed([]));
     await flushPromises();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
 
+    await vi.advanceTimersByTimeAsync(1);
     expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(parseRequestInput(runtime.startTurn.mock.calls[1]?.[1])).toMatchObject({
+      source: "session_memory",
+    });
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
-  it("idle終了予約後の新着は予約を取消してactive turnへsteerする", async () => {
+  it("待機中の新着で以前のidle期限を取消し、新しいturn完了後から待ち直す", async () => {
     vi.useFakeTimers();
     const conversationCompletion = deferred<AgentTurnResult>();
-    const runtime = createRuntime([conversationCompletion.promise]);
+    const runtime = createRuntime([
+      Promise.resolve(completed([])),
+      conversationCompletion.promise,
+      Promise.resolve(completed([])),
+    ]);
     const coordinator = createCoordinator(runtime.port, {
       sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
     });
 
     coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_099);
     coordinator.accept({ session, event: event("101", "2026-07-23T00:00:01.000Z") });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    coordinator.accept({ session, event: event("102", "2026-07-23T00:00:02.000Z") });
     await flushPromises();
+    expect(runtime.steerTurn).toHaveBeenCalledOnce();
     conversationCompletion.resolve(completed([]));
     await flushPromises();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
 
-    expect(runtime.steerTurn).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(3);
+    expect(parseRequestInput(runtime.startTurn.mock.calls[2]?.[1])).toMatchObject({
+      source: "session_memory",
+    });
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+  });
+
+  it("Effectとfollow-up turnの全処理完了後からidle期間を待つ", async () => {
+    vi.useFakeTimers();
+    const effectCompletion = deferred<readonly EffectResult[]>();
+    const followUpCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([
+      Promise.resolve(completed([effect("hi")])),
+      followUpCompletion.promise,
+      Promise.resolve(completed([])),
+    ]);
+    const execute = vi
+      .fn<EffectBatchPort["execute"]>(async () => [])
+      .mockImplementationOnce(async () => await effectCompletion.promise);
+    const coordinator = createCoordinator(runtime.port, {
+      effects: { execute, release: vi.fn(async () => undefined) },
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(execute).toHaveBeenCalledOnce();
     expect(runtime.startTurn).toHaveBeenCalledOnce();
     expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    effectCompletion.resolve([
+      {
+        type: "test.effect",
+        index: 0,
+        success: false,
+        target: "test",
+        error: "Effect unavailable",
+      },
+    ]);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(parseRequestInput(runtime.startTurn.mock.calls[1]?.[1])).toMatchObject({
+      source: "effect_results",
+    });
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    followUpCompletion.resolve(completed([]));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(3);
+    expect(parseRequestInput(runtime.startTurn.mock.calls[2]?.[1])).toMatchObject({
+      source: "session_memory",
+    });
+    expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
   it("session memory turnの開始中と実行中の新着をarchive後の新threadへ渡す", async () => {

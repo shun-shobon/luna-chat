@@ -64,17 +64,17 @@ src/
 
 ## 4. Capability ownership
 
-| Capability      | 所有する概念                                                           | 公開するapplication境界                                         | Adapter                                     |
-| --------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------- |
-| `discord`       | normalized message、scope、Discord Event/Effect、read、typing lease    | Event変換、Effect provider、Discord read、Gateway subscription  | discord.js Gateway/REST、loopback MCP       |
-| `conversation`  | `ConversationSession`、pending Event、idle/close、session記憶、mailbox | `accept`、`typing`、`stopIntake`、`drain`、`abort`              | Discord controller/history                  |
-| `agent`         | app-server process、thread、turn、notification correlation             | `openThread`、`startTurn`、`steer`、`archive`、`deleteArchived` | stdio child process、JSON-RPC               |
-| `event`         | `LunaEvent`、one-shot実行                                              | `execute`                                                       | provider-neutral Agent adapter              |
-| `effect`        | Effect定義、registry、出力契約、batch実行、result                      | schema生成、parse、`execute`、`release`                         | capability固有Effect provider               |
-| `automation`    | heartbeat、schedule、日次整理というEvent Source、last-valid schedule   | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`      | clock、random、cron scheduler、file watcher |
-| `workspace`     | Luna home、strict config、instructions、cron document                  | initialize、read instructions、read/write schedule              | filesystem、`smol-toml`、Zod                |
-| `observability` | structured log、level、secret redaction、correlation context           | logger port                                                     | JSON Lines stdout                           |
-| `runtime`       | object graph、startup/shutdown order                                   | process entry only                                              | signal handler                              |
+| Capability      | 所有する概念                                                         | 公開するapplication境界                                         | Adapter                                     |
+| --------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------- |
+| `discord`       | normalized message、scope、Discord Event/Effect、read、typing lease  | Event変換、Effect provider、Discord read、Gateway subscription  | discord.js Gateway/REST、loopback MCP       |
+| `conversation`  | `ConversationSession`、pending Event、idle期限、session記憶、mailbox | `accept`、`typing`、`stopIntake`、`drain`、`abort`              | Discord controller/history                  |
+| `agent`         | app-server process、thread、turn、notification correlation           | `openThread`、`startTurn`、`steer`、`archive`、`deleteArchived` | stdio child process、JSON-RPC               |
+| `event`         | `LunaEvent`、one-shot実行                                            | `execute`                                                       | provider-neutral Agent adapter              |
+| `effect`        | Effect定義、registry、出力契約、batch実行、result                    | schema生成、parse、`execute`、`release`                         | capability固有Effect provider               |
+| `automation`    | heartbeat、schedule、日次整理というEvent Source、last-valid schedule | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`      | clock、random、cron scheduler、file watcher |
+| `workspace`     | Luna home、strict config、instructions、cron document                | initialize、read instructions、read/write schedule              | filesystem、`smol-toml`、Zod                |
+| `observability` | structured log、level、secret redaction、correlation context         | logger port                                                     | JSON Lines stdout                           |
+| `runtime`       | object graph、startup/shutdown order                                 | process entry only                                              | signal handler                              |
 
 `runtime`はbusiness ruleを持たない。Gateway callbackと`conversation.acceptMessage`の接続、MCP URLのagent設定への注入など、object graphのwiringだけを行う。
 
@@ -166,42 +166,41 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 
 `OPENING_THREAD`はsession初回だけ使う。既存threadを持つ`IDLE`からの次投稿は、履歴取得と`thread/start`を繰り返さず、debounce後に`STARTING_TURN`へ進む。
 
-全stateでidle expiryを受けられる。active stateでは`closeAfterCompletion = true`を付け、chainを中断しない。その後に受理投稿が来ればidle期限をresetしてclose予約を取り消す。close予約が残ったままchainを完了するかidle stateの期限が来ると、session記憶保存を開始する。保存開始後の投稿はclose予約を取り消さず、次thread用queueへ入れる。
+idle timerは`IDLE` stateだけで持つ。Effectとfollow-upを含む通常chain全体が完了し、queueが空になった時点から`session_idle_ms`を計測する。受理投稿でtimerを取り消し、次に`IDLE`へ入った時点から期間全体を待つ。idle期限が来るとsession記憶保存を開始する。保存開始後の投稿は次thread用queueへ入れる。
 
 ### 6.5 State transition contract
 
-| 現在                                            | event                              | 次                  | 作用                                                       |
-| ----------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------------- |
-| absent                                          | accepted input                     | collecting          | session作成、idle reset、batchへ追加                       |
-| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce/idle reset                           |
-| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`          |
-| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                                   |
-| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle reset                      |
-| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加、idle reset、close予約取消                     |
-| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer                |
-| turn active                                     | accepted input、final未受領        | turn active         | idle reset、close予約取消、即時steer。失敗分はqueue        |
-| turn active                                     | accepted input、final受領済み      | turn active         | runtimeがsteerをRPC送信前に拒否し、queueへ移す             |
-| turn active                                     | turn success                       | effects active      | final JSON検証、Effect全件を並行開始                       |
-| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持       |
-| conversation effects active                     | accepted input                     | effects active      | queueへ追加、idle reset、close予約取消                     |
-| conversation effects active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`          |
-| conversation effects active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化                  |
-| conversation effects active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle reset。close予約/shutdown時は記憶保存 |
-| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了                   |
-| active state                                    | idle expired                       | 同じstate           | close予約のみ。後続accepted inputで取消可能                |
-| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                           |
-| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`               |
-| session memory start/turn/effects               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                             |
-| session memory turn                             | turn success                       | effects active      | 通常turnと同じEffect実行                                   |
-| session memory effects                          | failureあり                        | followup starting   | 同じ保存目的を保ったEffect result follow-up                |
-| session memory effects                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                         |
-| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                           |
-| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄              |
-| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す                   |
-| effects active                                  | app-server lost                    | effects orphaned    | thread参照破棄。開始済みEffectは継続、follow-up禁止        |
-| effects orphaned                                | accepted input                     | effects orphaned    | queueへ追加、idle reset                                    |
-| effects orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す         |
-| effects active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持            |
+| 現在                                            | event                              | 次                  | 作用                                                 |
+| ----------------------------------------------- | ---------------------------------- | ------------------- | ---------------------------------------------------- |
+| absent                                          | accepted input                     | collecting          | session作成、batchへ追加                             |
+| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce reset                          |
+| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`    |
+| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                             |
+| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle timer取消            |
+| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加                                          |
+| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer          |
+| turn active                                     | accepted input、final未受領        | turn active         | 即時steer。失敗分はqueue                             |
+| turn active                                     | accepted input、final受領済み      | turn active         | runtimeがsteerをRPC送信前に拒否し、queueへ移す       |
+| turn active                                     | turn success                       | effects active      | final JSON検証、Effect全件を並行開始                 |
+| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持 |
+| conversation effects active                     | accepted input                     | effects active      | queueへ追加                                          |
+| conversation effects active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`    |
+| conversation effects active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化            |
+| conversation effects active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle timer開始。shutdown時は記憶保存 |
+| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了             |
+| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                     |
+| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`         |
+| session memory start/turn/effects               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                       |
+| session memory turn                             | turn success                       | effects active      | 通常turnと同じEffect実行                             |
+| session memory effects                          | failureあり                        | followup starting   | 同じ保存目的を保ったEffect result follow-up          |
+| session memory effects                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                   |
+| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                     |
+| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄        |
+| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す             |
+| effects active                                  | app-server lost                    | effects orphaned    | thread参照破棄。開始済みEffectは継続、follow-up禁止  |
+| effects orphaned                                | accepted input                     | effects orphaned    | queueへ追加                                          |
+| effects orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す   |
+| effects active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持      |
 
 会話scopeごとにmailbox型actorを一つ持つ。actorはstate mutationだけを短いcommandとして直列処理し、長時間の外部I/O Promiseをmailbox内でawaitしない。I/O開始時にstateとoperation tokenを記録し、完了を新しいmailbox messageとして戻す。これによりturn完了待機中もaccepted inputを処理し、即時steerできる。古いoperation tokenの完了は無視する。
 

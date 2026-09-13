@@ -160,7 +160,6 @@ class ConversationActor {
   #turnId: string | undefined;
   #turnPurpose: TurnPurpose | undefined;
   #turnCompletion: AgentTurnResult | undefined;
-  #closeRequested = false;
   #debounceReady = false;
   #debounceToken = 0;
   #idleToken = 0;
@@ -264,7 +263,6 @@ class ConversationActor {
         if (command.token !== this.#idleToken) return;
         this.#idleTimer = undefined;
         if (this.#phase === "idle") this.#preserveSessionMemory();
-        else this.#closeRequested = true;
         return;
       case "thread_ready":
         if (!this.#matches(command.token, "opening")) return;
@@ -370,7 +368,6 @@ class ConversationActor {
       case "shutdown":
         this.#shutdownWaiters.push(command.resolve);
         this.#shutdownRequested = true;
-        this.#closeRequested = true;
         this.#clearTypingTimers();
         if (this.#phase === "idle") this.#preserveSessionMemory();
         else if (this.#phase === "collecting") {
@@ -407,8 +404,9 @@ class ConversationActor {
       this.#queue.push(event);
       return;
     }
-    this.#closeRequested = false;
-    this.#resetIdleTimer();
+    this.#idleToken += 1;
+    this.#idleTimer?.cancel();
+    this.#idleTimer = undefined;
     if (this.#phase === "turn") {
       this.#steerQueue.push(event);
       this.#kickSteer();
@@ -636,13 +634,15 @@ class ConversationActor {
       this.#archive();
       return;
     }
-    if (this.#closeRequested) {
+    if (this.#shutdownRequested) {
       this.#preserveSessionMemory();
       return;
     }
-    this.#resetIdleTimer();
     if (this.#queue.length > 0) this.#beginCollecting(true);
-    else this.#phase = "idle";
+    else {
+      this.#phase = "idle";
+      this.#resetIdleTimer();
+    }
   }
 
   #preserveSessionMemory(): void {
