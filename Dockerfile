@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1.7
-FROM node:24.18.1-trixie-slim AS build
+# syntax=docker/dockerfile:1.27
+FROM node:24.21.0-trixie-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -19,7 +19,7 @@ RUN pnpm run gen
 RUN pnpm run build
 
 
-FROM node:24.18.1-trixie AS runtime
+FROM node:24.21.0-trixie AS runtime
 
 ENV NODE_ENV=production
 ENV PATH=/app/dist/node_modules/.bin:$PATH
