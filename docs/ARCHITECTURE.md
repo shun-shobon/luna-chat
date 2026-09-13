@@ -386,7 +386,7 @@ SIGINT / SIGTERM
   → flush stdout logger
 ```
 
-application内のdrainへgrace timeoutを設けない。無限turnまたはfollow-upがある場合、後続closeへ到達しない。Composeは`stop_grace_period: 60s`によりSIGTERMからSIGKILLまで60秒待つ。
+application内のdrainへgrace timeoutを設けない。無限turnまたはfollow-upがある場合、後続closeへ到達しない。Composeは`stop_grace_period: 600s`によりSIGTERMからSIGKILLまで600秒待つ。
 
 drain対象の未開始conversation queueが残る間にapp-serverが失われた場合は、通常のrestart budget内で再起動して新threadで処理する。active automationは失敗終了し、shutdown中に新しいautomation実行を作らない。budget超過はFATAL終了とする。
 
