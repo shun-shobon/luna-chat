@@ -1,41 +1,36 @@
 # Luna
 
-Lunaは、Discordだけを外部chat入口としてCodexを動かす個人用workspace agentです。Discord投稿を共通Eventへ変換し、会話、host上のfilesystemとcommand、記憶保存、heartbeat、時刻指定jobを一つのLuna workspaceへ接続します。Codexの最終出力は登録済みEffectとして検証し、Discord送信、返信、reaction、typingを実行します。
+Lunaは、DiscordをインターフェースとしてCodexを自律稼働させる個人用のワークスペースエージェントです。Discordのメッセージを共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
 
-## 最初に読む注意
+## セキュリティに関する重要事項
 
-LunaはDiscord利用者をhost権限から隔離しません。BotへDMできる利用者、設定外channelでLunaをmentionできる利用者、他Bot、Webhookの入力から、次の操作が確認なしに実行され得ます。
+Lunaは、Discordの利用者をホストの実行権限から隔離しません。Bot宛てのDM、メンション可能なチャンネル、他のBotやWebhookからの入力により、以下の操作が確認なしに実行される可能性があります。
 
-- 実行userが読書きできる全filesystem
-- command、host network、passwordless sudo
-- Botが到達できる全channel、thread、DM
-- local fileのDiscord添付
-- `@everyone`を含むDiscord標準mention通知
+- 実行ユーザーがアクセス可能なすべてのファイルシステムの読み書き
+- 任意のシェルコマンドの実行、ネットワーク通信、パスワードなしsudo
+- Botがアクセス可能なすべてのチャンネル・スレッド・DMへの操作
+- ローカルファイルのDiscordへの添付送信
+- `@everyone` を含むDiscordの各種メンション通知
 
-信頼できない利用者やBotが入力できる環境へ配置しないでください。Dockerでもprocess userへpasswordless sudoを与える設計です。
+**信頼できない第三者が入力できる環境には絶対に配置しないでください。** Dockerコンテナ環境であっても、実行ユーザーにはパスワードなしsudo権限が付与されています。
 
-## 対応環境
+## 動作要件
 
-- native macOS / Linux
-- Docker on linux/amd64 / linux/arm64
-- Node.js `24.21.0`
-- pnpm `12.7.0`
+- OS: macOS / Linux（native）、または Docker（linux/amd64, linux/arm64）
+- Runtime: Node.js `24.21.0`, pnpm `12.7.0`
+- その他:
+  - Discord Bot Token（Message Content、Guild/DM Messages、Typing 等の各種Intentが必要）
+  - PATH上にインストールされた `codex` コマンド（native実行時）
+  - Docker Engine および Docker Compose（Docker実行時）
+  - Git（日次整理のコミット履歴を残す場合）
 
-Windows、公開CLI、systemd unit、launchd plist、HTTP health endpointは提供しません。
+※ Windows、Web UI、HTTPヘルスチェックエンドポイント等は提供していません。
 
-## 必要なもの
+## 事前準備（Codexの認証）
 
-- Discord Bot token
-- Discord Gatewayのmessage content、Guild/DM message、typingに必要なintent
-- Codex認証を保存できる永続directory
-- build時にはmise（shell activation済み）
-- native実行ではPATH上のCodex executable
-- 日次整理をlocal commitへ残す場合はGit
-- Docker実行ではDocker EngineとCompose
+初回起動前に、Luna専用のディレクトリでCodexの認証を完了させておく必要があります。
 
-LunaはPATH上の`codex`を起動します。開発時の型生成にはpnpmで固定した`@openai/codex`を使います。
-
-初回起動前に、Luna専用Codex homeへ認証します。nativeでは次を実行し、browser flowを完了してください。
+### Native環境の場合
 
 ```sh
 mkdir -p "$HOME/.luna/codex"
@@ -43,44 +38,48 @@ CODEX_HOME="$HOME/.luna/codex" codex login
 CODEX_HOME="$HOME/.luna/codex" codex login status
 ```
 
-headlessなDocker hostではdevice authを使えます。Composeが`./data`を`/home/node`へmountすることを先に確認してください。
+### Docker環境の場合
+
+ヘッドレス環境ではデバイス認証を利用できます。事前にホスト側の `./data` がコンテナにマウントされる設定を確認してください。
 
 ```sh
 docker compose run --rm luna-chat codex login --device-auth
 docker compose run --rm luna-chat codex login status
 ```
 
-## Environment
+## 環境変数
 
-| 変数                | 必須   | 既定値      | 説明                                                                   |
-| ------------------- | ------ | ----------- | ---------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN` | はい   | なし        | Discord Bot token。Codex child processへ渡しません。                   |
-| `LUNA_HOME`         | いいえ | `~/.luna`   | 絶対pathだけを指定できます。                                           |
-| `LOG_LEVEL`         | いいえ | `info`      | `trace` / `debug` / `info` / `warn` / `error`。                        |
-| `TZ`                | いいえ | process依存 | scheduleに使うNode.js local timezone。Dockerは未指定時Asia/Tokyoです。 |
+| 変数名              | 必須   | デフォルト値 | 説明                                                                     |
+| ------------------- | ------ | ------------ | ------------------------------------------------------------------------ |
+| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。               |
+| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                 |
+| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。            |
+| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。 |
 
-`LOG_LEVEL=debug`または`trace`では、Discord本文、prompt、tool引数、Effectがstdoutへ出ます。Bot token等の既知fieldはredactしますが、自由文へ埋め込まれたcredentialや個人情報の除去は保証しません。
+※ `LOG_LEVEL` を `debug` または `trace` に設定すると、メッセージ本文やプロンプト、ツール引数などが標準出力に出力されます。既知のトークン等はマスクされますが、平文に含まれる機密情報の完全な除去は保証されません。
 
-## Data layout
+## ディレクトリ構成
 
-初回起動は不足するdirectoryとfileだけを作り、既存fileを上書きしません。
+初回起動時、不足しているディレクトリやファイルが自動生成されます（既存のファイルは上書きされません）。
 
 ```text
 ~/.luna/
 ├── config.toml
-├── codex/                 # 専用CODEX_HOME、認証、保存thread
+├── codex/                 # 専用CODEX_HOME（認証情報・スレッド保存先）
 └── workspace/
-    ├── LUNA.md            # 人格と会話方針
+    ├── LUNA.md            # エージェントの人格や会話方針
     ├── MEMORY.md          # 長期記憶
-    ├── memory/            # idle終了したsessionの日次記憶。最初の保存時にagentが作成
-    ├── HEARTBEAT.md       # heartbeat checklist
-    ├── .agents/skills/    # cronとheartbeatの運用手順
+    ├── memory/            # 日次会話ログ（初回の記憶保存時に自動生成）
+    ├── HEARTBEAT.md       # 定期ハートビート用チェックリスト
+    ├── .agents/skills/    # cronやheartbeatの運用手順
     │   ├── cron/SKILL.md
     │   └── heartbeat/SKILL.md
-    └── cron.toml          # schedule job
+    └── cron.toml          # 定期実行タスクの設定
 ```
 
-`config.toml`では`[memory]` sectionだけが必須です。他sectionとfieldは省略できます。既存configに`[memory]`がなければ起動に失敗するため、次を追加してください。
+### `config.toml` の基本設定
+
+設定ファイルでは `[memory]` セクションが必須です。その他の項目は省略可能で、デフォルト値が適用されます。
 
 ```toml
 [memory]
@@ -92,9 +91,11 @@ allowed_channel_ids = []
 allow_dm = true
 ```
 
-`enabled`はidle終了前のsession記憶保存と日次整理を一括で切り替えます。cronはprocess local timezoneを使います。`/luna channel add/remove`以外の設定変更の反映には再起動が必要です。全fieldと検証条件は [SPECの設定](./docs/SPEC.md#14-設定) を参照してください。
+- `memory.enabled`: アイドル終了時の記憶保存および日次整理を一括で有効/無効化します。
+- `maintenance_cron`: 日次整理を実行するcronスケジュール（ローカルタイムゾーン）。
+- 設定変更の反映には再起動が必要です（`/luna channel add/remove` による変更を除く）。詳細は [SPEC.md](./docs/SPEC.md#14-設定仕様) を参照してください。
 
-scheduleの例です。
+### `cron.toml` の設定例
 
 ```toml
 [[jobs]]
@@ -105,7 +106,9 @@ cron = "0 21 * * *"
 prompt = "今日の会話を確認して、必要ならDiscordへ要約を送る"
 ```
 
-## Native setup
+## セットアップと起動
+
+### Native環境
 
 ```sh
 mise install
@@ -115,93 +118,70 @@ pnpm run build
 DISCORD_BOT_TOKEN=... ./dist/luna-chat
 ```
 
-`pnpm run build`は`dist/luna-chat`を作ります。初期workspace文書とcron・heartbeatのSKILL.mdは実行ファイルに含まれ、`templates/`の配置は不要です。実行時はPATH上のCodexが必要です。process manager、log保存、rotation、restartは配置先で設定してください。
-
-開発時は型生成後に次を使います。
+開発時は以下を実行します：
 
 ```sh
 pnpm run dev
 ```
 
-## Docker setup
-
-DockerはGitとGitHub CLIを含み、専用non-root userでprocessを起動して、そのuserへpasswordless sudoを設定します。Composeはhostの`./data`をcontainerの`/home/node`へmountします。
+### Docker環境
 
 ```sh
 cp .env.example .env
 mkdir -p data
-# .envのDISCORD_BOT_TOKENを設定する
+# .env に DISCORD_BOT_TOKEN を設定
 docker compose up
 ```
 
-`data`はcontainerのnode userから書き込める必要があります。必要に応じてhost側の所有者と権限を調整してください。追加mountと`TZ`は配置前にCompose設定を確認してください。
+※ `./data` ディレクトリはコンテナ内の実行ユーザーから書き込み可能である必要があります。
 
-## Discordでの開始条件
+## Discordでの利用方法
 
-- `allowed_channel_ids`に登録したGuild channelでは、Luna自身以外の全投稿を常時受け取ります。
-- 登録したGuild channelの子threadとフォーラム投稿は、Discord.jsキャッシュ上でLuna自身がthread memberのときだけ常設として扱います。
-- 設定外channelとthreadでは、Lunaへのmentionで30分の一時sessionを開始します。
-- 一時sessionの存続中は、Lunaがthread memberでなくても同じthreadのmentionなし投稿を受け取ります。
-- 親channelの一時sessionは子threadへ継承しません。
-- DMは既定で全利用者から受け取ります。
-- 人間、他Bot、Webhook、system messageを入力に含めます。
+### メッセージの受付条件
 
-`system.wait` Effectでは秒単位で待機し、完了結果を同じ会話の次turnへ渡します。待機中は30分のsession idle期間に算入しません。
+- **常設チャンネル**: `allowed_channel_ids` に登録されたチャンネルでは、Luna自身の発言を除くすべてのメッセージを受信します。
+- **一時セッション**: 未登録のチャンネルやスレッドでは、Lunaへのメンションによって30分間の一時セッションが開始されます。セッション継続中はメンションなしの発言も受信します。
+- **DM**: デフォルトですべてのユーザーからのDMを受信します。
 
-同時turn、queue、turn時間、Effect follow-upに上限はありません。Bot loop、memory exhaustion、永久に完了しないshutdownを防ぐ仕組みもありません。
+### スラッシュコマンド
 
-会話は`discord.message.created.v1` Eventとしてsessionへ渡されます。heartbeat、schedule、日次整理はそれぞれ一件のsystem Eventを生成し、専用Codex threadでone-shot実行します。Eventを配送する内部busや永続queueはありません。
+通常のメッセージを受信できるチャンネルやDMで利用可能です（未登録チャンネルでは一時セッション中のみ実行可能）。
 
-会話を手動で終了するには、そのchannelまたはDMで`/luna end`を使います。処理中なら現在のturnとEffectの完了を待ち、記憶保存が有効なら保存してからarchiveします。`/luna model`ではモデルと推論強度を一緒に選びます。設定はその場所の現在のsessionにだけ適用され、実行中のturnには反映されません。sessionがなければ新しく作り、投稿がないまま30分経つと終了します。これらの会話コマンドは通常の投稿を受け付ける場所で使えます。Guild内では`/luna channel add`と`/luna channel remove`で実行したchannelを`allowed_channel_ids`へ追加・削除できます。登録外channelでも誰でも実行でき、保存後すぐに反映します。thread内ではthread IDを操作します。
+- `/luna model [model] [effort]`: 現在のセッションで使用するモデルと推論強度（reasoning effort）を変更します。
+- `/luna end`: 現在のセッションを手動で終了します。処理中のターン完了を待って記憶を保存し、セッションを閉じます。
+- `/luna channel add` / `/luna channel remove`: 実行したチャンネルを常設チャンネル（`allowed_channel_ids`）に追加または削除します（ギルド内であれば誰でも実行可能で、設定ファイルに即座に反映されます）。
 
-実Discord・実Codexの確認では、常設channelで`/luna model`の候補からモデルと対応強度を選び、次の投稿がその設定で動くことを確認します。処理中に`/luna end`を使い、応答とEffect、記憶保存の後にthreadがarchiveされることを確認します。設定外channelではmentionで一時sessionを開始する前後の会話コマンド受付を確認します。`/luna channel add/remove`では`config.toml`の保存と、再起動なしの受付切替を確認します。
+## 記憶と自律運用
 
-## 記憶保存と日次整理
+- **セッション記憶保存**: 会話が30分間途切れてアイドル状態になると、Codexが会話内容を要約し、`memory/YYYY-MM-DD.md` に追記保存します。
+- **日次整理**: 指定したcron時刻（デフォルト午前4時）に専用スレッドが起動し、日次ログや `MEMORY.md`、ワークスペース全体を見直して記憶の統合やファイルの整理を行います。Gitが利用可能な場合は、ローカルにコミットを作成します。
+- **ハートビート**: 一定間隔（ランダムなインターバル）ごとに `HEARTBEAT.md` を読み込み、自律的なチェックタスクを実行します。
+- **スケジュール実行**: `cron.toml` に定義されたジョブに基づき、指定時刻にプロンプトを実行します。
 
-memory機能が有効な場合、会話sessionはidle終了前に同じCodex threadで`memory/YYYY-MM-DD.md`へ会話要約と将来役立つ事項を追記してからarchiveされます。保存中の新着投稿はarchive後の新threadで処理されます。shutdownやturn失敗による終了では保存しません。
+## ログとプロセス管理
 
-設定cronでは専用threadが全日次記憶、`MEMORY.md`、workspaceを読み、記憶とfile配置を整理します。通常threadと同じ権限を持つため、不要と判断したfileの削除や文書の移動・renameが起こります。日次記憶fileは既存pathに残すよう指示されますが、application側の保護pathと排他制御はありません。
+ログはすべて標準出力にJSON Lines形式で出力されます。ファイル保存やログローテーション、プロセスの常駐監視は、実行環境のプロセス管理ツール（systemd、Docker等）に委ねられています。
 
-Gitが利用できれば、専用threadは必要に応じてworkspaceをrepository化し、`Luna <luna@localhost>`で整理後のcommitを最大一件作ります。pushと空commitは行いません。stage対象、除外対象、messageはagentが判断し、applicationはcommitを検証しません。Gitがなければfile整理だけを続行します。整理の成功・失敗報告だけを目的とするDiscord通知は行いません。
+SIGINTまたはSIGTERMを受信すると、新規メッセージの受付を停止し、処理中のタスクをすべて完了させてから正常に終了します。
 
-## Logging and monitoring
-
-LunaはJSON Linesをstdoutだけへ出します。file log、rotation、HTTP health endpointはありません。process livenessとexit codeを監視し、non-zero終了時は配置先のprocess managerで再起動してください。
-
-SIGINTまたはSIGTERMでは新規Discord受付、heartbeat timer、schedule tick、日次整理tickを止め、signal前に受理した全処理の自然完了を待ちます。shutdownを理由とするsession記憶保存は開始しません。grace timeoutがないため、終了しないturnがあればprocessも終了しません。
-
-## Development checks
-
-source変更前に固定版Codex CLIから型を生成します。
+## 開発とテスト
 
 ```sh
-pnpm run gen
-pnpm run format:check
-pnpm run lint
-pnpm run knip
-pnpm run typecheck
-pnpm run test
-pnpm run build
-docker build -t luna-chat:local .
+pnpm run gen          # Codex CLIから型を生成
+pnpm run format:check # フォーマット確認
+pnpm run lint         # 静的解析
+pnpm run knip         # 未使用コード検出
+pnpm run typecheck    # 型チェック
+pnpm run test         # テスト実行
+pnpm run build        # バイナリビルド
+docker compose build  # Dockerイメージビルド
 ```
 
-CI gateはformat、lint、knip、typecheck、testです。これらの結果を集約する`status-check`をmainの必須チェックにします。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。
+## リリース手順
 
-## Release
+リポジトリのGitHub Actions（`prepare release` ワークフロー）から手動でリリース準備を開始できます。`patch`、`minor`、`major` を選択して実行すると、バージョン更新用のブランチとPull Requestが作成されます。このPRをmainブランチにマージすると、リリースタグの作成、GitHub Releasesへのバイナリ（各OS向けSEAアセット）の添付、GHCRへのDockerイメージのプッシュが自動的に行われます。
 
-GitHub Actionsの`prepare release`をmainから手動実行し、`patch`、`minor`、`major`を選びます。workflowは`package.json`のversionを更新・整形し、GitHub API経由のcommitを持つ`release/prepare-vX.Y.Z`ブランチとPRを作成します。既に開いている準備PRがあれば閉じてブランチを削除し、新しいPRを作ります。PRを確認してmainへマージすると`publish`がマージ先commitへ`vX.Y.Z`のtagとdraft Releaseを作ります。GHCRへ同じversion tagのDocker imageを配置し、macOS/Linuxのamd64・arm64向けSEAをRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。Docker imageと各SEA assetのbuild provenanceをGitHub Artifact Attestationsへ登録します。全buildとattestationが成功するとGHCRの`latest`を更新してReleaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。
+## ドキュメント一覧
 
-ダウンロードしたSEA assetとGHCR imageのbuild provenanceは、GitHub CLIで検証できます。
-
-```sh
-gh attestation verify luna-chat-macos-arm64.tar.gz -R shun-shobon/luna-chat
-docker login ghcr.io
-gh attestation verify oci://ghcr.io/shun-shobon/luna-chat:v0.1.0 -R shun-shobon/luna-chat
-```
-
-## Documents
-
-- [SPEC.md](./docs/SPEC.md): 外部動作、権限、設定、既定値、失敗契約の正本
-- [ARCHITECTURE.md](./docs/ARCHITECTURE.md): module、state machine、sequence、port/adapter、test契約の正本
-
-このREADMEは導入と運用の入口です。仕様が必要な判断はSPEC、内部実現方法はARCHITECTUREを正とします。
+- [SPEC.md](./docs/SPEC.md): 機能仕様、設定項目、エラー時の挙動などの詳細
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md): 内部アーキテクチャ、状態遷移、設計方針の詳細

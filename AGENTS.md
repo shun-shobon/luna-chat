@@ -1,35 +1,35 @@
-# Repository workflow
+# 作業規約 (Repository Workflow)
 
-このfileは作業規約であり、製品仕様の正本ではない。製品の外部契約は`docs/SPEC.md`、内部設計は`docs/ARCHITECTURE.md`を参照する。実装後はsource、SPEC、ARCHITECTUREを同じ変更で同期する。
+本書は開発時の作業規約です。機能や外部仕様については `docs/SPEC.md`、内部設計については `docs/ARCHITECTURE.md` を参照してください。実装を変更した際は、ソースコード、`SPEC.md`、`ARCHITECTURE.md` を常に同期させてください。
 
-## Communication
+## コミュニケーション
 
-- 利用者への返答、commit subject、commit bodyは日本語で書く。
-- 不明な製品判断は実装で補わず、利用者へ確認する。
-- 根拠のない曖昧な選択肢を並べず、確認済みの事実と制約から推奨を示す。
+- ユーザーへの返答、コミットメッセージの件名（subject）および本文（body）は日本語で記述します。
+- 仕様が不明瞭な点は実装で自己判断せず、必ずユーザーに確認してください。
+- 根拠のない曖昧な選択肢を並べるのではなく、確認済みの事実と制約に基づいた具体的な推奨案を提示してください。
 
-## Design
+## 設計方針
 
-- modular hexagonal architecture、SOLID、DDDをproject規模に合わせて適用する。
-- YAGNI、KISS、DRYを優先する。
-- compatibility behavior、alias、silent fallback、default-value fallbackを追加しない。SPECで明示されたfallbackとdefaultだけを実装する。
-- module間はapplication portを直接`await`し、内部event busとDI frameworkを導入しない。
-- `shared`へ機能固有型を置かない。
+- プロジェクト規模に応じたモジュラーヘキサゴナルアーキテクチャ、SOLID原則、DDDを適用します。
+- YAGNI、KISS、DRYを重視します。
+- 不要な互換処理やエイリアス、暗黙のフォールバック、デフォルト値による補完は追加しないでください。`SPEC.md` で明記されたフォールバックやデフォルト値のみを実装します。
+- モジュール間の連携は公開されたアプリケーションポートを直接呼び出し、内部イベントバスやDIフレームワークは導入しません。
+- `shared` に特定の機能に依存する型を配置しないでください。
 
-## Type safety
+## 型安全性
 
-- 未検証のenvironment、TOML、JSON、SDK/API responseに`as`を使わない。
-- `as unknown as`と`as any`を禁止する。
-- Codex generated discriminated union、Zod、type guardを使い、外部境界でruntime validationする。
-- 完全に自前で構築した送信payloadへの局所的な型補助だけを例外とする。
+- 未検証の環境変数、TOML、JSON、SDKやAPIレスポンスに対して型アサーション（`as`）を使用しないでください。
+- `as unknown as` および `as any` は禁止です。
+- Codex生成の判別可能なUnion型、Zod、型ガードを用い、システムの外部境界でランタイムバリデーションを実施してください。
+- 例外として、完全に自前で構築した送信ペイロードへの局所的な型補助のみを許容します。
 
-## Tests
+## テスト方針
 
-- global coverage率ではなく、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testにする。
-- snapshotは固定developer instructionsと入力JSON組立だけに使う。
-- 実Discord・実CodexはREADMEのmanual live E2Eで確認する。
+- 単なるカバレッジ率の向上を目的とせず、すべての状態遷移や外部との接続点における「成功・タイムアウト・不正なレスポンス・例外」を検証するテストを作成してください。
+- スナップショットテストは、固定の開発者インストラクションおよび入力JSONの組み立て検証のみに限定します。
+- 実際のDiscordやCodexを用いた動作確認は、`README.md` に記載の手動E2E手順に従って実施してください。
 
-## Commands
+## 開発コマンド
 
 ```sh
 pnpm run gen
@@ -42,12 +42,12 @@ pnpm run build
 docker compose build
 ```
 
-sourceを変更したら、commit前に関連testと全quality gateを通す。実装完了時はlocal Docker buildも通す。
+ソースコードを変更した際は、コミット前に関連テストとすべてのクオリティゲート（CIチェック項目）を通過させてください。実装完了時にはローカルでのDockerビルドも確認します。
 
-## Git
+## Git運用
 
-- Conventional Commitsの`<type>: <日本語summary>`を使う。
-- 3行目以降のbodyへ具体的な変更を書く。
-- 一commit一目的とし、文書、基盤、capability、cutover、旧実装削除を分ける。
-- GPG署名を無効化しない。署名失敗時は利用者へ報告する。
-- userの既存変更を上書き、reset、checkoutしない。
+- Conventional Commits形式（`<type>: <日本語の要約>`）を使用します。
+- 3行目以降の本文に変更の具体的な背景や内容を記述してください。
+- 1つのコミットには1つの目的を持たせ、ドキュメント、基盤、機能実装、カットオーバー、旧実装の削除などはコミットを分けてください。
+- GPG署名を無効化しないでください。署名に失敗した場合はユーザーに報告してください。
+- ユーザーによる既存の変更を勝手に上書き・リセット・チェックアウトしないでください。
