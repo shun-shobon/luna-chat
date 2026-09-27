@@ -19,7 +19,7 @@ LunaはDiscord利用者をhost権限から隔離しません。BotへDMできる
 - native macOS / Linux
 - Docker on linux/amd64 / linux/arm64
 - Node.js `24.21.0`
-- pnpm `12.4.0`
+- pnpm `12.7.0`
 
 Windows、公開CLI、systemd unit、launchd plist、HTTP health endpointは提供しません。
 
