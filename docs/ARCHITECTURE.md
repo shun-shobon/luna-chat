@@ -151,7 +151,7 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
      │                                                   ▼
      │                                             EFFECTS_ACTIVE
      │                                              │           │
-     │                                any failure   │           │ all success / empty
+     │                    failure / wait complete   │           │ other success / empty
      │                                              ▼           ▼
      │                                     FOLLOWUP_STARTING   IDLE
      │                                              │           │
@@ -168,46 +168,46 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 
 idle timerは`IDLE` stateだけで持つ。Effectとfollow-upを含む通常chain全体が完了し、queueが空になった時点から`session_idle_ms`を計測する。受理投稿でtimerを取り消し、次に`IDLE`へ入った時点から期間全体を待つ。idle期限が来るとsession記憶保存を開始する。保存開始後の投稿は次thread用queueへ入れる。
 
-`/luna model`はscopeのactorにモデルと推論強度を一組として設定する。actorがなければthreadを持たない`IDLE` actorを作り、その時点からidle timerを開始する。設定は次の`turn/start`から渡し、actorが終了したときに破棄する。`/luna end`はactorへ終了要求を送る。実行中のchainとEffect failure follow-upを終えてからsession記憶保存へ進み、以降の投稿と未開始queueは次sessionへ渡す。threadを持たないactorは保存turnとarchive RPCを行わず終了する。
+`/luna model`はscopeのactorにモデルと推論強度を一組として設定する。actorがなければthreadを持たない`IDLE` actorを作り、その時点からidle timerを開始する。設定は次の`turn/start`から渡し、actorが終了したときに破棄する。`/luna end`はactorへ終了要求を送る。実行中のchainとEffect follow-upを終えてからsession記憶保存へ進み、以降の投稿と未開始queueは次sessionへ渡す。threadを持たないactorは保存turnとarchive RPCを行わず終了する。
 
 ### 6.5 State transition contract
 
-| 現在                                            | event                              | 次                  | 作用                                                  |
-| ----------------------------------------------- | ---------------------------------- | ------------------- | ----------------------------------------------------- |
-| absent                                          | accepted input                     | collecting          | session作成、batchへ追加                              |
-| absent                                          | `/luna model`                      | idle                | threadなしsession作成、設定保存、idle timer開始       |
-| idle/collecting/turn/effects                    | `/luna model`                      | 同じstate           | 次のturn用モデルと推論強度を同時更新                  |
-| idle、threadなし                                | idle expiredまたは`/luna end`      | absent              | 設定を破棄してsession終了                             |
-| idle、threadあり                                | `/luna end`                        | session memory      | 記憶保存が有効なら開始し、無効ならarchive             |
-| active chain                                    | `/luna end`                        | 同じstate           | 現chain完了後の保存・archiveを予約、新着は次sessionへ |
-| collecting                                      | accepted input                     | collecting          | batchへ追加、debounce reset                           |
-| collecting                                      | dispatch ready、threadなし         | opening thread      | 初回history取得、instructions読込、`thread/start`     |
-| collecting                                      | dispatch ready、threadあり         | starting turn       | 既存threadで`turn/start`                              |
-| idle                                            | accepted input                     | collecting          | 既存thread維持、batch追加、idle timer取消             |
-| conversation opening/starting/followup starting | accepted input                     | 同じstate           | queueへ追加                                           |
-| starting turn / followup starting               | `turn/start` response              | turn active         | turn ID保存、starting中queueを受信順にsteer           |
-| turn active                                     | accepted input、final未受領        | turn active         | 即時steer。失敗分はqueue                              |
-| turn active                                     | accepted input、final受領済み      | turn active         | runtimeがsteerをRPC送信前に拒否し、queueへ移す        |
-| turn active                                     | turn success                       | effects active      | final JSON検証、Effect全件を並行開始                  |
-| turn active                                     | turn failureまたはfinal JSON不正   | archiving           | log、typing cleanup、thread archive。未開始queue維持  |
-| conversation effects active                     | accepted input                     | effects active      | queueへ追加                                           |
-| conversation effects active                     | all settled、failureあり           | followup starting   | typing cleanup、全resultで同一thread `turn/start`     |
-| conversation effects active                     | all success/empty、queueあり       | collecting          | typing cleanup、chain完了、queueをbatch化             |
-| conversation effects active                     | all success/empty、queueなし       | idle/session memory | typing cleanup、idle timer開始。shutdown時は記憶保存  |
-| opening/turn/followup start failure             | failure                            | archiving           | log、可能ならthread archive、session終了              |
-| idle                                            | idle expired、memory無効           | archiving           | `thread/archive`                                      |
-| idle                                            | idle expired、memory有効           | session memory      | local dateを生成し、同一threadで`turn/start`          |
-| session memory start/turn/effects               | accepted input                     | 同じstate           | steerせず次thread用queueへ追加                        |
-| session memory turn                             | turn success                       | effects active      | 通常turnと同じEffect実行                              |
-| session memory effects                          | failureあり                        | followup starting   | 同じ保存目的を保ったEffect result follow-up           |
-| session memory effects                          | all success/empty                  | archiving           | typing cleanup後に`thread/archive`                    |
-| session memory start/turn failure               | failure                            | archiving           | log後にretryせず`thread/archive`                      |
-| archiving                                       | archive success/failure、queueなし | absent              | 成功時刻をretention起算に記録。失敗も参照破棄         |
-| archiving                                       | archive success/failure、queueあり | collecting          | 参照破棄後、queueを新thread用batchへ移す              |
-| effects active                                  | app-server lost                    | effects orphaned    | thread参照破棄。開始済みEffectは継続、follow-up禁止   |
-| effects orphaned                                | accepted input                     | effects orphaned    | queueへ追加                                           |
-| effects orphaned                                | all settled                        | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す    |
-| effects active以外                              | app-server lost                    | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持       |
+| 現在                                            | event                                  | 次                  | 作用                                                  |
+| ----------------------------------------------- | -------------------------------------- | ------------------- | ----------------------------------------------------- |
+| absent                                          | accepted input                         | collecting          | session作成、batchへ追加                              |
+| absent                                          | `/luna model`                          | idle                | threadなしsession作成、設定保存、idle timer開始       |
+| idle/collecting/turn/effects                    | `/luna model`                          | 同じstate           | 次のturn用モデルと推論強度を同時更新                  |
+| idle、threadなし                                | idle expiredまたは`/luna end`          | absent              | 設定を破棄してsession終了                             |
+| idle、threadあり                                | `/luna end`                            | session memory      | 記憶保存が有効なら開始し、無効ならarchive             |
+| active chain                                    | `/luna end`                            | 同じstate           | 現chain完了後の保存・archiveを予約、新着は次sessionへ |
+| collecting                                      | accepted input                         | collecting          | batchへ追加、debounce reset                           |
+| collecting                                      | dispatch ready、threadなし             | opening thread      | 初回history取得、instructions読込、`thread/start`     |
+| collecting                                      | dispatch ready、threadあり             | starting turn       | 既存threadで`turn/start`                              |
+| idle                                            | accepted input                         | collecting          | 既存thread維持、batch追加、idle timer取消             |
+| conversation opening/starting/followup starting | accepted input                         | 同じstate           | queueへ追加                                           |
+| starting turn / followup starting               | `turn/start` response                  | turn active         | turn ID保存、starting中queueを受信順にsteer           |
+| turn active                                     | accepted input、final未受領            | turn active         | 即時steer。失敗分はqueue                              |
+| turn active                                     | accepted input、final受領済み          | turn active         | runtimeがsteerをRPC送信前に拒否し、queueへ移す        |
+| turn active                                     | turn success                           | effects active      | final JSON検証、Effect全件を並行開始                  |
+| turn active                                     | turn failureまたはfinal JSON不正       | archiving           | log、typing cleanup、thread archive。未開始queue維持  |
+| conversation effects active                     | accepted input                         | effects active      | queueへ追加                                           |
+| conversation effects active                     | all settled、failureまたはwaitあり     | followup starting   | typing cleanup、全resultで同一thread `turn/start`     |
+| conversation effects active                     | waitなし、all success/empty、queueあり | collecting          | typing cleanup、chain完了、queueをbatch化             |
+| conversation effects active                     | waitなし、all success/empty、queueなし | idle/session memory | typing cleanup、idle timer開始。shutdown時は記憶保存  |
+| opening/turn/followup start failure             | failure                                | archiving           | log、可能ならthread archive、session終了              |
+| idle                                            | idle expired、memory無効               | archiving           | `thread/archive`                                      |
+| idle                                            | idle expired、memory有効               | session memory      | local dateを生成し、同一threadで`turn/start`          |
+| session memory start/turn/effects               | accepted input                         | 同じstate           | steerせず次thread用queueへ追加                        |
+| session memory turn                             | turn success                           | effects active      | 通常turnと同じEffect実行                              |
+| session memory effects                          | failureまたはwaitあり                  | followup starting   | 同じ保存目的を保ったEffect result follow-up           |
+| session memory effects                          | waitなし、all success/empty            | archiving           | typing cleanup後に`thread/archive`                    |
+| session memory start/turn failure               | failure                                | archiving           | log後にretryせず`thread/archive`                      |
+| archiving                                       | archive success/failure、queueなし     | absent              | 成功時刻をretention起算に記録。失敗も参照破棄         |
+| archiving                                       | archive success/failure、queueあり     | collecting          | 参照破棄後、queueを新thread用batchへ移す              |
+| effects active                                  | app-server lost                        | effects orphaned    | thread参照破棄。開始済みEffectは継続、follow-up禁止   |
+| effects orphaned                                | accepted input                         | effects orphaned    | queueへ追加                                           |
+| effects orphaned                                | all settled                            | collecting/absent   | typing cleanup、resultをlog。queueは新threadへ移す    |
+| effects active以外                              | app-server lost                        | collecting/absent   | active失敗、thread参照破棄、未開始queueだけ維持       |
 
 会話scopeごとにmailbox型actorを一つ持つ。actorはstate mutationだけを短いcommandとして直列処理し、長時間の外部I/O Promiseをmailbox内でawaitしない。I/O開始時にstateとoperation tokenを記録し、完了を新しいmailbox messageとして戻す。これによりturn完了待機中もaccepted inputを処理し、即時steerできる。古いoperation tokenの完了は無視する。
 
@@ -215,7 +215,7 @@ idle timerは`IDLE` stateだけで持つ。Effectとfollow-upを含む通常chai
 
 `agent`はprovider-neutralなthread/turn protocolと相関だけを所有する。呼出側がJSON文字列の`input`と`outputSchema`を渡し、runtimeは最終assistant messageをraw `outputText`として返す。Discord型、Effect型、出力parseは`agent`へ置かない。
 
-`effect`のregistryは一意なEffect typeとproviderを対応づける。registryから`EffectOutputContract`がStructured Outputs schemaを構築し、raw出力を`{effects: EffectRequest[]}`へ検証する。batch executorは各Effectをproviderへ並行委譲し、元index、type、target、success valueまたはerrorを`EffectResult`へ保持する。
+`effect`のregistryは一意なEffect typeとproviderを対応づける。registryから`EffectOutputContract`がStructured Outputs schemaを構築し、raw出力を`{effects: EffectRequest[]}`へ検証する。batch executorは各Effectをproviderへ並行委譲し、元index、type、target、success valueまたはerrorを`EffectResult`へ保持する。待機providerは正の整数秒を受け、Node.js timerの上限ごとに分割して待つ。
 
 Discord会話では即時steerとmailbox stateを統合するため`conversation`がchainを進める。automationの3 Event Sourceは共通`EventExecutor`と`EventAgentAdapter`を使い、Eventごとにone-shot threadを開く。両経路は次のEffect chainに従う。
 
@@ -233,9 +233,9 @@ validated input
      ├─ EffectBatchPort.execute(effects, ownerId)
      ├─ EffectBatchPort.release(ownerId)
      │
-     ├─ no failure ───────────────────────────────► complete
+     ├─ no failure or wait ────────────────────────► complete
      │
-     └─ any failure ─► turn/start(effect_results) ─┐
+     └─ failure or wait ─► turn/start(effect_results) ─┐
                                                    └─ repeat without limit
 ```
 
@@ -243,7 +243,7 @@ MCP操作はCodexが呼んだ時点で実行する。final Effectはturn完了�
 
 follow-up turn中に新しいDiscord投稿が来た場合、そのfollow-upが現在のactive turnなのでfinal agent message受領前だけ即時steerする。follow-upの`turn/start` response前、final agent message受領後、Effect実行中にはsteer可能なCodex turnがないため、投稿をqueueへ入れる。response後はstarting中queueを順にsteerし、chain終了時に残るqueueは新しいbatchとして処理する。
 
-会話turnは`{source:"conversation",session:{key,source},history,events}`、one-shot Eventは`{source:"event",event}`を送る。失敗follow-upは`{source:"effect_results",results}`、session記憶保存は`{source:"session_memory",date}`を使う。session memoryでも同じEffect contractを使い、全Effect成功後だけarchiveする。通常chain失敗とfatal abortはsession記憶保存を経由しない。
+会話turnは`{source:"conversation",session:{key,source},history,events}`、one-shot Eventは`{source:"event",event}`を送る。Effect失敗と待機完了のfollow-upは`{source:"effect_results",results}`、session記憶保存は`{source:"session_memory",date}`を使う。session memoryでも同じEffect contractを使い、待機を含まない全Effect成功後だけarchiveする。通常chain失敗とfatal abortはsession記憶保存を経由しない。
 
 ## 8. Codex app-server adapter
 
@@ -316,13 +316,17 @@ heartbeatやscheduleのone-shot threadは、投稿後の返信を受け取れな
 
 `DiscordConversationDelegation`はtargetをdiscord.jsのchannel objectからscopeへ解決する。DM user targetは`createDM`で得たchannel IDとuser IDからDM scopeを作る。委譲Eventを作ってcallbackで`ConversationCoordinator.accept`へ渡し、intake停止で受理されなければfailureとする。委譲先sessionの寿命は通常の`session_idle_ms`とsession記憶保存に従い、延長しない。idle後の文脈は、session記憶保存と、新threadのbase instructionsへ加える前日・当日の日次記憶が引き継ぐ。
 
-### 9.4 Typing
+### 9.4 待機Effect provider
+
+`system.wait`をeffect registryへ登録する。実行中はconversation actorの`effects active`を保ち、idle timerを開始しない。完了した成功resultも同じthreadのfollow-upへ渡す。process再起動時に残り時間は復元しない。
+
+### 9.5 Typing
 
 typing registryはtargetとthread固有ownerに紐づくleaseをmemoryで保持し、Discord typing期限より短い固定間隔で更新する。一つのthreadにactive turnは一つだけなので、thread作成前に生成したowner IDをMCP HTTP headerとEffect実行へ共通利用し、各batch settle後、follow-up開始前にそのownerの残存leaseを解放する。`discord.stop_typing`は指定targetの呼出owner leaseを解放する。
 
 cleanupのDiscord API失敗はerror logへ残すが、完了済みchainを再開しない。session closeとprocess shutdownでは全leaseをbest effortで停止する。
 
-### 9.5 MCP
+### 9.6 MCP
 
 MCP adapterはDiscord read/write application portをtoolごとに薄く公開する。generic REST toolを持たない。serverはloopbackのrandom portへbindし、起動後に得たURLをcapability固有instructionsとともにprovider-neutralなthread input factoryへ渡す。bind失敗はstartup failure、稼働中transport errorは該当tool failureとしてCodexへ返す。
 
@@ -458,4 +462,4 @@ Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCI�
 
 ## 17. Composition
 
-composition rootはDiscord action providerと会話委譲providerからregistry、出力契約、batch executorを一度だけ構築し、conversationとEvent one-shotの両経路へ同じinstanceを注入する。Agent thread input factoryにはworkspace、固定developer instructions、Discord capability instructions、owner IDごとのMCP設定を渡す。module間はapplication portを直接`await`し、内部event busとDI frameworkは置かない。
+composition rootはDiscord action provider、会話委譲provider、待機Effect providerからregistry、出力契約、batch executorを一度だけ構築し、conversationとEvent one-shotの両経路へ同じinstanceを注入する。Agent thread input factoryにはworkspace、固定developer instructions、Discord capability instructions、owner IDごとのMCP設定を渡す。module間はapplication portを直接`await`し、内部event busとDI frameworkは置かない。

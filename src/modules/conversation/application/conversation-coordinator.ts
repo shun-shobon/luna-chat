@@ -4,7 +4,11 @@ import type {
   AgentTurnResult,
   StartedAgentTurn,
 } from "../../agent/ports/outbound/agent-runtime-port";
-import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
+import {
+  requiresEffectFollowUp,
+  type EffectRequest,
+  type EffectResult,
+} from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
 import type { LunaEvent } from "../../event/domain/luna-event";
@@ -705,7 +709,7 @@ class ConversationActor {
       return;
     }
     if (this.#phase !== "effects") return;
-    if (results.some((result) => !result.success)) {
+    if (requiresEffectFollowUp(results)) {
       const purpose = this.#turnPurpose;
       if (purpose === undefined)
         throw new Error("Completed effect batch is missing its turn purpose");

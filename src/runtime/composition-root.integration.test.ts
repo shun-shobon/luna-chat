@@ -137,7 +137,7 @@ describe("composition root integration", () => {
     expect(fakes.client.application.commands.create).toHaveBeenCalledOnce();
     expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
     expect(registry).toHaveBeenCalledOnce();
-    expect(registry.mock.calls[0]?.[0][0]?.definitions).toHaveLength(6);
+    expect(registry.mock.calls[0]?.[0].flatMap((provider) => provider.definitions)).toHaveLength(8);
     expect(outputContract).toHaveBeenCalledWith(registry.mock.results[0]?.value);
     const factoryInput = threadInputFactory.mock.calls[0]?.[0];
     expect(factoryInput?.capabilityInstructions).toHaveLength(1);

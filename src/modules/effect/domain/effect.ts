@@ -15,3 +15,9 @@ export type EffectResult = Readonly<{
   target: JsonValue;
 }> &
   (Readonly<{ success: true; value: JsonValue }> | Readonly<{ success: false; error: string }>);
+
+export const WAIT_EFFECT_TYPE = "system.wait";
+
+export function requiresEffectFollowUp(results: readonly EffectResult[]): boolean {
+  return results.some((result) => !result.success || result.type === WAIT_EFFECT_TYPE);
+}

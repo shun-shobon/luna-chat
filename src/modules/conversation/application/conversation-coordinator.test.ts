@@ -512,6 +512,76 @@ describe("ConversationCoordinator", () => {
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
+  it("30分を超える待機の完了を同じthreadへ渡し、follow-up完了後からidleを測る", async () => {
+    vi.useFakeTimers();
+    const followUpCompletion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([
+      Promise.resolve(completed([{ type: "system.wait", input: { duration_seconds: 1_860 } }])),
+      followUpCompletion.promise,
+      Promise.resolve(completed([])),
+    ]);
+    const execute = vi
+      .fn<EffectBatchPort["execute"]>(async () => [])
+      .mockImplementationOnce(
+        async () =>
+          await new Promise<readonly EffectResult[]>((resolve) =>
+            setTimeout(
+              () =>
+                resolve([
+                  {
+                    index: 0,
+                    type: "system.wait",
+                    target: null,
+                    success: true,
+                    value: { duration_seconds: 1_860 },
+                  },
+                ]),
+              1_860_000,
+            ),
+          ),
+      );
+    const effects: EffectBatchPort = {
+      execute,
+      release: vi.fn(async () => undefined),
+    };
+    const coordinator = createCoordinator(runtime.port, {
+      effects,
+      sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+    });
+
+    coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(1_800_100);
+    expect(runtime.startTurn).toHaveBeenCalledOnce();
+    expect(runtime.archiveThread).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    expect(runtime.startTurn.mock.calls[1]?.[0]).toBe("thread-1");
+    expect(parseRequestInput(runtime.startTurn.mock.calls[1]?.[1])).toEqual({
+      source: "effect_results",
+      results: [
+        {
+          index: 0,
+          type: "system.wait",
+          target: null,
+          success: true,
+          value: { duration_seconds: 1_860 },
+        },
+      ],
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+
+    followUpCompletion.resolve(completed([]));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(parseRequestInput(runtime.startTurn.mock.calls[2]?.[1])).toMatchObject({
+      source: "session_memory",
+    });
+  });
+
   it("session memory turnの開始中と実行中の新着をarchive後の新threadへ渡す", async () => {
     vi.useFakeTimers();
     const memoryStarted = deferred<StartedAgentTurn>();
@@ -864,7 +934,15 @@ describe("ConversationCoordinator", () => {
 
 const effectInputSchema = z.strictObject({ target: z.string(), value: z.string() });
 const effectEnvelopeSchema = z.strictObject({
-  effects: z.array(z.strictObject({ type: z.literal("test.effect"), input: effectInputSchema })),
+  effects: z.array(
+    z.union([
+      z.strictObject({ type: z.literal("test.effect"), input: effectInputSchema }),
+      z.strictObject({
+        type: z.literal("system.wait"),
+        input: z.strictObject({ duration_seconds: z.number().int().min(1) }),
+      }),
+    ]),
+  ),
 });
 const effectOutput = {
   jsonSchema: {
