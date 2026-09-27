@@ -41,7 +41,8 @@ Codexには次を明示する。
 - turn chain: 最初のCodex turnと、Effect失敗から生じる同一thread上のfollow-up turn列。
 - Effect: providerが型、入力schema、実行、target記述を登録する外部作用。
 - 常設channel: `allowed_channel_ids` に含まれるGuild channel、または許可IDが親channelかthread自身に一致し、Discord.jsキャッシュ上でLuna自身がthread memberであるthread。mentionなしで常時受信する。
-- 一時session: 常設でないscopeにおいて、Lunaへのmentionで開始されたsession。
+- 一時session: 常設でないscopeにおいて、Lunaへのmentionまたは会話委譲で開始されたsession。
+- 会話委譲: 実行中のthreadが`discord.open_conversation`で、指定したDiscord scopeの会話sessionへ背景説明付きで会話を任せること。
 - session記憶保存: idle終了する会話thread自身が、会話要約と将来役立つ事項を`memory/YYYY-MM-DD.md`へ追記するturn。
 - 日次整理: 組み込みscheduleが専用threadを作り、記憶とworkspaceを整理してlocal Gitへの保存を試みる実行。
 
@@ -60,7 +61,7 @@ Luna自身の投稿だけを除外し、次を受理する。
 
 `allowed_channel_ids`にGuild channel IDがあれば、その配下のthreadとフォーラム投稿は、`messageCreate`受信時にDiscord.jsキャッシュがLuna自身のthread memberを保持しているときだけ常設として扱う。thread IDを直接含めた場合も同じ条件とする。キャッシュにthread memberがなければ、Discord上の実際の参加状態を追加取得せず未参加と判定する。
 
-常設でないthreadでもLunaへのmentionで一時sessionを開始できる。同じthreadの一時session存続中は、Luna自身のthread member有無とmention有無にかかわらず投稿を受理する。親channelの一時sessionだけは子threadへ継承しない。
+常設でないthreadでもLunaへのmentionで一時sessionを開始できる。会話委譲も、対象scopeに一時sessionを開始する。同じthreadの一時session存続中は、Luna自身のthread member有無とmention有無にかかわらず投稿を受理する。親channelの一時sessionだけは子threadへ継承しない。
 
 `allowed_channel_ids`は空配列を許す。DMは全Discord利用者を対象とし、送信者allowlistを設けない。
 
@@ -81,7 +82,7 @@ Guild channel、Guild thread、DMを必要ID付きの判別可能unionで表す�
 
 ### 5.4 初回履歴
 
-新規sessionは、最初の入力batchより前の直近`initial_history_limit`件を一度だけ取得し、古い順に渡す。Luna自身を含む全投稿種別を履歴に含める。取得失敗時は現在のbatchだけで続行する。以後の履歴はCodex threadが保持し、Discord APIから再取得しない。
+新規sessionは、最初の入力batchより前の直近`initial_history_limit`件を一度だけ取得し、古い順に渡す。batchの最初のEventが会話委譲なら、委譲時刻より前の投稿を取得する。Luna自身を含む全投稿種別を履歴に含める。取得失敗時は現在のbatchだけで続行する。以後の履歴はCodex threadが保持し、Discord APIから再取得しない。
 
 Gateway切断中に取りこぼした投稿を再接続後に補完しない。
 
@@ -105,6 +106,8 @@ type AgentInput =
 `ConversationSession.context`はprovider adapterがsession復元に使い、Agent入力には含めない。`session`には`key`と`source`だけを渡す。`history`と`events`は`occurredAt`昇順、同値ならEvent ID昇順に整列する。
 
 Discord `messageCreate`は`discord.message.created.v1` Eventへ変換する。Event IDはmessage ID、`occurredAt`はmessage timestamp、`subject`はsession keyであり、`data`はscopeとnormalized messageを持つ。messageは投稿種別、Guild/channel/authorのIDと表示名、本文、添付metadata、sticker、reaction集計、mention対象、返信参照を型付きfieldとして持つ。
+
+会話委譲は`discord.conversation.delegated.v1` Eventを生成し、対象scopeの会話sessionへDiscord投稿と同じ受理入力として渡す。Event IDは委譲ごとのUUID、`source`は`discord/main`、`occurredAt`は委譲時刻、`subject`は対象session keyであり、`data`はscopeと空でない`brief`を持つ。debounce、typing待機、steer、queueの規則はDiscord投稿と同じである。
 
 heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、`system.schedule.fired.v1`、`system.memory_maintenance.fired.v1`を一件生成し、`source:"event"`として共通one-shot実行へ渡す。Event envelopeの`source`は順に`system/heartbeat`、`system/schedule`、`system/memory-maintenance`である。
 
@@ -147,9 +150,9 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 
 `memory/`と日次記憶fileはstartup initializerで生成せず、session記憶保存または日次整理を行うagentが必要時に作る。日次記憶fileは日次整理後も同じpathに残す。
 
-新しいDiscord、heartbeat、schedule、日次整理threadを作るたびに`LUNA.md`と`MEMORY.md`の全文をbase instructionsへ加える。size上限と同時更新lockは設けず、最後のfilesystem writeを採用する。active threadへ途中変更を反映しない。通常threadからの`MEMORY.md`更新を禁止しない。
+新しいDiscord、heartbeat、schedule、日次整理threadを作るたびに`LUNA.md`と`MEMORY.md`の全文、およびthread作成時のprocess local dateで前日と当日の`memory/YYYY-MM-DD.md`の全文をbase instructionsへ加える。日次記憶は古い日付から順に、`# memory/YYYY-MM-DD.md`見出しを付けて長期記憶の後ろへ置く。存在しない、または読めない日次記憶は含めない。size上限と同時更新lockは設けず、最後のfilesystem writeを採用する。active threadへ途中変更を反映しない。通常threadからの`MEMORY.md`更新を禁止しない。
 
-起動後に`LUNA.md`または`MEMORY.md`を読めない場合は、読めたfileだけで処理を続ける。heartbeat直前に`HEARTBEAT.md`を読めない場合はその実行だけを失敗とし、turnを開始しない。
+起動後に`LUNA.md`、`MEMORY.md`、日次記憶を読めない場合は、読めたfileだけで処理を続ける。heartbeat直前に`HEARTBEAT.md`を読めない場合はその実行だけを失敗とし、turnを開始しない。
 
 人格、記憶、応答言語はworkspace instructionsが担う。入出力protocolと権限規則はコード固定のdeveloper instructionsが担う。
 
@@ -196,7 +199,7 @@ Effect registryに登録された全providerから`turn/start.outputSchema`を�
 
 ### 10.2 Discord Effect provider
 
-Discord providerは次の6 Effectだけを登録する。
+Discord providerは次の7 Effectだけを登録する。
 
 - `discord.send_message`: channel/thread IDまたはDM user IDへ本文とfileを送る。
 - `discord.reply_message`: channel IDとmessage IDを明示して返信する。
@@ -204,6 +207,7 @@ Discord providerは次の6 Effectだけを登録する。
 - `discord.remove_reaction`: Luna自身のreactionを外す。
 - `discord.start_typing`: 対象でtyping更新を開始する。
 - `discord.stop_typing`: 対象のtyping更新を止める。
+- `discord.open_conversation`: 対象scopeの会話sessionへ背景説明を渡して会話を委譲する。
 
 外部schemaは次を基準とする。全IDは空でないDiscord snowflake文字列である。
 
@@ -233,7 +237,8 @@ type DiscordEffect =
   | { type: "discord.add_reaction"; input: MessageLocation & { emoji: DiscordEmoji } }
   | { type: "discord.remove_reaction"; input: MessageLocation & { emoji: DiscordEmoji } }
   | { type: "discord.start_typing"; input: { target: DiscordTarget } }
-  | { type: "discord.stop_typing"; input: { target: DiscordTarget } };
+  | { type: "discord.stop_typing"; input: { target: DiscordTarget } }
+  | { type: "discord.open_conversation"; input: { target: DiscordTarget; brief: string } };
 ```
 
 `reply_message`、reactionの`channelId`にはGuild channel、thread、DM channelのいずれも指定できる。DM user IDは新しいDMを開く`send_message`とtyping targetだけで使い、既存messageの位置指定には使わない。
@@ -241,6 +246,8 @@ type DiscordEffect =
 message edit/delete、thread作成、role操作、embed、component、pollは対象外とする。generic Discord REST Effectは提供しない。
 
 送信と返信はplain textとfile attachmentだけを扱い、少なくとも一方を必須とする。fileは絶対path、任意の表示file名、任意の説明を持つ。realpath解決後に通常fileかつ読取可能であることを検証する。URLの取得・再添付はしない。
+
+`open_conversation`はtargetをGuild channel、thread、DMのscopeへ解決し、そのscopeの会話sessionへ委譲Eventを渡す。sessionがなければ一時sessionを作り、既存sessionがあればそのsessionの入力として扱う。Discordへは投稿せず、投稿は委譲先sessionが行う。成功値は解決したscopeである。送信できないchannel、`allow_dm = false`でのDM、shutdownによる受付停止中はEffect failureとする。呼出元threadと同じscopeへの委譲も禁止しない。
 
 Discord文字数上限は送信前に検証する。超過を自動分割しない。返信先が参照不能でも通常投稿へ変換しない。いずれもEffect failureとしてfollow-upへ渡す。
 
@@ -363,6 +370,7 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 | 初回履歴取得失敗                                              | 現在batchだけで続行。                                                                              |
 | final output不正                                              | Effectを実行せず、threadをarchiveしてsession終了。                                                 |
 | Effect失敗                                                    | 全Effect settle後、同一thread follow-up。                                                          |
+| 会話委譲失敗                                                  | Effect failureとして呼出元threadのfollow-upへ渡す。委譲先sessionは作らない。                       |
 | RPC request timeout                                           | connection破損。全active turn失敗、全thread参照破棄、再起動。                                      |
 | 管理中threadの相関不能、ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |
 | app-server停止                                                | active turnは再実行せず、thread参照を破棄。未開始queueは再起動後に新threadで処理。                 |

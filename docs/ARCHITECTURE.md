@@ -66,7 +66,7 @@ src/
 
 | Capability      | 所有する概念                                                                     | 公開するapplication境界                                                       | Adapter                                     |
 | --------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------- |
-| `discord`       | normalized message、scope、Discord Event/Effect、read、typing lease              | Event変換、Effect provider、Discord read、Gateway subscription                | discord.js Gateway/REST、loopback MCP       |
+| `discord`       | normalized message、scope、Discord Event/Effect、read、typing lease、会話委譲    | Event変換、Effect provider、Discord read、Gateway subscription                | discord.js Gateway/REST、loopback MCP       |
 | `conversation`  | `ConversationSession`、pending Event、idle期限、session記憶、モデル設定、mailbox | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort` | Discord controller/history                  |
 | `agent`         | app-server process、thread、turn、notification correlation                       | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`deleteArchived` | stdio child process、JSON-RPC               |
 | `event`         | `LunaEvent`、one-shot実行                                                        | `execute`                                                                     | provider-neutral Agent adapter              |
@@ -95,7 +95,7 @@ all          ──► observability port
 runtime      ──► all modules
 ```
 
-Discord Gateway adapterはnormalized eventをcallbackへ渡すだけにし、`conversation`をimportしない。composition rootがcallbackを登録するため、`discord ↔ conversation`のcycleを作らない。
+Discord Gateway adapterと会話委譲adapterはnormalized eventをcallbackへ渡すだけにし、`conversation` applicationをimportしない。composition rootがcallbackを登録するため、`discord ↔ conversation`のcycleを作らない。会話委譲のcallbackは、Effect registryより後に作るcoordinatorを遅延参照する。
 
 ## 6. Domain model
 
@@ -222,7 +222,7 @@ Discord会話では即時steerとmailbox stateを統合するため`conversation
 ```text
 validated input
      │
-     ├─ new thread: load LUNA + MEMORY, thread/start
+     ├─ new thread: load LUNA + MEMORY + yesterday/today daily memory, thread/start
      │
      ├─ turn/start(outputSchema)
      │       ├─ MCP read/write calls occur immediately
@@ -293,11 +293,11 @@ Gateway adapterは必要intentsとDM channel partialを設定し、`messageCreat
 
 Command adapterはglobal `/luna`を登録し、`interactionCreate`を購読する。会話コマンドは通常投稿と同じscope受付規則で検査する。`channel add/remove`はGuild内なら登録状態とsession有無に関係なく受け付ける。モデル候補と強度候補はCodex `model/list`から取得し、外部responseをZodで検証する。コマンドの結果はephemeralに返し、会話Eventへ変換しない。
 
-初回historyは最初のbatchより前をcursor指定して取得する。historyと起点event間だけIDでdedupeし、event同士はdedupeしない。
+初回historyは最初のbatchより前をcursor指定して取得する。最初のEventがDiscord messageならそのmessage ID、会話委譲ならその`occurredAt`から生成したsnowflakeをcursorにする。historyと起点event間だけIDでdedupeし、event同士はdedupeしない。
 
 ### 9.2 Discord Effect provider
 
-providerは次の6 Effectをregistryへ登録する。
+Discord action providerは次の6 Effectをregistryへ登録する。
 
 - `discord.send_message`
 - `discord.reply_message`
@@ -306,15 +306,23 @@ providerは次の6 Effectをregistryへ登録する。
 - `discord.start_typing`
 - `discord.stop_typing`
 
+会話委譲providerは`discord.open_conversation`だけを登録し、typing resourceを持たない。
+
 各Effect inputをZodで検証し、既存のDiscord application portが扱うcommandへ変換する。send/replyはDiscord制限、attachment realpath、通常file、readabilityをAPI call前に検証する。reply失敗をsendへ変換しない。rate limitとnetwork errorは追加retryせず、一つのEffect failureとして返す。
 
-### 9.3 Typing
+### 9.3 会話委譲
+
+heartbeatやscheduleのone-shot threadは、投稿後の返信を受け取れない。返信を受け取るのは投稿先scopeの会話sessionだけである。そこで、会話を始めたいthreadは自分で投稿せず、投稿先scopeの会話sessionへ背景説明を渡して会話を任せる。これにより一つのscopeに一つの会話sessionという不変条件を保ったまま、返信を同じthreadで受け取れる。進行中のsessionがあれば同じsessionへ合流するため、同じscopeに互いの投稿を知らない二つのthreadが生まれない。
+
+`DiscordConversationDelegation`はtargetをdiscord.jsのchannel objectからscopeへ解決する。DM user targetは`createDM`で得たchannel IDとuser IDからDM scopeを作る。委譲Eventを作ってcallbackで`ConversationCoordinator.accept`へ渡し、intake停止で受理されなければfailureとする。委譲先sessionの寿命は通常の`session_idle_ms`とsession記憶保存に従い、延長しない。idle後の文脈は、session記憶保存と、新threadのbase instructionsへ加える前日・当日の日次記憶が引き継ぐ。
+
+### 9.4 Typing
 
 typing registryはtargetとthread固有ownerに紐づくleaseをmemoryで保持し、Discord typing期限より短い固定間隔で更新する。一つのthreadにactive turnは一つだけなので、thread作成前に生成したowner IDをMCP HTTP headerとEffect実行へ共通利用し、各batch settle後、follow-up開始前にそのownerの残存leaseを解放する。`discord.stop_typing`は指定targetの呼出owner leaseを解放する。
 
 cleanupのDiscord API失敗はerror logへ残すが、完了済みchainを再開しない。session closeとprocess shutdownでは全leaseをbest effortで停止する。
 
-### 9.4 MCP
+### 9.5 MCP
 
 MCP adapterはDiscord read/write application portをtoolごとに薄く公開する。generic REST toolを持たない。serverはloopbackのrandom portへbindし、起動後に得たURLをcapability固有instructionsとともにprovider-neutralなthread input factoryへ渡す。bind失敗はstartup failure、稼働中transport errorは該当tool failureとしてCodexへ返す。
 
@@ -450,4 +458,4 @@ Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCI�
 
 ## 17. Composition
 
-composition rootはDiscord Effect providerからregistry、出力契約、batch executorを一度だけ構築し、conversationとEvent one-shotの両経路へ同じinstanceを注入する。Agent thread input factoryにはworkspace、固定developer instructions、Discord capability instructions、owner IDごとのMCP設定を渡す。module間はapplication portを直接`await`し、内部event busとDI frameworkは置かない。
+composition rootはDiscord action providerと会話委譲providerからregistry、出力契約、batch executorを一度だけ構築し、conversationとEvent one-shotの両経路へ同じinstanceを注入する。Agent thread input factoryにはworkspace、固定developer instructions、Discord capability instructions、owner IDごとのMCP設定を渡す。module間はapplication portを直接`await`し、内部event busとDI frameworkは置かない。
