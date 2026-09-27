@@ -34,6 +34,16 @@ describe("application composition lifecycle", () => {
           calls.push("gateway.stop");
         }),
       },
+      http: {
+        stopIntake: vi.fn(() => calls.push("http.stopIntake")),
+        drain: vi.fn(async () => {
+          calls.push("http.drain");
+        }),
+        failPending: vi.fn(() => calls.push("http.failPending")),
+      },
+      httpClose: async () => {
+        calls.push("http.close");
+      },
       isFatal: false,
       logger: { flush: vi.fn(async () => undefined), log: vi.fn() },
       mcpClose: async () => {
@@ -54,8 +64,12 @@ describe("application composition lifecycle", () => {
         "gateway.stop",
         "conversation.stopIntake",
         "automation.stopIntake",
+        "http.stopIntake",
         "conversation.drain",
         "automation.drain",
+        "http.drain",
+        "http.failPending",
+        "http.close",
         "typing.release",
         "mcp.close",
         "client.destroy",

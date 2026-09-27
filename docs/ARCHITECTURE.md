@@ -2,7 +2,7 @@
 
 ## 1. 設計方針と目標
 
-Lunaは、単一のNode.jsプロセス内で複数のDiscord会話と自律タスクを並行処理する、モジュラーヘキサゴナルアーキテクチャ（クリーンアーキテクチャ）として構築される。
+Lunaは、単一のNode.jsプロセス内でDiscordとHTTPの会話、自律タスクを並行処理する、モジュラーヘキサゴナルアーキテクチャ（クリーンアーキテクチャ）として構築される。
 
 ### 主要な原則
 
@@ -15,28 +15,20 @@ Lunaは、単一のNode.jsプロセス内で複数のDiscord会話と自律タ�
 ## 2. システムコンテキスト
 
 ```text
- Discord Gateway / REST
-          │ events / reads / writes
-          ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Luna プロセス                                                │
-│                                                              │
-│  discord ─► LunaEvent ─► conversation ─┐                     │
-│      ▲                                 ├─► agent runtime ─────────► Codex app-server
-│      └──────── Discord Effect provider ◄┤        │            │
-│                                        │        └─ loopback MCP
-│  automation Event Sources ─► event one-shot executor ────────┘
-│                                                              │
-│  effect registry / output contract / batch executor          │
-│  observability ◄──────── 全モジュール共通                    │
-│  runtime = コンポジションルートおよびライフサイクルの配線    │
-└──────────────────────────────────────────────────────────────┘
-          │
-          └── LUNA_HOME / マウントされたファイルシステム / stdout
+Discord Gateway ─► discord ─► conversation ──────────┐
+ローカルHTTP ────► http ─────► conversation ──────────┤
+                           └──► event executor ───────┼─► agent runtime ─► Codex app-server
+automation sources ──────────► event executor ────────┘         │
+                                                               ▼
+                                             effect batch ─► Discord / HTTP応答
+
+Lunaプロセス内: 上記各モジュール、loopback MCP、observability、runtime
+外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout
 ```
 
 - **Codex app-server**: Lunaの子プロセスとして起動され、全スレッドで単一プロセスを共有する。
 - **Discord MCP**: Lunaプロセス内部で `127.0.0.1` にバインドされ、Codexからのツール呼び出しを受け付ける。
+- **HTTP API**: Nativeでは `127.0.0.1` にバインドする。Docker Composeではコンテナ内の `0.0.0.0` にバインドし、ホストの `127.0.0.1` にのみポートを公開する。
 
 ## 3. ソースコード構成
 
@@ -51,6 +43,7 @@ src/
 │   ├── conversation/    # 会話セッション管理, 入力バッチ, アイドルタイマー
 │   ├── agent/           # Codexプロセス管理, JSON-RPC通信, スレッド制御
 │   ├── event/           # 共通イベントエンベロープ, ワンショット実行
+│   ├── http/            # HTTPイベント受付, 応答Effect, 待機中の応答管理
 │   ├── effect/          # Effectレジストリ, バッチ実行, 出力検証
 │   ├── automation/      # ハートビート, スケジュール, 日次整理
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
@@ -69,6 +62,7 @@ src/
 | `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定 | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort` | Discordコントローラー、履歴取得          |
 | `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け          | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`deleteArchived` | stdio子プロセス、JSON-RPC                |
 | `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                  | `execute`                                                                     | プロバイダ非依存のAgentアダプター        |
+| `http`          | HTTPイベントの検証、受付、完了待ち応答                         | `submit`、`stopIntake`、`drain`                                               | Hono、`http.respond` Effect              |
 | `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行             | スキーマ生成、パース、`execute`、`release`                                    | 各種Effectプロバイダ                     |
 | `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`                    | タイマー、cronスケジューラ、ファイル監視 |
 | `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視       | 初期化、プロンプト読み込み、スケジュール読み書き                              | ファイルシステム、`smol-toml`、Zod       |
@@ -84,6 +78,7 @@ src/
 
 ```text
 discord      ──► event
+http         ──► conversation / event / effect
 conversation ──► event / effect / agent
 automation   ──► event
 event        ──► agent / effect
@@ -178,6 +173,7 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 - Codexからの最終出力は構造化スキーマ（Structured Outputs）によって `{ effects: EffectRequest[] }` 形式に制約される。
 - バッチ内のEffectはすべて並行して実行され、全件完了（settle）した後に結果を集約する。
 - 失敗したEffectや `system.wait` の完了結果は、同一スレッドのフォローアップターンへ渡されて自律的なリカバリが行われる。
+- `http.respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行または会話のターンチェーンが完了した時点で、待機中のHTTPリクエストを解決する。会話側は初回バッチと成功したsteerのイベントIDを追跡し、チェーン完了時に通知する。
 
 ## 8. Codex app-server アダプター
 
@@ -212,6 +208,8 @@ STOPPED ── spawn/initialize ──► READY
 - **タイピング管理**: 各ターンやEffectバッチの実行中にタイピング表示を維持し、処理完了時に確実に解放する。
 - **MCP サーバー**: Codex向けにチャンネル一覧やメッセージ履歴の読み取りツールを提供する。
 
+HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成する。`one_shot` はEventExecutorへ、`conversation` は `http:<session_id>` の会話セッションへ直接渡す。HTTP会話の初回履歴は空とする。受付停止中は503を返し、受理済みワンショット実行は終了時にdrainする。
+
 ## 10. ワークスペースと設定管理
 
 - 初回起動時に `LUNA_HOME` 配下の初期ディレクトリ構造とデフォルト設定ファイルを生成する。
@@ -237,16 +235,16 @@ STOPPED ── spawn/initialize ──► READY
 5. Codex app-server の起動・初期化
 6. Discordへの接続ログイン
 7. 過去のアーカイブ済みスレッドのクリーンアップ
-8. Gateway受信、ハートビート、日次整理、cron監視の開始
+8. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
 
 ### 終了 (Shutdown)
 
 1. SIGINT / SIGTERM を受信
-2. Gatewayからの新規メッセージ受信および新規タイマー発火を停止
+2. Gatewayからの新規メッセージ、HTTPイベントの受付および新規タイマー発火を停止
 3. 受信済みのキューおよび実行中のターンチェーンがすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したスレッドをアーカイブ
-6. タイピングリース、ファイル監視、MCP、Discord接続、Codexプロセスを停止
+6. 待機中HTTPリクエストの完了を確認し、HTTPサーバー、タイピングリース、ファイル監視、MCP、Discord接続、Codexプロセスを停止
 7. ログをフラッシュして終了
 
 ## 13. テスト方針

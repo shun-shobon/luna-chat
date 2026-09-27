@@ -75,6 +75,10 @@ vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOrig
   createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
+vi.mock("../modules/http/adapters/http-event-server", () => ({
+  startHttpEventServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3000 })),
+}));
+
 vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
   ChokidarScheduleWatcher: class {
     async start(): Promise<void> {}

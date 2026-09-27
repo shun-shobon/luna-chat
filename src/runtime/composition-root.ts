@@ -48,6 +48,14 @@ import { createEffectRegistry } from "../modules/effect/application/effect-regis
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
 import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
 import { EventExecutor } from "../modules/event/application/event-executor";
+import {
+  startHttpEventServer,
+  type HttpEventServerHandle,
+} from "../modules/http/adapters/http-event-server";
+import { createHttpResponseEffectProvider } from "../modules/http/adapters/http-response-effect-provider";
+import { HttpEventService } from "../modules/http/application/http-event-service";
+import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
+import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
@@ -86,14 +94,17 @@ export async function startLunaApplication(
     createId: randomUUID,
     now: () => new Date(),
   });
+  const httpResponses = new HttpResponseRegistry();
   const effectRegistry = createEffectRegistry([
     createDiscordEffectProvider(actionAdapter),
     createDiscordDelegationEffectProvider(delegation),
     createWaitEffectProvider(),
+    createHttpResponseEffectProvider(httpResponses),
   ]);
   const effectOutput = createEffectOutputContract(effectRegistry);
   const effects = createEffectBatchExecutor(effectRegistry, logger);
   const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
+  const discordHistory = new DiscordConversationHistory(readAdapter);
   const mcp = await startDiscordMcpServer({
     actions: actionAdapter,
     onError: (error) => logger.log("error", "discord.mcp_transport_failed", {}, { error }),
@@ -136,6 +147,8 @@ export async function startLunaApplication(
   });
 
   let automation: AutomationService | undefined;
+  let httpService: HttpEventService | undefined;
+  let httpServer: HttpEventServerHandle | undefined;
   let gateway: DiscordGatewayAdapter | undefined;
   let commands: DiscordCommandAdapter | undefined;
   let shutdownPromise: Promise<void> | undefined;
@@ -144,6 +157,9 @@ export async function startLunaApplication(
       runCleanup(() => gateway?.stop()),
       runCleanup(() => commands?.stop()),
       runCleanup(async () => await automation?.stopIntake()),
+      runCleanup(() => httpService?.stopIntake()),
+      runCleanup(() => httpService?.failPending()),
+      runCleanup(async () => await httpServer?.close()),
       runCleanup(() => typing.releaseAll()),
       client.destroy(),
       supervisor.close(),
@@ -175,7 +191,15 @@ export async function startLunaApplication(
         createThreadInput,
         effectOutput,
         effects,
-        history: new DiscordConversationHistory(readAdapter),
+        history: {
+          fetchBefore: async (session, beforeEvent, limit) => {
+            if (session.source === HTTP_EVENT_SOURCE) return [];
+            return await discordHistory.fetchBefore(session, beforeEvent, limit);
+          },
+        },
+        onBatchSettled: (eventIds, succeeded) => {
+          for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
+        },
         onError: (error, context) => {
           logger.log(
             "error",
@@ -226,6 +250,11 @@ export async function startLunaApplication(
       workspaceDir: workspace.workspaceDir,
     });
     const executor = new EventExecutor({ agent: eventAgent, logger });
+    httpService = new HttpEventService({
+      conversation,
+      executor,
+      responses: httpResponses,
+    });
     const scheduleTimer = new CronScheduleTimer();
     automation = new AutomationService({
       heartbeat: new HeartbeatController({
@@ -293,12 +322,20 @@ export async function startLunaApplication(
     commands = commandAdapter;
     gateway = new DiscordGatewayAdapter(createDiscordGatewayEventClient(client), gatewayController);
     gateway.start();
+    httpServer = await startHttpEventServer({
+      hostname: environment.httpHost,
+      port: environment.httpPort,
+      service: httpService,
+      onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
+    });
     options.startupSignal?.throwIfAborted();
     logger.log("info", "application.started");
     const runningAutomation = automation;
     const runningConversation = conversation;
     const runningGateway = gateway;
     const runningCommands = commands;
+    const runningHttpService = httpService;
+    const runningHttpServer = httpServer;
     let fatalShutdownRequested = false;
 
     const application = {
@@ -316,6 +353,8 @@ export async function startLunaApplication(
                 runningCommands.stop();
               },
             },
+            http: runningHttpService,
+            httpClose: () => runningHttpServer.close(),
             logger,
             mcpClose: () => mcp.close(),
             supervisorClose: () => supervisor.close(),
@@ -337,6 +376,9 @@ export async function startLunaApplication(
       runCleanup(() => gateway?.stop()),
       runCleanup(() => commands?.stop()),
       runCleanup(async () => await automation?.stopIntake()),
+      runCleanup(() => httpService?.stopIntake()),
+      runCleanup(() => httpService?.failPending()),
+      runCleanup(async () => await httpServer?.close()),
       runCleanup(() => typing.releaseAll()),
       client.destroy(),
       supervisor.close(),
@@ -352,6 +394,8 @@ export async function shutdownApplication(input: {
   clientDestroy(): Promise<void>;
   conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
   gateway: Pick<DiscordGatewayAdapter, "stop">;
+  http: Pick<HttpEventService, "stopIntake" | "drain" | "failPending">;
+  httpClose(): Promise<void>;
   logger: Pick<JsonLinesLogger, "flush" | "log">;
   mcpClose(): Promise<void>;
   supervisorClose(): Promise<void>;
@@ -364,6 +408,7 @@ export async function shutdownApplication(input: {
     [
       runCleanup(() => input.gateway.stop()),
       runCleanup(() => input.conversation.stopIntake()),
+      runCleanup(() => input.http.stopIntake()),
       input.automation.stopIntake(),
     ],
     failures,
@@ -372,11 +417,14 @@ export async function shutdownApplication(input: {
     [
       input.isFatal ? input.conversation.abort() : input.conversation.drain(),
       input.automation.drain(),
+      input.http.drain(),
     ],
     failures,
   );
   await settleCleanup(
     [
+      runCleanup(() => input.http.failPending()),
+      input.httpClose(),
       runCleanup(() => input.typingRelease()),
       input.mcpClose(),
       input.clientDestroy(),
