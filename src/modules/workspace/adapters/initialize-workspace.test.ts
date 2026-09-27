@@ -44,6 +44,12 @@ describe("workspace initializer adapter", () => {
     await expect(readFile(resolve(lunaHome, "workspace", "HEARTBEAT.md"), "utf8")).resolves.toBe(
       "heartbeat template",
     );
+    await expect(
+      readFile(resolve(lunaHome, "workspace", ".agents/skills/cron/SKILL.md"), "utf8"),
+    ).resolves.toBe("cron skill template");
+    await expect(
+      readFile(resolve(lunaHome, "workspace", ".agents/skills/heartbeat/SKILL.md"), "utf8"),
+    ).resolves.toBe("heartbeat skill template");
     await expect(readFile(resolve(lunaHome, "workspace", "cron.toml"), "utf8")).resolves.toBe(
       "jobs = []\n",
     );
@@ -56,10 +62,15 @@ describe("workspace initializer adapter", () => {
     const workspaceDir = resolve(lunaHome, "workspace");
     await mkdir(workspaceDir, { recursive: true });
     await writeFile(resolve(workspaceDir, "LUNA.md"), "custom luna");
+    await mkdir(resolve(workspaceDir, ".agents/skills/cron"), { recursive: true });
+    await writeFile(resolve(workspaceDir, ".agents/skills/cron/SKILL.md"), "custom cron skill");
 
     await initializeWorkspace({ lunaHome, templatesDir });
 
     await expect(readFile(resolve(workspaceDir, "LUNA.md"), "utf8")).resolves.toBe("custom luna");
+    await expect(
+      readFile(resolve(workspaceDir, ".agents/skills/cron/SKILL.md"), "utf8"),
+    ).resolves.toBe("custom cron skill");
   });
 
   it("初期文書がすべて存在すればtemplate directoryを要求しない", async () => {
@@ -71,6 +82,15 @@ describe("workspace initializer adapter", () => {
       writeFile(resolve(workspaceDir, "LUNA.md"), "custom luna"),
       writeFile(resolve(workspaceDir, "MEMORY.md"), "custom memory"),
       writeFile(resolve(workspaceDir, "HEARTBEAT.md"), "custom heartbeat"),
+    ]);
+    await mkdir(resolve(workspaceDir, ".agents/skills/cron"), { recursive: true });
+    await mkdir(resolve(workspaceDir, ".agents/skills/heartbeat"), { recursive: true });
+    await Promise.all([
+      writeFile(resolve(workspaceDir, ".agents/skills/cron/SKILL.md"), "custom cron skill"),
+      writeFile(
+        resolve(workspaceDir, ".agents/skills/heartbeat/SKILL.md"),
+        "custom heartbeat skill",
+      ),
     ]);
 
     await expect(
@@ -121,15 +141,32 @@ describe("workspace initializer adapter", () => {
       initializeWorkspace({ lunaHome: resolve(root, "home"), templatesDir }),
     ).rejects.toThrow("failed to initialize");
   });
+
+  it("必要な SKILL.md がなければ起動に失敗する", async () => {
+    const root = await createTemporaryDirectory();
+    const templatesDir = await createTemplates(root);
+    await rm(resolve(templatesDir, ".agents/skills/cron/SKILL.md"));
+
+    await expect(
+      initializeWorkspace({ lunaHome: resolve(root, "home"), templatesDir }),
+    ).rejects.toThrow("failed to initialize .agents/skills/cron/SKILL.md");
+  });
 });
 
 async function createTemplates(root: string): Promise<string> {
   const templatesDir = resolve(root, "templates");
   await mkdir(templatesDir);
+  await mkdir(resolve(templatesDir, ".agents/skills/cron"), { recursive: true });
+  await mkdir(resolve(templatesDir, ".agents/skills/heartbeat"), { recursive: true });
   await Promise.all([
     writeFile(resolve(templatesDir, "LUNA.md"), "luna template"),
     writeFile(resolve(templatesDir, "MEMORY.md"), "memory template"),
     writeFile(resolve(templatesDir, "HEARTBEAT.md"), "heartbeat template"),
+    writeFile(resolve(templatesDir, ".agents/skills/cron/SKILL.md"), "cron skill template"),
+    writeFile(
+      resolve(templatesDir, ".agents/skills/heartbeat/SKILL.md"),
+      "heartbeat skill template",
+    ),
   ]);
   return templatesDir;
 }

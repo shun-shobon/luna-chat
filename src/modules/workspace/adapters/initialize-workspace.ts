@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
-import { access, copyFile, mkdir } from "node:fs/promises";
+import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { getAsset, isSea } from "node:sea";
 
 import type { WorkspaceConfig } from "../domain/workspace-config";
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
@@ -9,7 +10,13 @@ import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 import { createWorkspaceConfigFile, readWorkspaceConfig } from "./config-toml";
 import { createWorkspaceScheduleFile, readWorkspaceSchedule } from "./schedule-toml";
 
-const INITIAL_INSTRUCTION_FILES = ["LUNA.md", "MEMORY.md", "HEARTBEAT.md"] as const;
+const INITIAL_WORKSPACE_FILES = [
+  "LUNA.md",
+  "MEMORY.md",
+  "HEARTBEAT.md",
+  ".agents/skills/cron/SKILL.md",
+  ".agents/skills/heartbeat/SKILL.md",
+] as const;
 
 type InitializedWorkspace = {
   codexHomeDir: string;
@@ -37,7 +44,12 @@ export async function initializeWorkspace(
   const lunaHomeDir = resolveLunaHome(input.lunaHome);
   const workspaceDir = resolve(lunaHomeDir, "workspace");
   const codexHomeDir = resolve(lunaHomeDir, "codex");
-  const templatesDir = resolve(input.templatesDir ?? resolve(process.cwd(), "templates"));
+  const templatesDir =
+    input.templatesDir === undefined
+      ? isSea()
+        ? undefined
+        : resolve(process.cwd(), "templates")
+      : resolve(input.templatesDir);
   const configPath = resolve(lunaHomeDir, "config.toml");
   const cronPath = resolve(workspaceDir, "cron.toml");
 
@@ -51,7 +63,7 @@ export async function initializeWorkspace(
       await createWorkspaceConfigFile(configPath);
     });
     await Promise.all(
-      INITIAL_INSTRUCTION_FILES.map(async (fileName) => {
+      INITIAL_WORKSPACE_FILES.map(async (fileName) => {
         await copyTemplateIfMissing(templatesDir, workspaceDir, fileName);
       }),
     );
@@ -94,12 +106,12 @@ function resolveLunaHome(rawLunaHome: string | undefined): string {
 }
 
 async function copyTemplateIfMissing(
-  templatesDir: string,
+  templatesDir: string | undefined,
   workspaceDir: string,
-  fileName: (typeof INITIAL_INSTRUCTION_FILES)[number],
+  fileName: (typeof INITIAL_WORKSPACE_FILES)[number],
 ): Promise<void> {
-  const sourcePath = resolve(templatesDir, fileName);
   const destinationPath = resolve(workspaceDir, fileName);
+  await mkdir(dirname(destinationPath), { recursive: true });
   try {
     await access(destinationPath);
     return;
@@ -107,7 +119,11 @@ async function copyTemplateIfMissing(
     // The destination is missing or inaccessible; copyFile below reports the actionable cause.
   }
   try {
-    await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL);
+    if (templatesDir === undefined) {
+      await writeFile(destinationPath, getAsset(`templates/${fileName}`, "utf8"), { flag: "wx" });
+    } else {
+      await copyFile(resolve(templatesDir, fileName), destinationPath, constants.COPYFILE_EXCL);
+    }
   } catch (error: unknown) {
     if (hasNodeErrorCode(error, "EEXIST")) {
       return;
