@@ -91,3 +91,14 @@ jobs:
 
       - name: Run | Test
         run: pnpm run test
+
+  status-check:
+    needs: [format, lint, knip, typecheck, test]
+    if: ${{ always() }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Verify | All CI jobs succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: jq -e 'all(.[]; . == "success")' <<< "$RESULTS"
