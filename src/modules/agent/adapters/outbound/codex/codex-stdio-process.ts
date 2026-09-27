@@ -1,8 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { isAbsolute } from "node:path";
 import * as readline from "node:readline";
 
-import { createCodexChildEnvironment, resolveCodexExecutable } from "./codex-executable";
+import { createCodexChildEnvironment } from "./codex-child-environment";
 
 export interface CodexLineTransport {
   close(): Promise<void>;
@@ -14,7 +13,6 @@ export interface CodexLineTransport {
 export type StartCodexStdioProcessOptions = {
   codexHomeDir: string;
   cwd: string;
-  executablePath?: string;
   parentEnvironment?: NodeJS.ProcessEnv;
 };
 
@@ -26,11 +24,7 @@ class CodexProcessError extends Error {
 }
 
 export function startCodexStdioProcess(options: StartCodexStdioProcessOptions): CodexLineTransport {
-  const executablePath = options.executablePath ?? resolveCodexExecutable();
-  if (!isAbsolute(executablePath)) {
-    throw new Error("Codex executable path must be absolute.");
-  }
-  const child = spawn(executablePath, ["app-server", "--listen", "stdio://"], {
+  const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
     cwd: options.cwd,
     env: createCodexChildEnvironment(
       options.parentEnvironment ?? process.env,

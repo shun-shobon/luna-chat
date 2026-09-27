@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +31,6 @@ const fakes = vi.hoisted(() => {
     emit(event: string, payload: unknown) {
       for (const listener of listeners.get(event) ?? []) listener(payload);
     },
-    executablePath: "",
     lunaHome: "",
     workspaceDir: "",
   };
@@ -67,13 +66,6 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
     schedule: { jobs: [] },
     workspaceDir: fakes.workspaceDir,
   })),
-}));
-
-vi.mock("../modules/agent/adapters/outbound/codex/codex-executable", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("../modules/agent/adapters/outbound/codex/codex-executable")
-  >()),
-  resolveCodexExecutable: vi.fn(() => fakes.executablePath),
 }));
 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
@@ -121,20 +113,23 @@ describe("composition root child integration", () => {
     fakes.lunaHome = join(root, "home");
     fakes.workspaceDir = join(fakes.lunaHome, "workspace");
     const rpcLogPath = join(root, "rpc.log");
-    fakes.executablePath = join(root, "fake-codex");
+    const fakeCodexPath = join(root, "codex");
     await mkdir(fakes.workspaceDir, { recursive: true });
     await Promise.all([
       writeFile(join(fakes.workspaceDir, "LUNA.md"), "Luna"),
       writeFile(join(fakes.workspaceDir, "MEMORY.md"), "Memory"),
-      writeFile(fakes.executablePath, FAKE_CODEX_SCRIPT),
+      writeFile(fakeCodexPath, FAKE_CODEX_SCRIPT),
     ]);
-    await chmod(fakes.executablePath, 0o755);
+    await chmod(fakeCodexPath, 0o755);
     process.env = {
       ...originalEnvironment,
       DISCORD_BOT_TOKEN: "discord-token",
       FAKE_CODEX_LOG: rpcLogPath,
       LOG_LEVEL: "error",
       LUNA_HOME: fakes.lunaHome,
+      PATH: [root, dirname(process.execPath), originalEnvironment["PATH"]]
+        .filter((path) => path !== undefined)
+        .join(delimiter),
     };
 
     const application = await startLunaApplication();
