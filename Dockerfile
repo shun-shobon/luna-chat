@@ -14,15 +14,22 @@ RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
 COPY src ./src
+COPY scripts ./scripts
+COPY templates ./templates
 COPY tsconfig.json tsdown.config.ts ./
 RUN pnpm run gen
 RUN pnpm run build
+RUN mkdir -p /app/codex-runtime/node_modules/@openai /app/codex-runtime/node_modules/.bin && \
+    cp -LR /app/node_modules/@openai/codex /app/codex-runtime/node_modules/@openai/codex && \
+    cp -LR /app/node_modules/.pnpm/node_modules/@openai/codex-linux-$(node -p 'process.arch') \
+      /app/codex-runtime/node_modules/@openai/codex-linux-$(node -p 'process.arch') && \
+    ln -s ../@openai/codex/bin/codex.js /app/codex-runtime/node_modules/.bin/codex
 
 
 FROM node:24.21.0-trixie AS runtime
 
 ENV NODE_ENV=production
-ENV PATH=/app/dist/node_modules/.bin:$PATH
+ENV PATH=/app/codex-runtime/node_modules/.bin:$PATH
 ENV LUNA_HOME=/home/node/.luna
 
 WORKDIR /app
@@ -44,14 +51,10 @@ RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node && \
     mkdir -p /home/node/.luna && \
     chown node:node /home/node/.luna
 
-COPY --from=build /app/dist ./dist
-COPY package.json ./
-COPY templates ./templates
-
-RUN mkdir -p /app/dist/node_modules/.bin && \
-    ln -s ../@openai/codex/bin/codex.js /app/dist/node_modules/.bin/codex
+COPY --from=build /app/dist/luna-chat ./dist/luna-chat
+COPY --from=build /app/codex-runtime ./codex-runtime
 
 USER node
 
 ENTRYPOINT ["tini", "--"]
-CMD ["node", "--enable-source-maps", "./dist/index.mjs"]
+CMD ["./dist/luna-chat"]

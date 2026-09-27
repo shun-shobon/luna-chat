@@ -1,13 +1,9 @@
-import { externals } from "nf3/plugin";
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
+  deps: { alwaysBundle: [/.*/], onlyBundle: false },
   entry: ["./src/index.ts"],
+  format: "cjs",
   minify: true,
-  plugins: [
-    externals({
-      traceInclude: ["@openai/codex/bin/codex.js"],
-    }),
-  ],
-  sourcemap: true,
+  outDir: "dist/sea",
 });

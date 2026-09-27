@@ -27,18 +27,25 @@ function handleSignal(): void {
 process.once("SIGINT", handleSignal);
 process.once("SIGTERM", handleSignal);
 
-application = await startLunaApplication({ startupSignal: startupAbortController.signal }).catch(
-  (error: unknown) => {
-    if (stopRequested && startupAbortController.signal.aborted) return undefined;
-    throw error;
-  },
-);
-if (application !== undefined && stopRequested) {
-  await stop(0);
-} else if (application !== undefined) {
-  void application.fatal
-    .then(async () => await stop(1, true))
-    .catch(() => {
-      process.exitCode = 1;
-    });
+async function start(): Promise<void> {
+  application = await startLunaApplication({ startupSignal: startupAbortController.signal }).catch(
+    (error: unknown) => {
+      if (stopRequested && startupAbortController.signal.aborted) return undefined;
+      throw error;
+    },
+  );
+  if (application !== undefined && stopRequested) {
+    await stop(0);
+  } else if (application !== undefined) {
+    void application.fatal
+      .then(async () => await stop(1, true))
+      .catch(() => {
+        process.exitCode = 1;
+      });
+  }
 }
+
+void start().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
