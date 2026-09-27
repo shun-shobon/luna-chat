@@ -183,11 +183,19 @@ CI gateはformat、lint、knip、typecheck、testです。local実装完了条�
 
 ## Release
 
-`vX.Y.Z`形式のtagをpushするとdraft Releaseを作成し、GHCRへversion tagのDocker imageを配置してmacOS/Linuxのamd64・arm64向けSEAをbuildします。SEAはRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。全buildが成功すると、GHCRの`latest`を更新し、draft Releaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。リリース対象のcommitをmainへ反映した後でtagを作成します。
+`vX.Y.Z`形式のtagをpushするとdraft Releaseを作成し、GHCRへversion tagのDocker imageを配置してmacOS/Linuxのamd64・arm64向けSEAをbuildします。SEAはRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。Docker imageと各SEA assetのbuild provenanceをGitHub Artifact Attestationsへ登録します。全buildとattestationが成功すると、GHCRの`latest`を更新し、draft Releaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。リリース対象のcommitをmainへ反映した後でtagを作成します。
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
+```
+
+ダウンロードしたSEA assetとGHCR imageのbuild provenanceは、GitHub CLIで検証できます。
+
+```sh
+gh attestation verify luna-chat-macos-arm64.tar.gz -R shun-shobon/luna-chat
+docker login ghcr.io
+gh attestation verify oci://ghcr.io/shun-shobon/luna-chat:v0.1.0 -R shun-shobon/luna-chat
 ```
 
 ## Documents

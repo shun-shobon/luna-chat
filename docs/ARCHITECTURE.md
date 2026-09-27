@@ -437,7 +437,7 @@ global coverage thresholdは設けない。
 | composition integration | fake Discord Gateway/APIとfake app-server child processでstartupからshutdownまで   |
 | manual E2E              | 実Discordと実Codex。READMEの手順を利用者が実行                                     |
 
-Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。`pnpm run build`はLuna本体のJavaScript依存をCommonJS bundleへ含め、Node.js実行ファイルと初期workspace templateをpostjectで結合して`dist/luna-chat`を生成する。macOSでは注入後に再署名する。Docker runtime imageはSEA実行ファイルと固定版Codex packageを配置する。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。通常CIにbuild jobは含めない。tag pushのpublish workflowはdraft Release作成後、amd64/arm64のDocker image buildとLinux/macOS各architecture上のSEA buildを並行実行する。SEAは実行権限を保持するtar.gzにしてdraft Releaseへuploadする。全job成功を条件にDockerの`latest`をversion tagへ向け、draftを公開する。workflow再実行時は既存draftを使い、実行したSEA jobのassetを再uploadする。
+Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。`pnpm run build`はLuna本体のJavaScript依存をCommonJS bundleへ含め、Node.js実行ファイルと初期workspace templateをpostjectで結合して`dist/luna-chat`を生成する。macOSでは注入後に再署名する。Docker runtime imageはSEA実行ファイルと固定版Codex packageを配置する。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。通常CIにbuild jobは含めない。tag pushのpublish workflowはdraft Release作成後、amd64/arm64のDocker image buildとLinux/macOS各architecture上のSEA buildを並行実行する。Docker imageはbuild-push-actionが返すdigestに対し、SEAは実行権限を保持するtar.gzに対して、actions/attestでbuild provenanceを発行する。DockerのattestationはGHCRにも配置する。SEAはattestation成功後にdraft Releaseへuploadする。全job成功を条件にDockerの`latest`をversion tagへ向け、draftを公開する。workflow再実行時は既存draftを使い、実行したSEA jobのassetを再uploadする。
 
 ## 17. Composition
 
