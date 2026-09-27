@@ -179,7 +179,7 @@ pnpm run build
 docker build -t luna-chat:local .
 ```
 
-CI gateはformat、lint、knip、typecheck、testです。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。
+CI gateはformat、lint、knip、typecheck、testです。これらの結果を集約する`status-check`をmainの必須チェックにします。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。
 
 ## Release
 
