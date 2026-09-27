@@ -249,6 +249,8 @@ message edit/delete、thread作成、role操作、embed、component、pollは対
 
 `open_conversation`はtargetをGuild channel、thread、DMのscopeへ解決し、そのscopeの会話sessionへ委譲Eventを渡す。sessionがなければ一時sessionを作り、既存sessionがあればそのsessionの入力として扱う。Discordへは投稿せず、投稿は委譲先sessionが行う。成功値は解決したscopeである。送信できないchannel、`allow_dm = false`でのDM、shutdownによる受付停止中はEffect failureとする。呼出元threadと同じscopeへの委譲も禁止しない。
 
+capability instructionsは、現在の会話scope以外への投稿と返信を常に`open_conversation`で委譲し、一方的な通知も直接送らないよう指示する。現在の会話を持たないheartbeat、schedule、日次整理の投稿はすべて委譲になる。委譲後は同じscopeへ自分で投稿しない。reactionとtypingは委譲対象にしない。この規則はinstructionsだけで担い、runtimeは直接送信を拒否しない。
+
 Discord文字数上限は送信前に検証する。超過を自動分割しない。返信先が参照不能でも通常投稿へ変換しない。いずれもEffect failureとしてfollow-upへ渡す。
 
 ### 10.3 実行とfollow-up
