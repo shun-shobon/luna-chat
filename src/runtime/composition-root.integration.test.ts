@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fakes = vi.hoisted(() => {
   const client = {
+    application: { commands: { create: vi.fn(async () => undefined) } },
     destroy: vi.fn(async () => undefined),
     login: vi.fn(async () => "token"),
     off: vi.fn(),
@@ -59,6 +60,7 @@ vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => 
       deleteThread: vi.fn(async () => undefined),
       interruptTurn: vi.fn(async () => undefined),
       listThreads: vi.fn(async () => ({ data: [] })),
+      listModels: vi.fn(async () => []),
       openThread: vi.fn(async () => "thread-1"),
       startTurn: vi.fn(),
       steerTurn: vi.fn(async () => undefined),
@@ -131,7 +133,8 @@ describe("composition root integration", () => {
     const application = await startLunaApplication();
 
     expect(fakes.client.login).toHaveBeenCalledWith("discord-token");
-    expect(fakes.client.on).toHaveBeenCalledTimes(2);
+    expect(fakes.client.on).toHaveBeenCalledTimes(3);
+    expect(fakes.client.application.commands.create).toHaveBeenCalledOnce();
     expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
     expect(registry).toHaveBeenCalledOnce();
     expect(registry.mock.calls[0]?.[0][0]?.definitions).toHaveLength(6);
@@ -147,7 +150,7 @@ describe("composition root integration", () => {
 
     await application.shutdown();
 
-    expect(fakes.client.off).toHaveBeenCalledTimes(2);
+    expect(fakes.client.off).toHaveBeenCalledTimes(3);
     expect(fakes.mcpClose).toHaveBeenCalledOnce();
     expect(fakes.client.destroy).toHaveBeenCalledOnce();
     expect(fakes.managedClose).toHaveBeenCalledOnce();

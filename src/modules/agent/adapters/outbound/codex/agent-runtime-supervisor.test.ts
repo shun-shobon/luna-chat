@@ -11,6 +11,7 @@ function createPort(): AgentRuntimePort {
     deleteThread: async () => undefined,
     interruptTurn: async () => undefined,
     listThreads: async () => ({ data: [] }),
+    listModels: async () => [],
     openThread: async () => "thread-1",
     startTurn: async () => {
       throw new Error("unused");

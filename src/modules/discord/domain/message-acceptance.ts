@@ -18,6 +18,19 @@ export function shouldAcceptMessage(input: MessageAcceptanceInput): boolean {
   return input.sessionExists || input.mentionsLuna;
 }
 
+export function shouldAcceptCommand(
+  input: Pick<
+    MessageAcceptanceInput,
+    "scope" | "allowDm" | "allowedChannelIds" | "lunaIsThreadMember" | "sessionExists"
+  >,
+): boolean {
+  if (input.scope.kind === "dm") return input.allowDm;
+  return (
+    isPermanentScope(input.scope, input.allowedChannelIds, input.lunaIsThreadMember) ||
+    input.sessionExists
+  );
+}
+
 function isPermanentScope(
   scope: Exclude<ConversationScope, { kind: "dm" }>,
   allowedChannelIds: ReadonlySet<string>,

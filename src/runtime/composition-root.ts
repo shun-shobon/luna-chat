@@ -15,6 +15,10 @@ import { ThreadRetentionCleaner } from "../modules/automation/application/thread
 import type { AutomationLogPort } from "../modules/automation/ports/automation-log-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
+import {
+  createDiscordCommandClient,
+  DiscordCommandAdapter,
+} from "../modules/discord/adapters/discord-command-adapter";
 import { DiscordConversationController } from "../modules/discord/adapters/discord-conversation-controller";
 import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
 import { createDiscordEffectProvider } from "../modules/discord/adapters/discord-effect-provider";
@@ -111,10 +115,12 @@ export async function startLunaApplication(
 
   let automation: AutomationService | undefined;
   let gateway: DiscordGatewayAdapter | undefined;
+  let commands: DiscordCommandAdapter | undefined;
   let shutdownPromise: Promise<void> | undefined;
   const abortStartup = () => {
     void Promise.allSettled([
       runCleanup(() => gateway?.stop()),
+      runCleanup(() => commands?.stop()),
       runCleanup(async () => await automation?.stopIntake()),
       runCleanup(() => typing.releaseAll()),
       client.destroy(),
@@ -252,6 +258,16 @@ export async function startLunaApplication(
         logger.log("error", "discord.gateway_event_failed", {}, { error, event });
       },
     });
+    const commandAdapter = new DiscordCommandAdapter(
+      createDiscordCommandClient(client),
+      conversation,
+      supervisor,
+      workspace.config.discord.allowDm,
+      workspace.config.discord.allowedChannelIds,
+      (error) => logger.log("error", "discord.command_failed", {}, { error }),
+    );
+    await commandAdapter.start();
+    commands = commandAdapter;
     gateway = new DiscordGatewayAdapter(createDiscordGatewayEventClient(client), gatewayController);
     gateway.start();
     options.startupSignal?.throwIfAborted();
@@ -259,6 +275,7 @@ export async function startLunaApplication(
     const runningAutomation = automation;
     const runningConversation = conversation;
     const runningGateway = gateway;
+    const runningCommands = commands;
     let fatalShutdownRequested = false;
 
     const application = {
@@ -270,7 +287,12 @@ export async function startLunaApplication(
             automation: runningAutomation,
             clientDestroy: async () => await client.destroy(),
             conversation: runningConversation,
-            gateway: runningGateway,
+            gateway: {
+              stop: () => {
+                runningGateway.stop();
+                runningCommands.stop();
+              },
+            },
             logger,
             mcpClose: () => mcp.close(),
             supervisorClose: () => supervisor.close(),
@@ -290,6 +312,7 @@ export async function startLunaApplication(
     options.startupSignal?.removeEventListener("abort", abortStartup);
     const cleanupResults = await Promise.allSettled([
       runCleanup(() => gateway?.stop()),
+      runCleanup(() => commands?.stop()),
       runCleanup(async () => await automation?.stopIntake()),
       runCleanup(() => typing.releaseAll()),
       client.destroy(),

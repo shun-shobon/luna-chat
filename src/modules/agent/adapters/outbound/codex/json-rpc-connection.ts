@@ -10,6 +10,7 @@ type SupportedClientRequest =
   | Extract<ClientRequest, { method: "thread/delete" }>
   | Extract<ClientRequest, { method: "thread/list" }>
   | Extract<ClientRequest, { method: "thread/start" }>
+  | Extract<ClientRequest, { method: "model/list" }>
   | Extract<ClientRequest, { method: "turn/interrupt" }>
   | Extract<ClientRequest, { method: "turn/start" }>
   | Extract<ClientRequest, { method: "turn/steer" }>;

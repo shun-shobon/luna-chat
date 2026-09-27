@@ -110,6 +110,15 @@ heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、
 
 入力添付は名前、URL、byte size、MIME type等だけを含め、runtimeは内容をdownloadしない。
 
+### 5.6 スラッシュコマンド
+
+起動時にGuildとBot DM向けのglobal `/luna`コマンドを登録する。通常の投稿を受理するscopeで使える。常設でないGuild channelまたはthreadでは、既存の一時sessionがある場合だけ使える。応答は実行者だけに見えるephemeral messageとする。コマンド自体を会話Eventや初回履歴に含めない。
+
+- `/luna model model:<モデル> effort:<推論強度>`は、Codex `model/list`の表示可能モデルと対応強度を検証してから、そのscopeのsessionへ両方を設定する。不正な組み合わせはsessionを変更せずエラーにする。モデルと強度はautocompleteで選べる。
+- sessionがないscopeで`/luna model`を使うと、Codex threadをまだ作らずにsessionを開始する。最初の投稿を受理したときにthreadを作る。投稿がなければ設定時点から`session_idle_ms`でsessionを閉じる。
+- 既存sessionの設定変更は次に開始するCodex turnから適用する。実行中のturnと、他scopeの会話・automationには適用しない。設定はsession内だけに保持し、archive、失敗、connection loss、process再起動後には引き継がない。
+- `/luna end`は同じscopeのsessionに終了を要求する。sessionがなければその旨を応答する。実行中のturn、Effect、失敗Effectのfollow-upは完了まで待ち、正常完了ならsession記憶保存が有効な場合に同じthreadで保存してからarchiveする。通常turn失敗時は既存規則どおり保存しない。終了要求後に受理した投稿と未開始queueはarchive後の新sessionへ渡す。設定だけで作ったsessionはthreadと記憶保存turnを作らず閉じる。
+
 ## 6. 会話session
 
 idle待機期間は全scopeで共通の`session_idle_ms`（既定30分）とする。Effectとfollow-upを含む通常turn chain全体が完了し、queueが空のidle状態になった時点から計測する。新しいDiscord投稿を受理したら待機timerを取り消し、次のchain全体が完了してqueueが空になってから再び期間全体を待つ。処理中はidle期限を設けない。
@@ -148,7 +157,7 @@ PATH上の`codex` app-server processを一つ起動し、全会話、heartbeat�
 
 Agent Runtimeは呼出側が指定したJSON文字列の`input`と`outputSchema`をCodexへ渡し、完了時にraw final textを返す。DiscordやEffectの型、最終出力のparseはAgent Runtimeの責務ではない。thread作成時は共通factoryがworkspace instructions、固定developer instructions、capability instructions、execution ownerごとのMCP設定を組み立てる。
 
-model、reasoning effort、Codex組込みtoolはrequestで指定せず、専用`CODEX_HOME`のCodex defaultを使う。Discord MCPだけを追加する。全threadは`ephemeral: false`とする。
+会話sessionにモデル設定があれば、全turnの`turn/start`へ`model`と`effort`を指定する。設定がない会話とautomationでは両方を省略し、専用`CODEX_HOME`のCodex defaultを使う。Codex組込みtoolはrequestで指定せず、Discord MCPだけを追加する。全threadは`ephemeral: false`とする。
 
 Codexの`request_user_input`機能は有効化せず、中継しない。予期せぬ利用者入力requestはprotocol errorとして該当turnを失敗させ、そのthreadをarchiveしてsessionを終了する。
 

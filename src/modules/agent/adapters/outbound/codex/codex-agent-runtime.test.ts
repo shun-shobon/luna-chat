@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AgentTurnRequest } from "../../../ports/outbound/agent-runtime-port";
 
@@ -63,6 +63,47 @@ function turnRequest(input: string): AgentTurnRequest {
 }
 
 describe("CodexAgentRuntime", () => {
+  it("model/listを全ページ取得する", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+    const listing = runtime.listModels();
+    transport.emit({
+      id: 2,
+      result: {
+        data: [
+          {
+            model: "gpt-6-sol",
+            displayName: "Sol",
+            hidden: false,
+            supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
+          },
+        ],
+        nextCursor: "next",
+      },
+    });
+    await vi.waitFor(() => expect(transport.writes).toHaveLength(4));
+    transport.emit({
+      id: 3,
+      result: {
+        data: [
+          {
+            model: "gpt-6-astra",
+            displayName: "Astra",
+            hidden: false,
+            supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    await expect(listing).resolves.toHaveLength(2);
+    expect(transport.writes).toContainEqual({
+      id: 3,
+      method: "model/list",
+      params: { includeHidden: false, cursor: "next" },
+    });
+  });
+
   it("生成型に存在する thread/delete を送信する", async () => {
     const transport = new FakeTransport();
     const runtime = await initializeRuntime(transport);
@@ -149,6 +190,34 @@ describe("CodexAgentRuntime", () => {
       outputText: '{"actions":[]}',
       status: "completed",
     });
+  });
+
+  it("turn/startへモデルと推論強度を同時に渡す", async () => {
+    const transport = new FakeTransport();
+    const runtime = await initializeRuntime(transport);
+    const starting = runtime.startTurn("thread-1", {
+      ...turnRequest("hello"),
+      model: "gpt-6-astra",
+      effort: "high",
+    });
+    transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+    const started = await starting;
+    expect(transport.writes).toContainEqual({
+      id: 2,
+      method: "turn/start",
+      params: {
+        input: [{ text: "hello", text_elements: [], type: "text" }],
+        outputSchema: turnRequest("hello").outputSchema,
+        threadId: "thread-1",
+        model: "gpt-6-astra",
+        effort: "high",
+      },
+    });
+    transport.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: { error: null, id: "turn-1", status: "completed" } },
+    });
+    await started.completion;
   });
 
   it("caller supplied output schema が JSON value でなければ turn/start を送信しない", async () => {

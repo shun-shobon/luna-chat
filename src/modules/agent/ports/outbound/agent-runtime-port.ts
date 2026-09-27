@@ -2,8 +2,16 @@ export type ThreadId = string;
 export type TurnId = string;
 
 export type AgentTurnRequest = Readonly<{
+  effort?: string;
   input: string;
+  model?: string;
   outputSchema: Record<string, unknown>;
+}>;
+
+export type AgentModel = Readonly<{
+  displayName: string;
+  model: string;
+  supportedReasoningEfforts: readonly string[];
 }>;
 
 export type AgentThreadSummary = {
@@ -38,6 +46,7 @@ export type AgentThreadInput = Readonly<{
 interface AgentThreadPort {
   archiveThread(threadId: ThreadId): Promise<void>;
   deleteThread(threadId: ThreadId): Promise<void>;
+  listModels(): Promise<readonly AgentModel[]>;
   listThreads(input?: { archived?: boolean; cursor?: string; limit?: number }): Promise<{
     data: AgentThreadSummary[];
     nextCursor?: string;

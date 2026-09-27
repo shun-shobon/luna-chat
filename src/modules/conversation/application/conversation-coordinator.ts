@@ -26,6 +26,8 @@ type ConversationCoordinatorOptions = Readonly<{
   typingIdleMs: number;
 }>;
 
+export type ConversationModelSettings = Readonly<{ model: string; effort: string }>;
+
 type ConversationErrorHandler = (
   error: unknown,
   context: Readonly<{ operation: string; session: ConversationSession }>,
@@ -73,6 +75,26 @@ export class ConversationCoordinator {
       this.#actors.set(key, actor);
     }
     actor.accept(input.event);
+  }
+
+  configure(session: ConversationSession, settings: ConversationModelSettings): boolean {
+    if (!this.#accepting) return false;
+    let actor = this.#actors.get(session.key);
+    if (actor === undefined) {
+      actor = new ConversationActor(session, this.dependencies, this.options, () => {
+        this.#actors.delete(session.key);
+      });
+      this.#actors.set(session.key, actor);
+    }
+    return actor.configure(settings);
+  }
+
+  endSession(sessionKey: string): boolean {
+    if (!this.#accepting) return false;
+    const actor = this.#actors.get(sessionKey);
+    if (actor === undefined || !actor.hasSession) return false;
+    actor.end();
+    return true;
   }
 
   typing(session: ConversationSession, participantId: string): void {
@@ -125,6 +147,8 @@ type Phase =
 type TurnPurpose = "conversation" | "session_memory";
 
 type Command =
+  | Readonly<{ kind: "configure"; settings: ConversationModelSettings }>
+  | Readonly<{ kind: "end" }>
   | Readonly<{ kind: "accept"; event: LunaEvent }>
   | Readonly<{ kind: "typing"; userId: string }>
   | Readonly<{ kind: "typing_idle"; userId: string; token: number }>
@@ -171,6 +195,9 @@ class ConversationActor {
   #shutdownRequested = false;
   #shutdownWaiters: Array<() => void> = [];
   #sessionStarted = false;
+  #endRequested = false;
+  #endPending = false;
+  #modelSettings: ConversationModelSettings | undefined;
 
   constructor(
     private readonly session: ConversationSession,
@@ -190,6 +217,25 @@ class ConversationActor {
   accept(event: LunaEvent): void {
     this.#sessionStarted = true;
     this.#post({ kind: "accept", event });
+  }
+
+  configure(settings: ConversationModelSettings): boolean {
+    if (
+      this.#phase === "archiving" ||
+      this.#phase === "closed" ||
+      this.#phase === "orphaned_effects" ||
+      this.#endPending ||
+      this.#turnPurpose === "session_memory"
+    )
+      return false;
+    this.#sessionStarted = true;
+    this.#post({ kind: "configure", settings });
+    return true;
+  }
+
+  end(): void {
+    this.#endPending = true;
+    this.#post({ kind: "end" });
   }
 
   get hasSession(): boolean {
@@ -232,6 +278,28 @@ class ConversationActor {
       return;
     }
     switch (command.kind) {
+      case "configure":
+        this.#modelSettings = command.settings;
+        if (
+          this.#phase === "collecting" &&
+          this.#threadId === undefined &&
+          this.#queue.length === 0
+        ) {
+          this.#phase = "idle";
+          this.#resetIdleTimer();
+        } else if (this.#phase === "idle") {
+          this.#resetIdleTimer();
+        }
+        return;
+      case "end":
+        this.#endRequested = true;
+        if (this.#phase === "idle") this.#preserveSessionMemory();
+        else if (this.#phase === "collecting") {
+          this.#debounceTimer?.cancel();
+          this.#debounceTimer = undefined;
+          this.#archive();
+        }
+        return;
       case "accept":
         this.#handleAccept(command.event);
         return;
@@ -302,8 +370,10 @@ class ConversationActor {
           turnId: command.turn.turnId,
         });
         if (this.#turnPurpose === "conversation") {
-          this.#steerQueue.push(...this.#queue);
-          this.#queue = [];
+          if (!this.#endRequested) {
+            this.#steerQueue.push(...this.#queue);
+            this.#queue = [];
+          }
         }
         this.#openingBatch = [];
         this.#kickSteer();
@@ -357,6 +427,9 @@ class ConversationActor {
         this.#executionOwnerId = undefined;
         this.#turnId = undefined;
         this.#turnPurpose = undefined;
+        this.#modelSettings = undefined;
+        this.#endRequested = false;
+        this.#endPending = false;
         this.dependencies.onEvent(
           "conversation.thread_archived",
           { session: this.session },
@@ -400,7 +473,11 @@ class ConversationActor {
   }
 
   #handleAccept(event: LunaEvent): void {
-    if (this.#turnPurpose === "session_memory" || this.#phase === "archiving") {
+    if (
+      this.#endRequested ||
+      this.#turnPurpose === "session_memory" ||
+      this.#phase === "archiving"
+    ) {
       this.#queue.push(event);
       return;
     }
@@ -509,7 +586,11 @@ class ConversationActor {
     this.#phase = "starting";
     this.#turnPurpose = purpose;
     void this.dependencies.agent
-      .startTurn(threadId, { input, outputSchema: this.dependencies.effectOutput.jsonSchema })
+      .startTurn(threadId, {
+        input,
+        outputSchema: this.dependencies.effectOutput.jsonSchema,
+        ...(this.#modelSettings === undefined ? {} : this.#modelSettings),
+      })
       .then(
         (turn) => this.#post({ kind: "turn_started", token, turn }),
         (error: unknown) =>
@@ -634,7 +715,7 @@ class ConversationActor {
       this.#archive();
       return;
     }
-    if (this.#shutdownRequested) {
+    if (this.#shutdownRequested || this.#endRequested) {
       this.#preserveSessionMemory();
       return;
     }
@@ -646,6 +727,14 @@ class ConversationActor {
   }
 
   #preserveSessionMemory(): void {
+    if (this.#threadId === undefined) {
+      this.#modelSettings = undefined;
+      this.#endRequested = false;
+      this.#endPending = false;
+      if (this.#queue.length > 0) this.#beginCollecting(true);
+      else this.#close();
+      return;
+    }
     if (!this.options.sessionMemory.enabled) {
       this.#archive();
       return;
@@ -684,6 +773,9 @@ class ConversationActor {
   #archive(): void {
     const threadId = this.#threadId;
     if (threadId === undefined) {
+      this.#modelSettings = undefined;
+      this.#endRequested = false;
+      this.#endPending = false;
       if (this.#queue.length > 0) this.#beginCollecting(true);
       else this.#close();
       return;
@@ -717,6 +809,9 @@ class ConversationActor {
     this.#executionOwnerId = undefined;
     this.#turnId = undefined;
     this.#turnPurpose = undefined;
+    this.#modelSettings = undefined;
+    this.#endRequested = false;
+    this.#endPending = false;
     this.#operationToken += 1;
     if (ownerId !== undefined) void this.#releaseEffects(ownerId);
     if (this.#queue.length > 0) this.#beginCollecting(true);

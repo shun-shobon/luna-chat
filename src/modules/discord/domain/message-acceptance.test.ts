@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldAcceptMessage } from "./message-acceptance";
+import { shouldAcceptCommand, shouldAcceptMessage } from "./message-acceptance";
 
 const base = {
   authorId: "100",
@@ -86,5 +86,19 @@ describe("shouldAcceptMessage", () => {
         scope: { kind: "guild_thread", guildId: "300", parentChannelId: "200", threadId: "201" },
       }),
     ).toBe(true);
+  });
+});
+
+describe("shouldAcceptCommand", () => {
+  it("設定外channelでは既存sessionがある場合だけ受理する", () => {
+    const scope = { kind: "guild_channel" as const, guildId: "300", channelId: "200" };
+    const input = {
+      scope,
+      allowDm: true,
+      allowedChannelIds: new Set<string>(),
+      lunaIsThreadMember: false,
+    };
+    expect(shouldAcceptCommand({ ...input, sessionExists: false })).toBe(false);
+    expect(shouldAcceptCommand({ ...input, sessionExists: true })).toBe(true);
   });
 });

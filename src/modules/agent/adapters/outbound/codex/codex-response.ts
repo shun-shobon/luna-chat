@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { AgentThreadSummary } from "../../../ports/outbound/agent-runtime-port";
+import type { AgentModel, AgentThreadSummary } from "../../../ports/outbound/agent-runtime-port";
 
 const nonEmptyStringSchema = z.string().min(1);
 const emptyResponseSchema = z.strictObject({});
@@ -17,6 +17,17 @@ const turnStartResponseSchema = z.looseObject({
   turn: z.looseObject({ id: nonEmptyStringSchema }),
 });
 const turnSteerResponseSchema = z.strictObject({ turnId: nonEmptyStringSchema });
+const modelListResponseSchema = z.looseObject({
+  data: z.array(
+    z.looseObject({
+      displayName: nonEmptyStringSchema,
+      hidden: z.boolean(),
+      model: nonEmptyStringSchema,
+      supportedReasoningEfforts: z.array(z.looseObject({ reasoningEffort: nonEmptyStringSchema })),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
 const threadListResponseSchema = z.looseObject({
   backwardsCursor: z.string().nullable(),
   data: z.array(
@@ -46,6 +57,25 @@ export function parseTurnId(value: unknown): string {
 
 export function parseSteeredTurnId(value: unknown): string {
   return turnSteerResponseSchema.parse(value).turnId;
+}
+
+export function parseModelList(value: unknown): {
+  data: AgentModel[];
+  nextCursor: string | null;
+} {
+  const response = modelListResponseSchema.parse(value);
+  return {
+    data: response.data
+      .filter((model) => !model.hidden)
+      .map((model) => ({
+        displayName: model.displayName,
+        model: model.model,
+        supportedReasoningEfforts: model.supportedReasoningEfforts.map(
+          (option) => option.reasoningEffort,
+        ),
+      })),
+    nextCursor: response.nextCursor,
+  };
 }
 
 export function parseThreadList(
