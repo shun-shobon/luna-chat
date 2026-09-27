@@ -28,18 +28,19 @@ Windows、公開CLI、systemd unit、launchd plist、HTTP health endpointは提�
 - Discord Bot token
 - Discord Gatewayのmessage content、Guild/DM message、typingに必要なintent
 - Codex認証を保存できる永続directory
-- native実行ではmise（shell activation済み）
+- build時にはmise（shell activation済み）
+- native実行ではPATH上のCodex executable
 - 日次整理をlocal commitへ残す場合はGit
 - Docker実行ではDocker EngineとCompose
 
-Codex executableはpnpmで固定した`@openai/codex`だけを使います。hostのPATHにある別versionへfallbackしません。
+LunaはPATH上の`codex`を起動します。開発時の型生成にはpnpmで固定した`@openai/codex`を使います。
 
-初回起動前に、Luna専用Codex homeへ認証します。nativeではdependency install後に次を実行し、browser flowを完了してください。
+初回起動前に、Luna専用Codex homeへ認証します。nativeでは次を実行し、browser flowを完了してください。
 
 ```sh
 mkdir -p "$HOME/.luna/codex"
-CODEX_HOME="$HOME/.luna/codex" ./node_modules/.bin/codex login
-CODEX_HOME="$HOME/.luna/codex" ./node_modules/.bin/codex login status
+CODEX_HOME="$HOME/.luna/codex" codex login
+CODEX_HOME="$HOME/.luna/codex" codex login status
 ```
 
 headlessなDocker hostではdevice authを使えます。Composeが`./data`を`/home/node`へmountすることを先に確認してください。
@@ -73,6 +74,9 @@ docker compose run --rm luna-chat codex login status
     ├── MEMORY.md          # 長期記憶
     ├── memory/            # idle終了したsessionの日次記憶。最初の保存時にagentが作成
     ├── HEARTBEAT.md       # heartbeat checklist
+    ├── .agents/skills/    # cronとheartbeatの運用手順
+    │   ├── cron/SKILL.md
+    │   └── heartbeat/SKILL.md
     └── cron.toml          # schedule job
 ```
 
@@ -108,10 +112,10 @@ mise install
 pnpm install --frozen-lockfile
 pnpm run gen
 pnpm run build
-DISCORD_BOT_TOKEN=... pnpm start
+DISCORD_BOT_TOKEN=... ./dist/luna-chat
 ```
 
-`pnpm start`と`node dist/index.mjs`が正式な実行入口です。process manager、log保存、rotation、restartは配置先で設定してください。
+`pnpm run build`は`dist/luna-chat`を作ります。初期workspace文書とcron・heartbeatのSKILL.mdは実行ファイルに含まれ、`templates/`の配置は不要です。実行時はPATH上のCodexが必要です。process manager、log保存、rotation、restartは配置先で設定してください。
 
 開発時は型生成後に次を使います。
 

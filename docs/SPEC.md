@@ -131,6 +131,8 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 - `LUNA.md`: 現行の人格・会話方針を一つへ整理した初期内容。Luna自身が編集可能。
 - `MEMORY.md`: `# MEMORY.md`だけを持つ初期長期記憶。Luna自身が編集可能。
 - `HEARTBEAT.md`: `# HEARTBEAT.md`だけを持つ初期checklist。
+- `.agents/skills/cron/SKILL.md`: schedule jobの登録手順。
+- `.agents/skills/heartbeat/SKILL.md`: heartbeat checklistの運用手順。
 
 `memory/`と日次記憶fileはstartup initializerで生成せず、session記憶保存または日次整理を行うagentが必要時に作る。日次記憶fileは日次整理後も同じpathに残す。
 
@@ -142,7 +144,7 @@ workspaceは`LUNA_HOME/workspace`に置く。初回起動時に不足する次�
 
 ## 8. Codex実行
 
-一つの固定版`@openai/codex` app-server processを全会話、heartbeat、schedule、日次整理で共有する。PATH上の別Codexへfallbackしない。
+PATH上の`codex` app-server processを一つ起動し、全会話、heartbeat、schedule、日次整理で共有する。実行可能な`codex`が見つからなければ起動に失敗する。
 
 Agent Runtimeは呼出側が指定したJSON文字列の`input`と`outputSchema`をCodexへ渡し、完了時にraw final textを返す。DiscordやEffectの型、最終出力のparseはAgent Runtimeの責務ではない。thread作成時は共通factoryがworkspace instructions、固定developer instructions、capability instructions、execution ownerごとのMCP設定を組み立てる。
 
@@ -378,4 +380,4 @@ logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先�
 
 native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
 
-受入れにはformat、lint、knip、typecheck、testとlocal Docker image buildの成功を要求する。配布用buildはruntimeで参照する外部依存だけを`dist/node_modules`へ配置し、Docker runtime imageへそのまま収容する。全体coverage率は要求せず、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testで固定する。prompt snapshotは固定developer instructionsと入力JSON組立だけに使う。実credentialによるlive E2EはREADMEの手順で利用者が行う。
+受入れにはformat、lint、knip、typecheck、testとlocal Docker image buildの成功を要求する。`pnpm run build`はLuna本体とJavaScript依存をまとめ、Node.js 24の実行ファイルへCommonJS bundleと初期workspace templateを埋め込んだ`dist/luna-chat`を生成する。Codexは別の実行可能ファイルとしてPATHから使う。全体coverage率は要求せず、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testで固定する。prompt snapshotは固定developer instructionsと入力JSON組立だけに使う。実credentialによるlive E2EはREADMEの手順で利用者が行う。

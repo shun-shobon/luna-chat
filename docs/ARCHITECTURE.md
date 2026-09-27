@@ -252,7 +252,7 @@ STOPPED ── spawn/initialize ──► READY
                                 FATAL
 ```
 
-child executableはpnpm dependencyの`@openai/codex`だけから絶対pathで解決する。child environmentは親をcopyし、`DISCORD_BOT_TOKEN`を削除し、`CODEX_HOME`を上書きする。
+child executableは`spawn("codex", ...)`で起動し、渡したenvironmentのPATHによるOSの探索に任せる。child environmentは親をcopyし、`DISCORD_BOT_TOKEN`を削除し、`CODEX_HOME`を上書きする。
 
 全RPC pending requestはrequest IDで管理し、共通timeoutを持つ。いずれか一件のtimeoutでもserver側だけ成功した未知状態を否定できないため、connection全体を破損とみなす。Lunaが開始してarchive処理を終えるまでのthread IDを管理中集合へ置き、そのthreadのturn notificationだけをthread IDとturn IDの両方でtrackerへroutingする。Codexが同じconnectionへ配信するsubagent等の管理外thread notificationはtrackerへ渡さない。管理中threadのtracker不在、ID欠落、不一致、decode不能なstdout行、未知responseは同じprocess異常とする。
 
@@ -311,7 +311,7 @@ MCP adapterはDiscord read/write application portをtoolごとに薄く公開す
 
 ## 10. Workspace adapters
 
-startup initializerは`LUNA_HOME`が絶対pathであることを確認し、home、workspace、codex directoryを作る。`config.toml`と`cron.toml`がなければ完全な既定内容を生成する。`memory/`はinitializerで作らない。directory作成、初期file生成、main config parse失敗はstartup failureである。
+startup initializerは`LUNA_HOME`が絶対pathであることを確認し、home、workspace、codex directoryを作る。`config.toml`と`cron.toml`がなければ完全な既定内容を生成する。初期workspace文書と`.agents/skills/`の二つのSKILL.mdはSEAでは埋め込みassetから、通常のNode.js実行では`templates/`から作る。`memory/`はinitializerで作らない。directory作成、初期file生成、main config parse失敗はstartup failureである。
 
 TOMLは`smol-toml`で`unknown`へparseし、strict Zod schemaで検証する。main configの`memory` sectionは必須とし、自動migrationしない。memory cronと利用者schedule cronは同じ5-field検証関数を使う。main configはstartup後に再読込しない。cron watcherは変更をdebounceして全fileを再検証し、成功時だけlast-valid snapshotを置換する。
 
@@ -437,7 +437,7 @@ global coverage thresholdは設けない。
 | composition integration | fake Discord Gateway/APIとfake app-server child processでstartupからshutdownまで   |
 | manual E2E              | 実Discordと実Codex。READMEの手順を利用者が実行                                     |
 
-Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。tsdown buildではnf3 pluginがruntimeで参照する外部依存を追跡し、`dist/node_modules`へ必要なfileだけを配置する。Docker runtime imageはこの追跡済み依存を使い、production依存全体を再installしない。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。build jobは通常CI gateへ加えず、image publishでamd64/arm64 buildを行う。
+Codex generated typeはGit追跡せず、固定版CLIからlocal bootstrapとCIで生成する。`pnpm run build`はLuna本体のJavaScript依存をCommonJS bundleへ含め、Node.js実行ファイルと初期workspace templateをpostjectで結合して`dist/luna-chat`を生成する。macOSでは注入後に再署名する。Docker runtime imageはSEA実行ファイルと固定版Codex packageを配置する。quality gateはformat、lint、knip、typecheck、testとし、実装完了時にlocal Docker buildも行う。build jobは通常CI gateへ加えず、image publishでamd64/arm64 buildを行う。
 
 ## 17. Composition
 
