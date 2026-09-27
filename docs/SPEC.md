@@ -38,7 +38,7 @@ Codexには次を明示する。
 - 会話session: scopeごとのqueue、active turn、Codex thread ID、idle状態を持つmemory上の状態。
 - `LunaEvent`: 入力源に依存しないEvent envelope。`id`、`type`、`source`、任意の`subject`、offset付き`occurredAt`、JSONの`data`を持つ。
 - `ConversationSession`: 会話を識別する`key`と`source`、provider固有のJSON `context`を持つ。
-- turn chain: 最初のCodex turnと、Effect失敗から生じる同一thread上のfollow-up turn列。
+- turn chain: 最初のCodex turnと、Effect失敗または待機完了から生じる同一thread上のfollow-up turn列。
 - Effect: providerが型、入力schema、実行、target記述を登録する外部作用。
 - 常設channel: `allowed_channel_ids` に含まれるGuild channel、または許可IDが親channelかthread自身に一致し、Discord.jsキャッシュ上でLuna自身がthread memberであるthread。mentionなしで常時受信する。
 - 一時session: 常設でないscopeにおいて、Lunaへのmentionまたは会話委譲で開始されたsession。
@@ -126,13 +126,13 @@ heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、
 
 ## 6. 会話session
 
-idle待機期間は全scopeで共通の`session_idle_ms`（既定30分）とする。Effectとfollow-upを含む通常turn chain全体が完了し、queueが空のidle状態になった時点から計測する。新しいDiscord投稿を受理したら待機timerを取り消し、次のchain全体が完了してqueueが空になってから再び期間全体を待つ。処理中はidle期限を設けない。
+idle待機期間は全scopeで共通の`session_idle_ms`（既定30分）とする。Effectとfollow-upを含む通常turn chain全体が完了し、queueが空のidle状態になった時点から計測する。`system.wait`の実行中も計測しない。新しいDiscord投稿を受理したら待機timerを取り消し、次のchain全体が完了してqueueが空になってから再び期間全体を待つ。処理中はidle期限を設けない。
 
 idle状態で期限が来た場合、またはgraceful shutdownでsignal前に受理したqueueとactive chainが正常完了した場合にsession記憶保存を実行する。
 
 session記憶保存が有効なら、保存開始日のprocess local dateを`YYYY-MM-DD`として同じCodex threadへ追加turnを送る。agentはthread全体から短い会話要約、嗜好、決定、未完了事項等を選び、既存内容を失わないsession単位のsectionとして`memory/YYYY-MM-DD.md`へ追記する。見出しと詳細構造はagentが決める。保存対象がなければfileを変更しない。`memory/`がなければagentが作る。
 
-保存turnとそのEffect failure follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
+保存turnとそのEffect follow-upは通常turnと同じ規則で実行する。保存中の新着投稿はsteerせずqueueへ残し、保存後に旧threadをarchiveしてから新threadへ渡す。保存turnの開始または完了が失敗した場合は再試行せず、error log後に旧threadをarchiveする。保存turnの完了期限を設けない。
 
 複数scopeのsession記憶保存は並行実行し、同じ日次記憶fileへの排他を設けない。通常turn失敗、connection loss、fatal abortではsession記憶保存を実行しない。
 
@@ -253,13 +253,17 @@ capability instructionsは、現在の会話scope以外への投稿と返信を�
 
 Discord文字数上限は送信前に検証する。超過を自動分割しない。返信先が参照不能でも通常投稿へ変換しない。いずれもEffect failureとしてfollow-upへ渡す。
 
-### 10.3 実行とfollow-up
+### 10.3 待機Effect
+
+`system.wait`は`{duration_seconds: number}`を受け取り、正の整数秒だけ待つ。完了時の成功resultは`target: null`、`value: {duration_seconds}`とする。待機と他Effectを同じbatchへ指定した場合は並行実行し、全件settle後に結果を渡す。待機はprocess内のtimerで実行し、再起動後に復元しない。
+
+### 10.4 実行とfollow-up
 
 Effect batchは全件を同時開始し、全件settleを待つ。一件の失敗で他Effectをcancelしない。結果は元の配列index、type、targetと対応づける。相互に依存するEffectの順序は保証しない。
 
-一件以上失敗した場合だけ、成功・失敗の全結果を`{source:"effect_results",results}`として同じCodex threadの新しいfollow-up turnへ渡す。follow-upのEffectにも同じ規則を適用する。全Effect成功または空Effectまで続け、回数、時間、同一error反復の上限を設けない。失敗をDiscordへ暗黙通知しない。
+一件以上失敗した場合、または`system.wait`を実行した場合、成功・失敗の全結果を`{source:"effect_results",results}`として同じCodex threadの新しいfollow-up turnへ渡す。follow-upのEffectにも同じ規則を適用する。待機を含まない全Effect成功または空Effectまで続け、回数、時間、同一error反復の上限を設けない。失敗をDiscordへ暗黙通知しない。
 
-Effectのsettle待機中にapp-server connectionを失った場合も、開始済みEffectはcancelしない。ただし同一threadが失われるため、失敗resultのfollow-upは行わずlogだけに記録し、sessionを終了する。未開始queueはapp-server再起動後に新threadで処理する。
+Effectのsettle待機中にapp-server connectionを失った場合も、開始済みEffectはcancelしない。ただし同一threadが失われるため、resultのfollow-upは行わずlogだけに記録し、sessionを終了する。未開始queueはapp-server再起動後に新threadで処理する。
 
 Lunaが開始したtypingは、`discord.stop_typing`に加え、各Effect batchが全件settleした時点で、そのexecution ownerが所有する残存typingをreleaseする。release後に必要ならfollow-up turnを開始する。RPC timeout、session終了、process shutdownでも残存typingをcleanupする。
 
@@ -267,7 +271,7 @@ Lunaが開始したtypingは、`discord.stop_typing`に加え、各Effect batch�
 
 heartbeatは既定で有効とする。一つ前のheartbeatが成功または失敗して完了した後、`[heartbeat].min_interval_ms`以上`[heartbeat].max_interval_ms`以下から一様ランダムに次の間隔を選ぶ。同じheartbeatを並行実行しない。
 
-各実行は`HEARTBEAT.md`を直前に読み、`system.heartbeat.fired.v1` Eventを生成する。共通Event one-shot実行は新しいCodex threadを作り、同じEffect出力契約とfailure follow-upを処理してからarchiveする。停止中の予定を補わない。失敗はJSON logだけに記録し、Discordへsystem messageを送らない。
+各実行は`HEARTBEAT.md`を直前に読み、`system.heartbeat.fired.v1` Eventを生成する。共通Event one-shot実行は新しいCodex threadを作り、同じEffect出力契約とfollow-upを処理してからarchiveする。停止中の予定を補わない。失敗はJSON logだけに記録し、Discordへsystem messageを送らない。
 
 ## 12. 記憶とworkspaceの日次整理
 
@@ -371,7 +375,7 @@ startup直後と、前回清掃完了から`thread_cleanup_interval_ms`後ごと
 | Discord turn失敗                                              | logのみ。利用者通知と自動再実行なし。threadをarchiveしてsession終了。未開始queueは新threadへ移す。 |
 | 初回履歴取得失敗                                              | 現在batchだけで続行。                                                                              |
 | final output不正                                              | Effectを実行せず、threadをarchiveしてsession終了。                                                 |
-| Effect失敗                                                    | 全Effect settle後、同一thread follow-up。                                                          |
+| Effect失敗または待機完了                                      | 全Effect settle後、同一thread follow-up。                                                          |
 | 会話委譲失敗                                                  | Effect failureとして呼出元threadのfollow-upへ渡す。委譲先sessionは作らない。                       |
 | RPC request timeout                                           | connection破損。全active turn失敗、全thread参照破棄、再起動。                                      |
 | 管理中threadの相関不能、ID欠落、不正stdout JSON、未知response | process異常。全active turn失敗、再起動。                                                           |

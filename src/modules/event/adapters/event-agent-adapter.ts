@@ -3,6 +3,7 @@ import type {
   AgentThreadInput,
   AgentTurnResult,
 } from "../../agent/ports/outbound/agent-runtime-port";
+import { requiresEffectFollowUp } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
 import type { LunaEvent } from "../domain/luna-event";
@@ -82,7 +83,7 @@ export class EventAgentAdapter implements EventAgentPort {
         if (connectionGeneration !== this.#connectionGeneration) {
           throw new Error("Codex connection was lost while effects were running");
         }
-        if (results.every((result) => result.success)) return;
+        if (!requiresEffectFollowUp(results)) return;
         const followUp = await this.dependencies.agent.startTurn(threadId, {
           input: JSON.stringify({ source: "effect_results", results }),
           outputSchema: this.dependencies.effectOutput.jsonSchema,

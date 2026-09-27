@@ -146,7 +146,9 @@ docker compose up
 - DMは既定で全利用者から受け取ります。
 - 人間、他Bot、Webhook、system messageを入力に含めます。
 
-同時turn、queue、turn時間、Effect失敗follow-upに上限はありません。Bot loop、memory exhaustion、永久に完了しないshutdownを防ぐ仕組みもありません。
+`system.wait` Effectでは秒単位で待機し、完了結果を同じ会話の次turnへ渡します。待機中は30分のsession idle期間に算入しません。
+
+同時turn、queue、turn時間、Effect follow-upに上限はありません。Bot loop、memory exhaustion、永久に完了しないshutdownを防ぐ仕組みもありません。
 
 会話は`discord.message.created.v1` Eventとしてsessionへ渡されます。heartbeat、schedule、日次整理はそれぞれ一件のsystem Eventを生成し、専用Codex threadでone-shot実行します。Eventを配送する内部busや永続queueはありません。
 

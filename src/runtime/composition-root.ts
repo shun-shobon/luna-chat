@@ -42,6 +42,7 @@ import { FilesystemSendFileResolver } from "../modules/discord/adapters/filesyst
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
+import { createWaitEffectProvider } from "../modules/effect/adapters/wait-effect-provider";
 import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
 import { createEffectRegistry } from "../modules/effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
@@ -88,6 +89,7 @@ export async function startLunaApplication(
   const effectRegistry = createEffectRegistry([
     createDiscordEffectProvider(actionAdapter),
     createDiscordDelegationEffectProvider(delegation),
+    createWaitEffectProvider(),
   ]);
   const effectOutput = createEffectOutputContract(effectRegistry);
   const effects = createEffectBatchExecutor(effectRegistry, logger);

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -6,6 +6,7 @@ import type {
   AgentThreadInput,
   AgentTurnResult,
 } from "../../agent/ports/outbound/agent-runtime-port";
+import { createWaitEffectProvider } from "../../effect/adapters/wait-effect-provider";
 import { createEffectOutputContract } from "../../effect/application/effect-output-contract";
 import { createEffectRegistry } from "../../effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../../effect/application/execute-effect-batch";
@@ -36,7 +37,49 @@ const threadInput: AgentThreadInput = {
 
 const recordInputSchema = z.strictObject({ target: z.string(), value: z.string() });
 
+afterEach(() => vi.useRealTimers());
+
 describe("EventAgentAdapter", () => {
+  it("待機成功後に同じEvent threadでfollow-up turnを開始する", async () => {
+    vi.useFakeTimers();
+    const registry = createEffectRegistry([createWaitEffectProvider()]);
+    const output = createEffectOutputContract(registry);
+    const effects = createEffectBatchExecutor(registry, { log: vi.fn() });
+    const { agent, startTurn, archiveThread } = createAgent([
+      completed({ effects: [{ type: "system.wait", input: { duration_seconds: 60 } }] }),
+      completed({ effects: [] }),
+    ]);
+    const adapter = new EventAgentAdapter({
+      agent,
+      createThreadInput: async () => threadInput,
+      effectOutput: output,
+      effects,
+      onError: vi.fn(),
+    });
+    const executor = new EventExecutor({ agent: adapter, logger: createLogger().port });
+    const execution = executor.execute(event);
+
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(startTurn).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(execution).resolves.toEqual({ status: "completed" });
+    expect(startTurn).toHaveBeenCalledTimes(2);
+    expect(startTurn.mock.calls[1]?.[0]).toBe("thread-1");
+    expect(JSON.parse(startTurn.mock.calls[1]?.[1].input ?? "null")).toEqual({
+      source: "effect_results",
+      results: [
+        {
+          index: 0,
+          type: "system.wait",
+          target: null,
+          success: true,
+          value: { duration_seconds: 60 },
+        },
+      ],
+    });
+    expect(archiveThread).toHaveBeenCalledWith("thread-1");
+  });
+
   it("非Discord Eventをthread openからfake Effect実行、archiveまで処理する", async () => {
     const calls: string[] = [];
     const execute = vi.fn(async (input: z.infer<typeof recordInputSchema>, ownerId: string) => {
