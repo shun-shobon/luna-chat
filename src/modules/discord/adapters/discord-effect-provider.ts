@@ -6,6 +6,7 @@ import { defineEffect, type EffectProvider } from "../../effect/ports/effect-pro
 import type { JsonValue } from "../../event/domain/luna-event";
 import {
   addReactionSchema,
+  discordTargetSchema,
   removeReactionSchema,
   replyMessageSchema,
   sendMessageSchema,
@@ -16,6 +17,7 @@ import {
 } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
+import type { DiscordConversationDelegationPort } from "../ports/discord-conversation-delegation-port";
 
 const nonEmptyStringSchema = z.string().superRefine((value, context) => {
   if (value.length === 0) context.addIssue({ code: "custom", message: "String must not be empty" });
@@ -72,6 +74,14 @@ const agentReactionSchema = z.strictObject({
   emoji: agentDiscordEmojiSchema,
 });
 const agentTypingSchema = z.strictObject({ target: agentDiscordTargetSchema });
+const agentOpenConversationSchema = z.strictObject({
+  target: agentDiscordTargetSchema,
+  brief: nonEmptyStringSchema,
+});
+const openConversationSchema = z.strictObject({
+  target: discordTargetSchema,
+  brief: z.string().min(1),
+});
 
 export function createDiscordEffectProvider(actions: DiscordActionPort): EffectProvider {
   const executeAction = async (action: DiscordAction, ownerId: string): Promise<JsonValue> =>
@@ -158,6 +168,26 @@ export function createDiscordEffectProvider(actions: DiscordActionPort): EffectP
       }),
     ]),
     release: async (ownerId: string) => await actions.releaseTyping(ownerId),
+  });
+}
+
+export function createDiscordDelegationEffectProvider(
+  delegation: DiscordConversationDelegationPort,
+): EffectProvider {
+  return Object.freeze({
+    definitions: Object.freeze([
+      defineEffect({
+        type: "discord.open_conversation",
+        agentInputSchema: agentOpenConversationSchema,
+        inputSchema: openConversationSchema,
+        parseInput: (input) => openConversationSchema.parse(input),
+        execute: async (input) => ({
+          scope: await delegation.delegate(input.target, input.brief),
+        }),
+        describeTarget: (input) => input.target,
+      }),
+    ]),
+    release: async () => undefined,
   });
 }
 

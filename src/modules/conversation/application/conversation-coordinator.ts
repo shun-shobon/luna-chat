@@ -64,8 +64,8 @@ export class ConversationCoordinator {
     private readonly options: ConversationCoordinatorOptions,
   ) {}
 
-  accept(input: AcceptedConversationEvent): void {
-    if (!this.#accepting) return;
+  accept(input: AcceptedConversationEvent): boolean {
+    if (!this.#accepting) return false;
     const key = input.session.key;
     let actor = this.#actors.get(key);
     if (actor === undefined) {
@@ -75,6 +75,7 @@ export class ConversationCoordinator {
       this.#actors.set(key, actor);
     }
     actor.accept(input.event);
+    return true;
   }
 
   configure(session: ConversationSession, settings: ConversationModelSettings): boolean {

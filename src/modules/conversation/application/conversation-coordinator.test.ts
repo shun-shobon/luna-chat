@@ -125,6 +125,20 @@ describe("ConversationCoordinator", () => {
     expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
   });
 
+  it("受理した入力にtrue、intake停止後の入力にfalseを返す", async () => {
+    vi.useFakeTimers();
+    const runtime = createRuntime();
+    const coordinator = createCoordinator(runtime.port);
+
+    expect(coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") })).toBe(
+      true,
+    );
+    coordinator.stopIntake();
+    expect(coordinator.accept({ session, event: event("101", "2026-07-23T00:00:01.000Z") })).toBe(
+      false,
+    );
+  });
+
   it("debounce後にhistoryとoccurredAt・id順batchを新threadへ渡す", async () => {
     vi.useFakeTimers();
     const runtime = createRuntime();

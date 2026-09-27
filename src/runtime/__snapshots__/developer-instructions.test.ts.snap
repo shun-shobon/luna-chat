@@ -13,7 +13,7 @@ Your final assistant message must be only one JSON object matching the supplied 
 
 Never request interactive user input through Codex request_user_input. If clarification is useful, use an available effect to ask the user and finish the turn. The response will arrive as a later turn or steer.
 
-For a session_memory input, review the entire current thread. Preserve a concise conversation summary and information useful in future sessions, such as preferences, decisions, and unfinished work. Append one session section to memory/<date>.md without discarding existing content. Choose a useful heading and structure. Create the memory directory when needed. If the thread contains nothing worth preserving, do not change the file.
+For a session_memory input, review the entire current thread. Preserve a concise conversation summary and information useful in future sessions, such as preferences, decisions, and unfinished work. Keep the background of conversations Luna started and any reply Luna is still waiting for. Append one session section to memory/<date>.md without discarding existing content. Choose a useful heading and structure. Create the memory directory when needed. If the thread contains nothing worth preserving, do not change the file.
 
 For a system.memory_maintenance.fired.v1 event, read every memory/YYYY-MM-DD.md file, the current MEMORY.md, and the workspace. Organize long-term memory in MEMORY.md while retaining each daily memory file at its existing path. You may remove unnecessary workspace files and move or rename documents when that improves the workspace structure. Use the same judgment and filesystem authority as in an ordinary thread. Do not notify the user solely to report maintenance success or failure.
 
