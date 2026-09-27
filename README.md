@@ -1,10 +1,10 @@
 # Luna
 
-Lunaは、DiscordをインターフェースとしてCodexを自律稼働させる個人用のワークスペースエージェントです。Discordのメッセージを共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
+Lunaは、DiscordとローカルHTTP APIをインターフェースとしてCodexを自律稼働させる個人用のワークスペースエージェントです。入力を共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
 
 ## セキュリティに関する重要事項
 
-Lunaは、Discordの利用者をホストの実行権限から隔離しません。Bot宛てのDM、メンション可能なチャンネル、他のBotやWebhookからの入力により、以下の操作が確認なしに実行される可能性があります。
+Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホストの実行権限から隔離しません。Bot宛てのDM、メンション可能なチャンネル、他のBotやWebhook、HTTP APIからの入力により、以下の操作が確認なしに実行される可能性があります。
 
 - 実行ユーザーがアクセス可能なすべてのファイルシステムの読み書き
 - 任意のシェルコマンドの実行、ネットワーク通信、パスワードなしsudo
@@ -49,12 +49,14 @@ docker compose run --rm luna-chat codex login status
 
 ## 環境変数
 
-| 変数名              | 必須   | デフォルト値 | 説明                                                                     |
-| ------------------- | ------ | ------------ | ------------------------------------------------------------------------ |
-| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。               |
-| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                 |
-| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。            |
-| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。 |
+| 変数名              | 必須   | デフォルト値 | 説明                                                                        |
+| ------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。                  |
+| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                    |
+| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。               |
+| `LUNA_HTTP_HOST`    | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。 |
+| `LUNA_HTTP_PORT`    | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。            |
+| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。    |
 
 ※ `LOG_LEVEL` を `debug` または `trace` に設定すると、メッセージ本文やプロンプト、ツール引数などが標準出力に出力されます。既知のトークン等はマスクされますが、平文に含まれる機密情報の完全な除去は保証されません。
 
@@ -150,6 +152,29 @@ docker compose up
 - `/luna model [model] [effort]`: 現在のセッションで使用するモデルと推論強度（reasoning effort）を変更します。
 - `/luna end`: 現在のセッションを手動で終了します。処理中のターン完了を待って記憶を保存し、セッションを閉じます。
 - `/luna channel add` / `/luna channel remove`: 実行したチャンネルを常設チャンネル（`allowed_channel_ids`）に追加または削除します（ギルド内であれば誰でも実行可能で、設定ファイルに即座に反映されます）。
+
+## HTTP APIでの利用方法
+
+`POST http://127.0.0.1:3000/events` にJSONを送ります。認証はありません。Native起動ではループバックにのみ待ち受け、Docker Composeでもホストのループバックにのみポートを公開します。`LUNA_HTTP_PORT` を設定した場合はURLのポートを読み替えてください。
+
+```sh
+curl -i http://127.0.0.1:3000/events \
+  -H 'Content-Type: application/json' \
+  -d '{"execution":"one_shot","response_mode":"wait","event":{"type":"sensor.changed.v1","data":{"value":24}}}'
+```
+
+- `execution` は独立した実行の `one_shot`、または `session_id` が同じ入力で会話を共有する `conversation` を指定します。
+- `response_mode` は受付後すぐ `202` と `request_id` を返す `async`、または処理完了まで待つ `wait` を指定します。両方の実行方式で選べます。`async` の結果を後から取得するAPIはありません。
+- `event.type` は空でない文字列、`event.data` は任意のJSON値です。LunaがイベントIDと時刻を付け、Codexには `event.data.payload` として渡します。
+- `wait` の場合、瑠菜が `http.respond` Effectで `request_id`、HTTPステータス、JSON本文を指定すると、その内容を処理完了後に返します。指定がなければ `204`、処理失敗なら `500` です。
+
+会話を継続する場合は `execution` を `conversation` にし、同じ `session_id` を送ります。会話は通常のアイドル期限後に終了します。
+
+```sh
+curl -i http://127.0.0.1:3000/events \
+  -H 'Content-Type: application/json' \
+  -d '{"execution":"conversation","response_mode":"async","session_id":"home-automation","event":{"type":"sensor.changed.v1","data":{"value":25}}}'
+```
 
 ## 記憶と自律運用
 

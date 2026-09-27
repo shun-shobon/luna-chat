@@ -62,6 +62,7 @@ export class ConversationCoordinator {
       effectOutput: EffectOutputContract;
       effects: EffectBatchPort;
       history: ConversationHistoryPort;
+      onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
       onError: ConversationErrorHandler;
       onEvent: ConversationEventHandler;
     }>,
@@ -203,6 +204,7 @@ class ConversationActor {
   #endRequested = false;
   #endPending = false;
   #modelSettings: ConversationModelSettings | undefined;
+  readonly #activeEventIds = new Set<string>();
 
   constructor(
     private readonly session: ConversationSession,
@@ -212,6 +214,7 @@ class ConversationActor {
       effectOutput: EffectOutputContract;
       effects: EffectBatchPort;
       history: ConversationHistoryPort;
+      onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
       onError: ConversationErrorHandler;
       onEvent: ConversationEventHandler;
     }>,
@@ -412,7 +415,7 @@ class ConversationActor {
             operation: "turn/steer",
           });
           this.#queue.push(command.event);
-        }
+        } else this.#activeEventIds.add(command.event.id);
         this.#kickSteer();
         this.#finishTurnAfterSteering();
         return;
@@ -533,6 +536,7 @@ class ConversationActor {
       return;
     }
     const batch = this.#queue.splice(0).sort(compareEvents);
+    for (const event of batch) this.#activeEventIds.add(event.id);
     const token = ++this.#operationToken;
     if (this.#threadId !== undefined) {
       this.#startTurn(
@@ -701,6 +705,7 @@ class ConversationActor {
       results,
     );
     if (this.#phase === "orphaned_effects") {
+      this.#settleActive(false);
       this.#threadId = undefined;
       this.#executionOwnerId = undefined;
       this.#turnPurpose = undefined;
@@ -716,6 +721,7 @@ class ConversationActor {
       this.#startTurn(JSON.stringify({ source: "effect_results", results }), purpose);
       return;
     }
+    this.#settleActive(true);
     if (this.#turnPurpose === "session_memory") {
       this.#archive();
       return;
@@ -776,6 +782,7 @@ class ConversationActor {
   }
 
   #archive(): void {
+    this.#settleActive(false);
     const threadId = this.#threadId;
     if (threadId === undefined) {
       this.#modelSettings = undefined;
@@ -798,6 +805,8 @@ class ConversationActor {
   }
 
   #handleConnectionLost(error: unknown): void {
+    if (this.#phase === "opening") this.#activeEventIds.clear();
+    else this.#settleActive(false);
     this.dependencies.onError(error, { session: this.session, operation: "agent/connection" });
     if (this.#phase === "effects") {
       this.#phase = "orphaned_effects";
@@ -829,6 +838,7 @@ class ConversationActor {
 
   #close(): void {
     if (this.#phase === "closed") return;
+    this.#settleActive(false);
     this.#phase = "closed";
     this.#clearTimers();
     this.onClosed();
@@ -855,6 +865,13 @@ class ConversationActor {
     } catch (error: unknown) {
       this.dependencies.onError(error, { session: this.session, operation: "effects/release" });
     }
+  }
+
+  #settleActive(succeeded: boolean): void {
+    if (this.#activeEventIds.size === 0) return;
+    const eventIds = [...this.#activeEventIds];
+    this.#activeEventIds.clear();
+    this.dependencies.onBatchSettled(eventIds, succeeded);
   }
 }
 

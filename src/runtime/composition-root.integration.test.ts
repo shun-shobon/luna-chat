@@ -81,6 +81,10 @@ vi.mock("../modules/discord/adapters/discord-mcp-server", () => ({
   })),
 }));
 
+vi.mock("../modules/http/adapters/http-event-server", () => ({
+  startHttpEventServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3000 })),
+}));
+
 vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
   ChokidarScheduleWatcher: class {
     async start(): Promise<void> {}
@@ -137,7 +141,7 @@ describe("composition root integration", () => {
     expect(fakes.client.application.commands.create).toHaveBeenCalledOnce();
     expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
     expect(registry).toHaveBeenCalledOnce();
-    expect(registry.mock.calls[0]?.[0].flatMap((provider) => provider.definitions)).toHaveLength(8);
+    expect(registry.mock.calls[0]?.[0].flatMap((provider) => provider.definitions)).toHaveLength(9);
     expect(outputContract).toHaveBeenCalledWith(registry.mock.results[0]?.value);
     const factoryInput = threadInputFactory.mock.calls[0]?.[0];
     expect(factoryInput?.capabilityInstructions).toHaveLength(1);

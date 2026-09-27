@@ -6,11 +6,12 @@
 
 ## 2. 製品の責務と対象範囲
 
-Lunaは、Discordをフロントエンドとする単一ユーザー向けの自律ワークスペースエージェントである。1つの配置につき、1つのDiscord Bot、1つのワークスペース、1つの専用Codexホームを持つ。
+Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向けの自律ワークスペースエージェントである。1つの配置につき、1つのDiscord Bot、1つのワークスペース、1つの専用Codexホームを持つ。
 
 ### 主な責務
 
 - Discordの投稿を会話単位に集約し、Codex app-serverへ中継する。
+- HTTPで受けたイベントを独立した実行または会話セッションへ渡す。
 - Codexが出力した型付きEffect（メッセージ送信・返信・リアクション等）を実行する。
 - 定期ハートビートおよびスケジュール設定に基づき、自律的にCodexターンを開始する。
 - `LUNA.md`（人格設定）および `MEMORY.md`（長期記憶）をロードし、Codexスレッドのコンテキストを構築する。
@@ -23,6 +24,7 @@ Lunaは、Discordをフロントエンドとする単一ユーザー向けの自
 ## 3. 信頼境界とセキュリティ
 
 本システムは、Discordの参加者を非特権ユーザーとして隔離しない。Botと対話可能なすべてのユーザー、他のBot、Webhookは、Codexを介して実行環境の権限を間接的に行使できる。
+ローカルHTTP APIも認証を行わず、呼び出し元に同じ権限を与える。Native起動では `127.0.0.1` にバインドし、Docker Composeではホスト側の `127.0.0.1` にのみ公開する。
 
 Codexの実行環境には以下の権限が与えられる。
 
@@ -37,6 +39,7 @@ Codexの実行環境には以下の権限が与えられる。
 ## 4. 用語定義
 
 - **会話スコープ (Conversation Scope)**: 単一のGuildチャンネル、Guildスレッド、またはDM。
+- **HTTP会話セッション**: 同じ `session_id` を持つHTTPイベントが共有する会話状態。Discordの会話状態とは独立する。
 - **会話セッション (Conversation Session)**: スコープごとにメモリ上で保持される状態。メッセージキュー、アクティブなターン、CodexスレッドID、アイドルタイマーを管理する。
 - **`LunaEvent`**: 入力元に依存しない共通イベントエンベロープ。`id`、`type`、`source`、任意の `subject`、タイムスタンプ `occurredAt`、JSON形式の `data` を保持する。
 - **`ConversationSession`**: 会話を一意に識別する `key`、`source`、プロバイダ固有の `context` を保持する情報。
@@ -99,6 +102,7 @@ type AgentInput =
 - Discordのメッセージは `discord.message.created.v1` イベントへ変換される。
 - 会話委譲は `discord.conversation.delegated.v1` イベントとして生成され、対象セッションへ渡される。
 - ハートビート、スケジュール、日次整理は、それぞれ `system.heartbeat.fired.v1`、`system.schedule.fired.v1`、`system.memory_maintenance.fired.v1` を生成し、`source: "event"` として処理される。
+- HTTPイベントは `source: "http"` の `LunaEvent` とする。`data` は `{ payload: 送信されたevent.data, response_mode }` であり、IDと受信時刻はLunaが生成する。
 - 添付ファイルはURLやメタデータのみを渡し、ランタイム側でのファイル自動ダウンロードは行わない。
 
 ### 5.6 スラッシュコマンド
@@ -177,11 +181,15 @@ type EffectOutput = { effects: EffectRequest[] };
 
 送信・返信処理では、Discordの文字数上限やファイルの存在確認・読み取り可否を事前に検証する。エラーが発生した場合はEffectの失敗としてフォローアップに渡され、自動分割や平文変換は行わない。
 
-### 10.3 待機Effect (`system.wait`)
+### 10.3 HTTP応答Effect
+
+HTTPの完了待ち入力には `http.respond` Effectを利用できる。入力は `{ request_id: string, status: number, body_json: string }` とし、`body_json` はJSONとしてパースできる文字列とする。HTTPレスポンスはターンチェーン全体の完了後に確定する。
+
+### 10.4 待機Effect (`system.wait`)
 
 `{ duration_seconds: number }` を指定して指定秒数待機する。完了後は結果を同一スレッドのフォローアップターンへ渡す。
 
-### 10.4 実行制御とフォローアップ
+### 10.5 実行制御とフォローアップ
 
 バッチ内の全Effectは並行して実行され、全件の完了（settle）を待機する。
 いずれかのEffectが失敗した場合、または `system.wait` が含まれていた場合は、すべての実行結果を `{ source: "effect_results", results }` として同一スレッドの新規フォローアップターンへ渡し、自律的なリトライや後続処理を促す。
@@ -258,12 +266,14 @@ restart_failure_limit = 5
 
 ### 14.2 環境変数
 
-| 変数名              | 必須   | デフォルト値 | 説明                                                          |
-| ------------------- | ------ | ------------ | ------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botトークン。Codexの子プロセスには渡されない。        |
-| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存ディレクトリの絶対パス。                            |
-| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。 |
-| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。                          |
+| 変数名              | 必須   | デフォルト値 | 説明                                                                                               |
+| ------------------- | ------ | ------------ | -------------------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botトークン。Codexの子プロセスには渡されない。                                             |
+| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存ディレクトリの絶対パス。                                                                 |
+| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                                      |
+| `LUNA_HTTP_HOST`    | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。`127.0.0.1`または`0.0.0.0`。Docker Composeでは後者をコンテナ内で指定。 |
+| `LUNA_HTTP_PORT`    | いいえ | `3000`       | HTTP APIの待ち受けポート（1〜65535）。Docker Composeではホスト側公開ポート。                       |
+| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。                                                               |
 
 ## 15. スレッドの保持とクリーンアップ
 
@@ -283,7 +293,32 @@ restart_failure_limit = 5
 
 ### シャットダウン
 
-SIGINTまたはSIGTERMを受信すると、新規メッセージの受付および定期タスクの開始を停止し、受信済みのキューやアクティブなターンチェーンがすべて自然完了するのを待機してから安全に終了する。正常終了した会話セッションは、終了前に記憶保存を実行する。
+SIGINTまたはSIGTERMを受信すると、新規メッセージとHTTPイベントの受付および定期タスクの開始を停止し、受信済みのキューやアクティブなターンチェーンがすべて自然完了するのを待機してから安全に終了する。正常終了した会話セッションは、終了前に記憶保存を実行する。
+
+## 18. HTTPイベントAPI
+
+`POST /events` に `Content-Type: application/json` で以下のオブジェクトを送る。その他のパスやメソッドは提供しない。
+
+```ts
+type HttpEventRequest =
+  | {
+      execution: "one_shot";
+      response_mode: "async" | "wait";
+      event: { type: string; data: JsonValue };
+    }
+  | {
+      execution: "conversation";
+      response_mode: "async" | "wait";
+      session_id: string; // 1〜128文字
+      event: { type: string; data: JsonValue };
+    };
+```
+
+`one_shot` は新規Codexスレッドで実行して終了時にアーカイブする。`conversation` は `session_id` ごとの会話セッションへ投入し、Discord会話と同じ集約・steer・アイドル終了を適用する。HTTP会話の初回履歴は空とする。`session_id` は `one_shot` では指定できない。
+
+`async` は受付直後に `202 {"request_id":"..."}` を返し、結果取得用のAPIは設けない。`wait` はターンチェーンの終了まで接続を維持し、`http.respond` Effectで指定されたHTTPステータスとJSON本文を返す。Effectに指定できるステータスは200〜599で、本文を持てない204、205、304を除く。正常終了まで返答Effectがなければ `204`、実行に失敗したら `500 {"error":"execution_failed","request_id":"..."}` を返す。会話の複数イベントが同じターンにまとまる場合も、Effectの `request_id` で各リクエストの応答先を指定する。複数の `http.respond` が同じリクエストIDを指定した場合、最初の1件だけを受け付け、後続はEffect失敗とする。`async` のリクエストIDに対する `http.respond` もEffect失敗とする。
+
+JSON形式が不正またはスキーマに合わない入力は `400`、JSON以外のContent-Typeは `415`、受付停止中は `503` を返す。受付処理自体の予期しない例外には `500 {"error":"internal_error"}` を返す。APIは認証、リクエストの再送・重複排除、処理待ちのアプリケーションタイムアウトを提供しない。クライアントが切断しても受理済みイベントの処理は続く。
 
 ## 17. ログと監視
 

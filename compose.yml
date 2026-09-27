@@ -5,6 +5,10 @@ services:
       - .env
     environment:
       TZ: ${TZ:-Asia/Tokyo}
+      LUNA_HTTP_HOST: 0.0.0.0
+      LUNA_HTTP_PORT: 3000
+    ports:
+      - "127.0.0.1:${LUNA_HTTP_PORT:-3000}:3000"
     volumes:
       - ./data:/home/node
     stop_grace_period: 600s

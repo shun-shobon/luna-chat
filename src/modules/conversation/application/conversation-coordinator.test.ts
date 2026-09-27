@@ -22,6 +22,39 @@ afterEach(() => {
 });
 
 describe("ConversationCoordinator", () => {
+  it("HTTP待機のために初回入力とsteer入力をターンチェーン完了時に通知する", async () => {
+    vi.useFakeTimers();
+    const completion = deferred<AgentTurnResult>();
+    const runtime = createRuntime([completion.promise]);
+    const onBatchSettled = vi.fn();
+    const coordinator = createCoordinator(runtime.port, { onBatchSettled });
+
+    coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+    coordinator.accept({ session, event: event("101", "2026-07-23T00:00:01.000Z") });
+    await flushPromises();
+    expect(runtime.steerTurn).toHaveBeenCalledOnce();
+    expect(onBatchSettled).not.toHaveBeenCalled();
+
+    completion.resolve(completed([]));
+    await flushPromises();
+    expect(onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100", "101"], true);
+  });
+
+  it("ターン出力が不正なら処理中のHTTP入力へ失敗を通知する", async () => {
+    vi.useFakeTimers();
+    const runtime = createRuntime([Promise.resolve({ status: "completed", outputText: "{" })]);
+    const onBatchSettled = vi.fn();
+    const coordinator = createCoordinator(runtime.port, { onBatchSettled });
+
+    coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+
+    expect(onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], false);
+  });
+
   it("設定コマンドでsessionを作り、投稿がなければidle期限で閉じる", async () => {
     vi.useFakeTimers();
     const runtime = createRuntime();
@@ -855,26 +888,32 @@ describe("ConversationCoordinator", () => {
   it("opening中のconnection lossでは未開始batchを一度だけ新runtimeへ渡す", async () => {
     vi.useFakeTimers();
     const firstHistory = deferred<readonly LunaEvent[]>();
+    const secondHistory = deferred<readonly LunaEvent[]>();
     const history: ConversationHistoryPort = {
       fetchBefore: vi
         .fn<ConversationHistoryPort["fetchBefore"]>()
         .mockImplementationOnce(async () => await firstHistory.promise)
-        .mockResolvedValueOnce([]),
+        .mockImplementationOnce(async () => await secondHistory.promise),
     };
     const runtime = createRuntime();
-    const coordinator = createCoordinator(runtime.port, { history });
+    const onBatchSettled = vi.fn();
+    const coordinator = createCoordinator(runtime.port, { history, onBatchSettled });
 
     coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
     await vi.advanceTimersByTimeAsync(100);
     await flushPromises();
     coordinator.connectionLost(new Error("connection lost"));
     await flushPromises();
+    expect(onBatchSettled).not.toHaveBeenCalled();
     firstHistory.resolve([]);
+    await flushPromises();
+    secondHistory.resolve([]);
     await flushPromises();
 
     expect(runtime.openThread).toHaveBeenCalledOnce();
     expect(runtime.startTurn).toHaveBeenCalledOnce();
     expect(parseStartInput(runtime.startTurn.mock.calls[0]?.[1]).events).toHaveLength(1);
+    expect(onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], true);
   });
 
   it("orphaned effectsをsettle後、受理済みqueueを新threadで処理する", async () => {
@@ -971,6 +1010,7 @@ function createCoordinator(
   overrides: {
     effects?: EffectBatchPort;
     history?: ConversationHistoryPort;
+    onBatchSettled?: (eventIds: readonly string[], succeeded: boolean) => void;
     onError?: (
       error: unknown,
       context: { session: ConversationSession; operation: string },
@@ -1003,6 +1043,7 @@ function createCoordinator(
         executionOwnerId: "owner-1",
       })),
       onError: overrides.onError ?? vi.fn(),
+      onBatchSettled: overrides.onBatchSettled ?? vi.fn(),
       onEvent: vi.fn(),
     },
     {
