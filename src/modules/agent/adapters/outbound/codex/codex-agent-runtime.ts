@@ -12,6 +12,7 @@ import {
 import {
   parseEmptyResponse,
   parseInitializeResponse,
+  parseModelList,
   parseSteeredTurnId,
   parseThreadId,
   parseThreadList,
@@ -137,6 +138,23 @@ export class CodexAgentRuntime implements AgentRuntimePort {
     parseResponse(this.#connection, () => parseEmptyResponse(result));
   }
 
+  public async listModels(): ReturnType<AgentRuntimePort["listModels"]> {
+    const models: Awaited<ReturnType<AgentRuntimePort["listModels"]>>[number][] = [];
+    let cursor: string | null = null;
+    do {
+      const result: unknown = await this.#connection.request("model/list", {
+        includeHidden: false,
+        cursor,
+      });
+      const page: ReturnType<typeof parseModelList> = parseResponse(this.#connection, () =>
+        parseModelList(result),
+      );
+      models.push(...page.data);
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return models;
+  }
+
   public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
     const result = await this.#connection.request("turn/interrupt", { threadId, turnId });
     parseResponse(this.#connection, () => parseEmptyResponse(result));
@@ -192,6 +210,8 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 
     try {
       const result = await this.#connection.request("turn/start", {
+        ...(request.model === undefined ? {} : { model: request.model }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
         input: [createTextInput(request.input)],
         outputSchema: parseJsonValue(request.outputSchema, "agent output schema"),
         threadId,

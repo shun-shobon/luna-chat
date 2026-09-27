@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const fakes = vi.hoisted(() => {
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const client = {
+    application: { commands: { create: vi.fn(async () => undefined) } },
     channels: {
       fetch: vi.fn(async () => ({
         isTextBased: () => true,

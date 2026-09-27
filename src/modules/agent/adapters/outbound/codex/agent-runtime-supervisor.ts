@@ -95,6 +95,10 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
     return await (await this.#getRuntime()).listThreads(input);
   }
 
+  public async listModels(): ReturnType<AgentRuntimePort["listModels"]> {
+    return await (await this.#getRuntime()).listModels();
+  }
+
   public onFatal(handler: (error: Error) => void): () => void {
     if (this.#fatalError !== undefined) {
       handler(this.#fatalError);

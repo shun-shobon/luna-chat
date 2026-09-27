@@ -253,6 +253,7 @@ function createAgent(turns: readonly AgentTurnResult[], calls: string[] = []) {
     archiveThread,
     deleteThread: vi.fn(async () => {}),
     listThreads: vi.fn(async () => ({ data: [] })),
+    listModels: vi.fn(async () => []),
     openThread,
     interruptTurn: vi.fn(async () => {}),
     startTurn,
