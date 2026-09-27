@@ -378,6 +378,6 @@ logはJSON Linesとしてstdoutだけへ出す。保存とrotationは配置先�
 
 ## 18. 配置と品質
 
-native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。publish imageはlinux/amd64とlinux/arm64を対象とする。
+native macOS/LinuxとDockerを正式対応し、同じexact Node.js LTS patchをmise、Docker、CIで使う。Dockerは専用non-root userで実行し、そのuserへpasswordless sudoを与える。Composeはhostの`./data`をcontainerの`/home/node`へmountし、追加pathは利用者が明示する。`vX.Y.Z`形式のtag pushでdraft GitHub Releaseを作り、linux/amd64・linux/arm64のDocker imageを同じversion tagでGHCRへ配置する。native macOS/Linuxのamd64・arm64向けSEAをそれぞれRelease assetへ配置する。全buildとasset配置が成功した後、Docker imageの`latest`を更新してReleaseを公開する。失敗時はdraftを保持し、Releaseを公開しない。
 
 受入れにはformat、lint、knip、typecheck、testとlocal Docker image buildの成功を要求する。`pnpm run build`はLuna本体とJavaScript依存をまとめ、Node.js 24の実行ファイルへCommonJS bundleと初期workspace templateを埋め込んだ`dist/luna-chat`を生成する。Codexは別の実行可能ファイルとしてPATHから使う。全体coverage率は要求せず、全状態遷移と各外部境界のsuccess、timeout、不正response、exceptionを契約testで固定する。prompt snapshotは固定developer instructionsと入力JSON組立だけに使う。実credentialによるlive E2EはREADMEの手順で利用者が行う。

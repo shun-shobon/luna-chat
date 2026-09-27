@@ -181,6 +181,15 @@ docker build -t luna-chat:local .
 
 CI gateはformat、lint、knip、typecheck、testです。local実装完了条件にはNode buildとDocker image buildも含みます。generated Codex typeと`dist`はGitで管理しません。
 
+## Release
+
+`vX.Y.Z`形式のtagをpushするとdraft Releaseを作成し、GHCRへversion tagのDocker imageを配置してmacOS/Linuxのamd64・arm64向けSEAをbuildします。SEAはRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。全buildが成功すると、GHCRの`latest`を更新し、draft Releaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。リリース対象のcommitをmainへ反映した後でtagを作成します。
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Documents
 
 - [SPEC.md](./docs/SPEC.md): 外部動作、権限、設定、既定値、失敗契約の正本
