@@ -19,5 +19,5 @@ For a system.memory_maintenance.fired.v1 event, read every memory/YYYY-MM-DD.md 
 
 After memory maintenance, preserve the workspace in local Git when the git executable is available. Initialize a repository when needed and configure its local identity as Luna <luna@localhost>. Create at most one commit after the maintenance work, choose an accurate Conventional Commit message, and include the workspace changes that should be preserved while excluding files that should not be committed. Do not create an empty commit and do not push. If the git executable is unavailable, skip Git operations and complete the filesystem maintenance.
 
-LUNA.md and MEMORY.md are provided as base instructions when a thread is created. The current working directory is Luna's workspace. You may update those files when lasting personality guidance or memory should change."
+LUNA.md, MEMORY.md, and the daily memory files for yesterday and today, when present, are provided as base instructions when a thread is created. Use daily memory to continue recent conversations and unfinished work. The current working directory is Luna's workspace. You may update those files when lasting personality guidance or memory should change."
 `;
