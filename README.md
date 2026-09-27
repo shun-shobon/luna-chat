@@ -183,12 +183,7 @@ CI gateはformat、lint、knip、typecheck、testです。local実装完了条�
 
 ## Release
 
-`vX.Y.Z`形式のtagをpushするとdraft Releaseを作成し、GHCRへversion tagのDocker imageを配置してmacOS/Linuxのamd64・arm64向けSEAをbuildします。SEAはRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。Docker imageと各SEA assetのbuild provenanceをGitHub Artifact Attestationsへ登録します。全buildとattestationが成功すると、GHCRの`latest`を更新し、draft Releaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。リリース対象のcommitをmainへ反映した後でtagを作成します。
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+GitHub Actionsの`prepare release`をmainから手動実行し、`patch`、`minor`、`major`を選びます。workflowは`package.json`のversionを更新・整形し、GitHub API経由のcommitを持つ`release/prepare-vX.Y.Z`ブランチとPRを作成します。既に開いている準備PRがあれば閉じてブランチを削除し、新しいPRを作ります。PRを確認してmainへマージすると`publish`がマージ先commitへ`vX.Y.Z`のtagとdraft Releaseを作ります。GHCRへ同じversion tagのDocker imageを配置し、macOS/Linuxのamd64・arm64向けSEAをRelease assetの`luna-chat-<platform>-<arch>.tar.gz`へ配置します。Docker imageと各SEA assetのbuild provenanceをGitHub Artifact Attestationsへ登録します。全buildとattestationが成功するとGHCRの`latest`を更新してReleaseを公開します。失敗時はdraftを残し、GitHub Actionsの失敗jobを再実行できます。
 
 ダウンロードしたSEA assetとGHCR imageのbuild provenanceは、GitHub CLIで検証できます。
 
