@@ -72,12 +72,32 @@ describe("DiscordConversationController", () => {
 
     expect(conversation.accept).toHaveBeenCalledOnce();
   });
+
+  it("共有された許可集合の更新を次の投稿から反映する", () => {
+    const conversation = createConversation(false);
+    const ids = new Set<string>();
+    const controller = new DiscordConversationController(conversation, "999", {
+      allowDm: true,
+      allowedChannelIds: ids,
+      onAccepted: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    controller.onMessage(event("200", false));
+    expect(conversation.accept).not.toHaveBeenCalled();
+    ids.add("200");
+    controller.onMessage(event("200", false));
+    expect(conversation.accept).toHaveBeenCalledOnce();
+    ids.delete("200");
+    controller.onMessage(event("200", false));
+    expect(conversation.accept).toHaveBeenCalledOnce();
+  });
 });
 
 function createController(conversation: ReturnType<typeof createConversation>) {
   return new DiscordConversationController(conversation, "999", {
     allowDm: true,
-    allowedChannelIds: ["200"],
+    allowedChannelIds: new Set(["200"]),
     onAccepted: vi.fn(),
     onError: vi.fn(),
   });

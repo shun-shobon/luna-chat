@@ -24,12 +24,12 @@ export class DiscordConversationController implements DiscordGatewayPort {
     private readonly lunaUserId: string,
     input: Readonly<{
       allowDm: boolean;
-      allowedChannelIds: readonly string[];
+      allowedChannelIds: ReadonlySet<string>;
       onAccepted(event: DiscordGatewayMessage): void;
       onError(error: unknown, event: "messageCreate" | "typingStart"): void;
     }>,
   ) {
-    this.#allowedChannelIds = new Set(input.allowedChannelIds);
+    this.#allowedChannelIds = input.allowedChannelIds;
     this.allowDm = input.allowDm;
     this.onAccepted = input.onAccepted;
     this.onError = input.onError;

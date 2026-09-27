@@ -92,7 +92,7 @@ allowed_channel_ids = []
 allow_dm = true
 ```
 
-`enabled`はidle終了前のsession記憶保存と日次整理を一括で切り替えます。cronはprocess local timezoneを使い、設定変更の反映には再起動が必要です。全fieldと検証条件は [SPECの設定](./docs/SPEC.md#14-設定) を参照してください。
+`enabled`はidle終了前のsession記憶保存と日次整理を一括で切り替えます。cronはprocess local timezoneを使います。`/luna channel add/remove`以外の設定変更の反映には再起動が必要です。全fieldと検証条件は [SPECの設定](./docs/SPEC.md#14-設定) を参照してください。
 
 scheduleの例です。
 
@@ -150,9 +150,9 @@ docker compose up
 
 会話は`discord.message.created.v1` Eventとしてsessionへ渡されます。heartbeat、schedule、日次整理はそれぞれ一件のsystem Eventを生成し、専用Codex threadでone-shot実行します。Eventを配送する内部busや永続queueはありません。
 
-会話を手動で終了するには、そのchannelまたはDMで`/luna end`を使います。処理中なら現在のturnとEffectの完了を待ち、記憶保存が有効なら保存してからarchiveします。`/luna model`ではモデルと推論強度を一緒に選びます。設定はその場所の現在のsessionにだけ適用され、実行中のturnには反映されません。sessionがなければ新しく作り、投稿がないまま30分経つと終了します。コマンドは通常の投稿を受け付ける場所で使えます。
+会話を手動で終了するには、そのchannelまたはDMで`/luna end`を使います。処理中なら現在のturnとEffectの完了を待ち、記憶保存が有効なら保存してからarchiveします。`/luna model`ではモデルと推論強度を一緒に選びます。設定はその場所の現在のsessionにだけ適用され、実行中のturnには反映されません。sessionがなければ新しく作り、投稿がないまま30分経つと終了します。これらの会話コマンドは通常の投稿を受け付ける場所で使えます。Guild内では`/luna channel add`と`/luna channel remove`で実行したchannelを`allowed_channel_ids`へ追加・削除できます。登録外channelでも誰でも実行でき、保存後すぐに反映します。thread内ではthread IDを操作します。
 
-実Discord・実Codexの確認では、常設channelで`/luna model`の候補からモデルと対応強度を選び、次の投稿がその設定で動くことを確認します。処理中に`/luna end`を使い、応答とEffect、記憶保存の後にthreadがarchiveされることを確認します。設定外channelではmentionで一時sessionを開始する前後のコマンド受付を確認します。
+実Discord・実Codexの確認では、常設channelで`/luna model`の候補からモデルと対応強度を選び、次の投稿がその設定で動くことを確認します。処理中に`/luna end`を使い、応答とEffect、記憶保存の後にthreadがarchiveされることを確認します。設定外channelではmentionで一時sessionを開始する前後の会話コマンド受付を確認します。`/luna channel add/remove`では`config.toml`の保存と、再起動なしの受付切替を確認します。
 
 ## 記憶保存と日次整理
 

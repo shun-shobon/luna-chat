@@ -15,9 +15,14 @@ import { conversationScopeSchema, type ConversationScope } from "../domain/conve
 import { createDiscordConversationSession } from "../domain/discord-event";
 import { shouldAcceptCommand } from "../domain/message-acceptance";
 
+type AllowedChannelSettings = Readonly<{
+  ids: ReadonlySet<string>;
+  change(action: "add" | "remove", channelId: string): Promise<boolean>;
+}>;
+
 const command = new SlashCommandBuilder()
   .setName("luna")
-  .setDescription("会話セッションを操作します")
+  .setDescription("会話セッションとチャンネル設定を操作します")
   .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
   .addSubcommand((subcommand) =>
@@ -40,6 +45,17 @@ const command = new SlashCommandBuilder()
           .setDescription("モデルが対応する推論強度")
           .setRequired(true)
           .setAutocomplete(true),
+      ),
+  )
+  .addSubcommandGroup((group) =>
+    group
+      .setName("channel")
+      .setDescription("このチャンネルの常設受付を設定します")
+      .addSubcommand((subcommand) =>
+        subcommand.setName("add").setDescription("このチャンネルを常設受付に追加します"),
+      )
+      .addSubcommand((subcommand) =>
+        subcommand.setName("remove").setDescription("このチャンネルを常設受付から削除します"),
       ),
   );
 
@@ -84,7 +100,6 @@ export function createDiscordCommandClient(client: Client): DiscordCommandClient
 }
 
 export class DiscordCommandAdapter {
-  readonly #allowedChannelIds: ReadonlySet<string>;
   readonly #listener: (interaction: unknown) => void;
   #started = false;
 
@@ -96,10 +111,9 @@ export class DiscordCommandAdapter {
     >,
     private readonly agent: Pick<AgentRuntimePort, "listModels">,
     private readonly allowDm: boolean,
-    allowedChannelIds: readonly string[],
+    private readonly allowedChannels: AllowedChannelSettings,
     private readonly onError: (error: unknown) => void,
   ) {
-    this.#allowedChannelIds = new Set(allowedChannelIds);
     this.#listener = (interaction) => {
       void this.#handle(interaction).catch(this.onError);
     };
@@ -125,15 +139,16 @@ export class DiscordCommandAdapter {
     try {
       const { scope, lunaIsThreadMember } = resolveLocation(interaction);
       const session = createDiscordConversationSession(scope);
+      const channelCommand = interaction.options.getSubcommandGroup(false) === "channel";
       const allowed = shouldAcceptCommand({
         scope,
         allowDm: this.allowDm,
-        allowedChannelIds: this.#allowedChannelIds,
+        allowedChannelIds: this.allowedChannels.ids,
         lunaIsThreadMember,
         sessionExists: this.conversation.hasSession(session.key),
       });
       if (interaction.isAutocomplete()) {
-        if (!allowed || interaction.options.getSubcommand() !== "model") {
+        if (!allowed || channelCommand || interaction.options.getSubcommand() !== "model") {
           await interaction.respond([]);
           return;
         }
@@ -165,6 +180,27 @@ export class DiscordCommandAdapter {
       }
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      if (channelCommand) {
+        if (scope.kind === "dm") {
+          await interaction.editReply("チャンネル設定は Guild 内で実行してください。");
+          return;
+        }
+        const channelId = scope.kind === "guild_thread" ? scope.threadId : scope.channelId;
+        const action = interaction.options.getSubcommand();
+        if (action !== "add" && action !== "remove") throw new Error("Unknown channel command");
+        const changed = await this.allowedChannels.change(action, channelId);
+        const verb = action === "add" ? "追加" : "削除";
+        const parentStillAllowed =
+          action === "remove" &&
+          scope.kind === "guild_thread" &&
+          this.allowedChannels.ids.has(scope.parentChannelId);
+        await interaction.editReply(
+          changed
+            ? `このチャンネルを allowed_channel_ids ${action === "add" ? "に" : "から"}${verb}しました。${parentStillAllowed ? "親チャンネルが登録されているため、このスレッドの常設受付は続きます。" : ""}`
+            : `このチャンネルは既に${action === "add" ? "登録済み" : "未登録"}です。`,
+        );
+        return;
+      }
       if (!allowed) {
         await interaction.editReply("この場所では Luna の会話コマンドを使えません。");
         return;

@@ -114,6 +114,8 @@ heartbeat、schedule、日次整理はそれぞれ`system.heartbeat.fired.v1`、
 
 起動時にGuildとBot DM向けのglobal `/luna`コマンドを登録する。通常の投稿を受理するscopeで使える。常設でないGuild channelまたはthreadでは、既存の一時sessionがある場合だけ使える。応答は実行者だけに見えるephemeral messageとする。コマンド自体を会話Eventや初回履歴に含めない。
 
+`/luna channel add`と`/luna channel remove`は例外として、登録状態やsession有無にかかわらずGuild内で誰でも実行できる。対象は実行したchannel自身であり、thread内ではthread IDを対象にする。DMでは変更できない。`config.toml`の`discord.allowed_channel_ids`へ保存し、保存成功直後に会話とコマンドの受付へ反映する。保存に失敗した場合、稼働中の設定は変更しない。既に受理した投稿や既存sessionは取り消さない。親channelが登録されているthreadでは、thread IDを削除しても親channelによる常設受付は続く。
+
 - `/luna model model:<モデル> effort:<推論強度>`は、Codex `model/list`の表示可能モデルと対応強度を検証してから、そのscopeのsessionへ両方を設定する。不正な組み合わせはsessionを変更せずエラーにする。モデルと強度はautocompleteで選べる。
 - sessionがないscopeで`/luna model`を使うと、Codex threadをまだ作らずにsessionを開始する。最初の投稿を受理したときにthreadを作る。投稿がなければ設定時点から`session_idle_ms`でsessionを閉じる。
 - 既存sessionの設定変更は次に開始するCodex turnから適用する。実行中のturnと、他scopeの会話・automationには適用しない。設定はsession内だけに保持し、archive、失敗、connection loss、process再起動後には引き継がない。
@@ -304,7 +306,7 @@ startup時の不正`cron.toml`は起動失敗とする。稼働中の不正変�
 
 ### 14.1 `config.toml`
 
-`LUNA_HOME/config.toml`は起動時に一度だけ読む。`[memory]` sectionとその2 fieldは必須とし、他sectionとfieldは省略できる。未知sectionと未知keyは拒否する。既存configに`[memory]`がなければstartupを失敗させ、自動migrationしない。fileがなければ次の完全設定を生成する。数値期間はすべてmillisecond整数である。
+`LUNA_HOME/config.toml`は起動時に一度だけ読む。`/luna channel add/remove`だけは変更時に最新fileを再読込し、`allowed_channel_ids`を保存する。他の設定変更は再起動まで反映しない。コマンドによる保存では全設定を正規化して書き出し、コメント、順序、formatは保持しない。`[memory]` sectionとその2 fieldは必須とし、他sectionとfieldは省略できる。未知sectionと未知keyは拒否する。既存configに`[memory]`がなければstartupを失敗させ、自動migrationしない。fileがなければ次の完全設定を生成する。数値期間はすべてmillisecond整数である。
 
 ```toml
 [discord]

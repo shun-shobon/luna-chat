@@ -291,7 +291,7 @@ retention cleanerはstartup直後と前回完了から24時間後に、専用COD
 
 Gateway adapterは必要intentsとDM channel partialを設定し、`messageCreate`とtyping eventを購読する。`messageCreate`変換時にthread channelの`members.me`を読み、Discord.jsキャッシュ上のLuna自身のthread member有無を検証済みbooleanとして渡す。RESTによる追加取得は行わない。受付policy、session有無、batchingはconversation applicationに置く。
 
-Command adapterはglobal `/luna`を登録し、`interactionCreate`を購読する。通常投稿と同じscope受付規則でコマンドを検査する。モデル候補と強度候補はCodex `model/list`から取得し、外部responseをZodで検証する。コマンドの結果はephemeralに返し、会話Eventへ変換しない。
+Command adapterはglobal `/luna`を登録し、`interactionCreate`を購読する。会話コマンドは通常投稿と同じscope受付規則で検査する。`channel add/remove`はGuild内なら登録状態とsession有無に関係なく受け付ける。モデル候補と強度候補はCodex `model/list`から取得し、外部responseをZodで検証する。コマンドの結果はephemeralに返し、会話Eventへ変換しない。
 
 初回historyは最初のbatchより前をcursor指定して取得する。historyと起点event間だけIDでdedupeし、event同士はdedupeしない。
 
@@ -322,7 +322,7 @@ MCP adapterはDiscord read/write application portをtoolごとに薄く公開す
 
 startup initializerは`LUNA_HOME`が絶対pathであることを確認し、home、workspace、codex directoryを作る。`config.toml`と`cron.toml`がなければ完全な既定内容を生成する。初期workspace文書と`.agents/skills/`の二つのSKILL.mdはSEAでは埋め込みassetから、通常のNode.js実行では`templates/`から作る。`memory/`はinitializerで作らない。directory作成、初期file生成、main config parse失敗はstartup failureである。
 
-TOMLは`smol-toml`で`unknown`へparseし、strict Zod schemaで検証する。main configの`memory` sectionは必須とし、自動migrationしない。memory cronと利用者schedule cronは同じ5-field検証関数を使う。main configはstartup後に再読込しない。cron watcherは変更をdebounceして全fileを再検証し、成功時だけlast-valid snapshotを置換する。
+TOMLは`smol-toml`で`unknown`へparseし、strict Zod schemaで検証する。main configの`memory` sectionは必須とし、自動migrationしない。memory cronと利用者schedule cronは同じ5-field検証関数を使う。main configの通常の設定値はstartup後に再読込しない。`AllowedChannelSettings`は共有Setを会話controllerとcommand adapterへ渡す。変更コマンドを直列化し、最新のmain configを検証してから`allowed_channel_ids`を変更し、全設定を正規化してtemporary fileからatomic renameで保存する。成功後に共有Setを更新する。cron watcherは変更をdebounceして全fileを再検証し、成功時だけlast-valid snapshotを置換する。
 
 one-shot削除は最新snapshotを同期再読込し、IDで除外後に全体をserializeして同じpathへ直接writeする。write失敗後もscheduler上の発火済みjobは解除する。watcher reloadまたはprocess再起動後は時刻が過去なので実行せず、削除だけを再試行する。実行済みledgerは作らない。
 

@@ -44,21 +44,38 @@ function createHarness(input: { allowedChannelIds?: string[]; sessionExists?: bo
     endSession: vi.fn<ConversationCoordinator["endSession"]>(() => true),
   };
   const agent = { listModels: vi.fn<AgentRuntimePort["listModels"]>(async () => models) };
+  const ids = new Set(input.allowedChannelIds ?? ["300"]);
+  const allowedChannels = {
+    ids,
+    change: vi.fn(async (action: "add" | "remove", channelId: string) => {
+      const changed = action === "add" ? !ids.has(channelId) : ids.has(channelId);
+      if (action === "add") ids.add(channelId);
+      else ids.delete(channelId);
+      return changed;
+    }),
+  };
   const onError = vi.fn();
   const adapter = new DiscordCommandAdapter(
     client,
     conversation,
     agent,
     true,
-    input.allowedChannelIds ?? ["300"],
+    allowedChannels,
     onError,
   );
-  return { client, conversation, agent, onError, adapter };
+  return { client, conversation, agent, allowedChannels, onError, adapter };
 }
 
 function commandInteraction(
-  subcommand: "model" | "end",
-  input: { model?: string; effort?: string; channelId?: string } = {},
+  subcommand: "model" | "end" | "add" | "remove",
+  input: {
+    model?: string;
+    effort?: string;
+    channelId?: string;
+    guildId?: string | null;
+    channelType?: ChannelType;
+    parentId?: string | null;
+  } = {},
 ) {
   const editReply = vi.fn(async (_content: string) => undefined);
   const reply = vi.fn(async () => undefined);
@@ -67,11 +84,13 @@ function commandInteraction(
     isChatInputCommand: () => true,
     commandName: "luna",
     channelId: input.channelId ?? "300",
-    guildId: "200",
+    guildId: input.guildId === undefined ? "200" : input.guildId,
     user: { id: "400" },
-    channel: { type: ChannelType.GuildText, parentId: null },
+    channel: { type: input.channelType ?? ChannelType.GuildText, parentId: input.parentId ?? null },
     options: {
       getSubcommand: () => subcommand,
+      getSubcommandGroup: () =>
+        subcommand === "add" || subcommand === "remove" ? "channel" : null,
       getString: (name: string) => (name === "model" ? input.model : input.effort),
     },
     deferReply: vi.fn(async () => {
@@ -143,6 +162,7 @@ describe("DiscordCommandAdapter", () => {
       isChatInputCommand: () => false,
       options: {
         getSubcommand: () => "model",
+        getSubcommandGroup: () => null,
         getFocused: () => ({ name: "model", value: "astra" }),
         getString: () => "gpt-6-astra",
       },
@@ -159,6 +179,7 @@ describe("DiscordCommandAdapter", () => {
       ...modelInteraction,
       options: {
         getSubcommand: () => "model",
+        getSubcommandGroup: () => null,
         getFocused: () => ({ name: "effort", value: "x" }),
         getString: () => "gpt-6-astra",
       },
@@ -189,5 +210,68 @@ describe("DiscordCommandAdapter", () => {
     expect(interaction.editReply).toHaveBeenCalledWith("コマンドの処理に失敗しました。");
     expect(harness.onError).toHaveBeenCalledOnce();
     expect(harness.conversation.configure).not.toHaveBeenCalled();
+  });
+
+  it("登録外 Guild チャンネルから追加し、直後の会話コマンドを受け付ける", async () => {
+    const harness = createHarness();
+    await harness.adapter.start();
+    const add = commandInteraction("add", { channelId: "999" });
+    harness.client.emit(add);
+    await vi.waitFor(() => expect(add.editReply).toHaveBeenCalledOnce());
+    expect(harness.allowedChannels.change).toHaveBeenCalledWith("add", "999");
+    expect(harness.allowedChannels.ids.has("999")).toBe(true);
+
+    const model = commandInteraction("model", {
+      channelId: "999",
+      model: "gpt-6-sol",
+      effort: "medium",
+    });
+    harness.client.emit(model);
+    await vi.waitFor(() => expect(model.editReply).toHaveBeenCalledOnce());
+    expect(harness.conversation.configure).toHaveBeenCalledOnce();
+  });
+
+  it("削除後は session のないチャンネルの会話コマンドを拒否する", async () => {
+    const harness = createHarness();
+    await harness.adapter.start();
+    const remove = commandInteraction("remove");
+    harness.client.emit(remove);
+    await vi.waitFor(() => expect(remove.editReply).toHaveBeenCalledOnce());
+    expect(harness.allowedChannels.ids.has("300")).toBe(false);
+
+    const end = commandInteraction("end");
+    harness.client.emit(end);
+    await vi.waitFor(() => expect(end.editReply).toHaveBeenCalledOnce());
+    expect(end.editReply).toHaveBeenCalledWith("この場所では Luna の会話コマンドを使えません。");
+  });
+
+  it("DM での変更を拒否し、保存失敗を報告する", async () => {
+    const harness = createHarness();
+    await harness.adapter.start();
+    const dm = commandInteraction("add", { guildId: null });
+    harness.client.emit(dm);
+    await vi.waitFor(() => expect(dm.editReply).toHaveBeenCalledOnce());
+    expect(harness.allowedChannels.change).not.toHaveBeenCalled();
+
+    harness.allowedChannels.change.mockRejectedValueOnce(new Error("write failed"));
+    const add = commandInteraction("add", { channelId: "999" });
+    harness.client.emit(add);
+    await vi.waitFor(() => expect(add.editReply).toHaveBeenCalledOnce());
+    expect(add.editReply).toHaveBeenCalledWith("コマンドの処理に失敗しました。");
+    expect(harness.onError).toHaveBeenCalledOnce();
+  });
+
+  it("スレッド内ではスレッド ID を削除し、親の登録が残ることを伝える", async () => {
+    const harness = createHarness({ allowedChannelIds: ["300", "999"] });
+    await harness.adapter.start();
+    const remove = commandInteraction("remove", {
+      channelId: "999",
+      channelType: ChannelType.PublicThread,
+      parentId: "300",
+    });
+    harness.client.emit(remove);
+    await vi.waitFor(() => expect(remove.editReply).toHaveBeenCalledOnce());
+    expect(harness.allowedChannels.change).toHaveBeenCalledWith("remove", "999");
+    expect(remove.editReply).toHaveBeenCalledWith(expect.stringContaining("常設受付は続きます"));
   });
 });

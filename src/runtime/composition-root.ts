@@ -42,6 +42,7 @@ import { createEffectBatchExecutor } from "../modules/effect/application/execute
 import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
 import { EventExecutor } from "../modules/event/application/event-executor";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
+import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
 
 import { readRuntimeEnvironment } from "./runtime-environment";
@@ -61,6 +62,10 @@ export async function startLunaApplication(
   options.startupSignal?.throwIfAborted();
   const environment = readRuntimeEnvironment(process.env);
   const workspace = await initializeWorkspace({ lunaHome: environment.lunaHome });
+  const allowedChannels = new AllowedChannelSettings(
+    workspace.configPath,
+    workspace.config.discord.allowedChannelIds,
+  );
   const logger = new JsonLinesLogger(environment.logLevel);
   const client = createDiscordGatewayClient();
   const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
@@ -244,7 +249,7 @@ export async function startLunaApplication(
 
     const gatewayController = new DiscordConversationController(conversation, lunaUserId, {
       allowDm: workspace.config.discord.allowDm,
-      allowedChannelIds: workspace.config.discord.allowedChannelIds,
+      allowedChannelIds: allowedChannels.ids,
       onAccepted: (event) => {
         logger.log(
           "info",
@@ -263,7 +268,7 @@ export async function startLunaApplication(
       conversation,
       supervisor,
       workspace.config.discord.allowDm,
-      workspace.config.discord.allowedChannelIds,
+      allowedChannels,
       (error) => logger.log("error", "discord.command_failed", {}, { error }),
     );
     await commandAdapter.start();
