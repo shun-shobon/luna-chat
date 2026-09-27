@@ -99,6 +99,8 @@ const mentionedChannelSchema = z.object({
   name: z.string().nullable().optional(),
 });
 
+const sdkChannelSchema = channelSchema.extend({ guildId: z.string().nullable().optional() });
+
 const sdkTypingSchema = z.object({
   channel: channelSchema,
   guild: z.object({ id: z.string() }).nullable(),
@@ -121,6 +123,11 @@ export function toDiscordGatewayTyping(typing: unknown): DiscordGatewayTyping {
     userId: discordIdSchema.parse(parsed.user.id),
     isHuman: !parsed.user.bot && !parsed.user.system,
   };
+}
+
+export function toConversationScope(channel: unknown): ConversationScope {
+  const parsed = sdkChannelSchema.parse(channel);
+  return resolveScope({ channel: parsed, guildId: parsed.guildId ?? null });
 }
 
 export function toDiscordMessageSource(message: unknown): DiscordMessageSource {

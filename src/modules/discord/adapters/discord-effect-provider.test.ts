@@ -7,7 +7,10 @@ import type { EffectDefinition } from "../../effect/ports/effect-provider";
 import type { JsonValue } from "../../event/domain/luna-event";
 import type { DiscordActionPort } from "../ports/discord-action-port";
 
-import { createDiscordEffectProvider } from "./discord-effect-provider";
+import {
+  createDiscordDelegationEffectProvider,
+  createDiscordEffectProvider,
+} from "./discord-effect-provider";
 
 describe("Discord Effect Provider", () => {
   it("六つのnamespaced Effectを対応するDiscord Actionへ写像する", async () => {
@@ -199,6 +202,43 @@ function findDefinition(definitions: readonly EffectDefinition[], type: string):
   if (definition === undefined) throw new Error(`Missing Effect definition ${type}`);
   return definition;
 }
+
+describe("Discord delegation Effect Provider", () => {
+  it("open_conversationをtargetとbriefで委譲し、解決したscopeを返す", async () => {
+    const scope = { kind: "dm", channelId: "500", userId: "100" } as const;
+    const delegate = vi.fn(async () => scope);
+    const registry = createEffectRegistry([createDiscordDelegationEffectProvider({ delegate })]);
+    const definition = registry.getDefinition("discord.open_conversation");
+    const input = definition.parseInput({
+      target: { kind: "dm_user", userId: "100" },
+      brief: "帰宅したので夕飯の相談をしたい",
+    });
+
+    await expect(definition.execute(input, "owner-1")).resolves.toEqual({ scope });
+    expect(delegate).toHaveBeenCalledWith(
+      { kind: "dm_user", userId: "100" },
+      "帰宅したので夕飯の相談をしたい",
+    );
+    expect(definition.describeTarget(input)).toEqual({ kind: "dm_user", userId: "100" });
+  });
+
+  it("空のbriefと未知fieldを拒否する", () => {
+    const definition = createEffectRegistry([
+      createDiscordDelegationEffectProvider({ delegate: vi.fn() }),
+    ]).getDefinition("discord.open_conversation");
+
+    expect(() =>
+      definition.parseInput({ target: { kind: "channel", channelId: "200" }, brief: "" }),
+    ).toThrow();
+    expect(() =>
+      definition.parseInput({
+        target: { kind: "channel", channelId: "200" },
+        brief: "brief",
+        content: "hello",
+      }),
+    ).toThrow();
+  });
+});
 
 function createActionPort() {
   return {

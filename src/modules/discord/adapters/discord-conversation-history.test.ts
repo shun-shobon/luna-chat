@@ -1,7 +1,9 @@
+import { SnowflakeUtil } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   createDiscordConversationSession,
+  createDiscordDelegatedEvent,
   createDiscordMessageEvent,
 } from "../domain/discord-event";
 import type { DiscordMessage } from "../domain/discord-message";
@@ -40,6 +42,25 @@ describe("DiscordConversationHistory", () => {
     expect(result.at(-1)).toEqual(createDiscordMessageEvent(scope, message(200)));
   });
 
+  it("委譲Eventから始まるsessionは委譲時刻より前の履歴を取得する", async () => {
+    const readMessageHistory = vi
+      .fn<DiscordReadPort["readMessageHistory"]>()
+      .mockResolvedValueOnce([message(101)]);
+    const history = new DiscordConversationHistory(createReadPort({ readMessageHistory }));
+    const occurredAt = new Date("2026-07-23T00:00:00.000Z");
+
+    const result = await history.fetchBefore(
+      createDiscordConversationSession(scope),
+      createDiscordDelegatedEvent({ id: "delegation-1", scope, brief: "brief", occurredAt }),
+      20,
+    );
+
+    const cursor = readMessageHistory.mock.calls[0]?.[0].beforeMessageId;
+    expect(cursor).toBeDefined();
+    expect(SnowflakeUtil.timestampFrom(cursor ?? "")).toBe(occurredAt.getTime());
+    expect(result).toEqual([createDiscordMessageEvent(scope, message(101))]);
+  });
+
   it("session contextとbefore Eventを境界で検証する", async () => {
     const history = new DiscordConversationHistory(createReadPort({}));
     const before = createDiscordMessageEvent(scope, message(201));
@@ -68,6 +89,13 @@ describe("DiscordConversationHistory", () => {
         1,
       ),
     ).rejects.toThrow("scope does not match");
+    await expect(
+      history.fetchBefore(
+        createDiscordConversationSession(scope),
+        { ...before, type: "discord.unknown.v1" },
+        1,
+      ),
+    ).rejects.toThrow("cannot start before event type");
   });
 });
 

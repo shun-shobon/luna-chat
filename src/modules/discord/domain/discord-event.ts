@@ -12,10 +12,16 @@ import { discordMessageSchema, type DiscordMessage } from "./discord-message";
 
 export const DISCORD_EVENT_SOURCE = "discord/main";
 export const DISCORD_MESSAGE_CREATED_EVENT_TYPE = "discord.message.created.v1";
+export const DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE = "discord.conversation.delegated.v1";
 
 export const discordMessageEventDataSchema = z.strictObject({
   scope: conversationScopeSchema,
   message: discordMessageSchema,
+});
+
+export const discordDelegatedEventDataSchema = z.strictObject({
+  scope: conversationScopeSchema,
+  brief: z.string().min(1),
 });
 
 export function createDiscordConversationSession(scope: ConversationScope): ConversationSession {
@@ -43,5 +49,19 @@ export function createDiscordMessageEvent(
       scope: session.context,
       message: validatedMessage,
     },
+  });
+}
+
+export function createDiscordDelegatedEvent(
+  input: Readonly<{ id: string; scope: ConversationScope; brief: string; occurredAt: Date }>,
+): LunaEvent {
+  const session = createDiscordConversationSession(input.scope);
+  return lunaEventSchema.parse({
+    id: input.id,
+    type: DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
+    source: DISCORD_EVENT_SOURCE,
+    subject: session.key,
+    occurredAt: input.occurredAt.toISOString(),
+    data: discordDelegatedEventDataSchema.parse({ scope: session.context, brief: input.brief }),
   });
 }

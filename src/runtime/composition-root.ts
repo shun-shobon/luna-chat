@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
 import { startManagedCodexRuntime } from "../modules/agent/adapters/outbound/codex/managed-codex-runtime";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
@@ -20,8 +22,12 @@ import {
   DiscordCommandAdapter,
 } from "../modules/discord/adapters/discord-command-adapter";
 import { DiscordConversationController } from "../modules/discord/adapters/discord-conversation-controller";
+import { DiscordConversationDelegation } from "../modules/discord/adapters/discord-conversation-delegation";
 import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
-import { createDiscordEffectProvider } from "../modules/discord/adapters/discord-effect-provider";
+import {
+  createDiscordDelegationEffectProvider,
+  createDiscordEffectProvider,
+} from "../modules/discord/adapters/discord-effect-provider";
 import {
   createDiscordGatewayClient,
   createDiscordGatewayEventClient,
@@ -72,7 +78,17 @@ export async function startLunaApplication(
     logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
   });
   const actionAdapter = new DiscordActionAdapter(client, new FilesystemSendFileResolver(), typing);
-  const effectRegistry = createEffectRegistry([createDiscordEffectProvider(actionAdapter)]);
+  let conversation: ConversationCoordinator | undefined;
+  const delegation = new DiscordConversationDelegation(client, {
+    accept: (input) => conversation?.accept(input) ?? false,
+    allowDm: workspace.config.discord.allowDm,
+    createId: randomUUID,
+    now: () => new Date(),
+  });
+  const effectRegistry = createEffectRegistry([
+    createDiscordEffectProvider(actionAdapter),
+    createDiscordDelegationEffectProvider(delegation),
+  ]);
   const effectOutput = createEffectOutputContract(effectRegistry);
   const effects = createEffectBatchExecutor(effectRegistry, logger);
   const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
@@ -85,7 +101,6 @@ export async function startLunaApplication(
     read: readAdapter,
   });
 
-  let conversation: ConversationCoordinator | undefined;
   let eventAgent: EventAgentAdapter | undefined;
   const fatal = deferred<Error>();
   const supervisor = new AgentRuntimeSupervisor(
@@ -149,6 +164,7 @@ export async function startLunaApplication(
         },
       }),
       capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
+      now: () => new Date(),
       workspaceDir: workspace.workspaceDir,
     });
     conversation = new ConversationCoordinator(
