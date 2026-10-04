@@ -37,7 +37,6 @@
     "@tsconfig/strictest": "2.0.8",
     "@types/node": "24.19.0",
     "knip": "6.38.0",
-    "octokit": "5.0.5",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
     "oxlint-tsgolint": "7.0.2003",

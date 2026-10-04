@@ -265,4 +265,4 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 
 - **ローカルビルド**: `pnpm run build` により、TypeScriptのコンパイルとCommonJSバンドルを行い、Node.jsのSingle Executable Application (SEA) として `dist/luna-chat` を生成する。初期テンプレートファイルはバイナリ内に埋め込まれる。
 - **CI品質ゲート**: GitHub Actions上でフォーマット、リント、未使用コード検出（knip）、型チェック（typecheck）、テストを自動実行し、すべてが通過することをmainブランチへのマージ条件とする。
-- **リリースワークフロー**: GitHub Actionsから手動でリリース準備（`prepare release`）をトリガーし、バージョン更新PRを作成・マージすることで、マルチアーキテクチャ対応のDockerイメージ作成（GHCRへのプッシュ）および各OS向けバイナリのGitHub Releasesへの公開が自動実行される。ビルド成果物にはGitHub Artifact Attestationsによる証明が付与される。
+- **リリースワークフロー**: `.github/workflows/release.yml` に手動実行とPRマージ後の処理を集約する。準備ジョブは共通setupでpnpmと依存関係を用意する。`shun-shobon/easy-release` の `prepare` が `.github/easy-release.json` を読み、最新の安定版Gitタグからバージョンを更新し、`updateCommand` の `pnpm format` で整形した変更をPRに含める。マージ後は `draft` が準備PRとバージョンを検証し、タグとドラフトReleaseを作成する。`ready` が `true` の場合だけ、出力された `commit` をDocker・SEAのビルドに、`tag` をイメージタグとアセットの添付先に使う。DockerはLinuxのamd64・arm64、SEAはLinux・macOSのamd64・arm64を対象とし、GitHub Artifact Attestationsを付与する。両ビルドジョブの成功後にDockerの `latest` を更新し、`publish` に `release-id`・`tag`・`commit` を渡して公開する。リリース処理は共通のconcurrencyグループで直列化する。
