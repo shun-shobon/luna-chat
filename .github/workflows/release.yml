@@ -1,77 +1,77 @@
-name: publish
+name: release
 on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Version to bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
   pull_request:
     types:
       - closed
     branches:
       - main
 
+permissions:
+  contents: read
+
 concurrency:
-  group: release-${{ github.event.pull_request.number }}
+  group: easy-release
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup | Development environment
+        uses: ./.github/actions/setup
+
+      - name: Run | Create Release Pull Request
+        uses: shun-shobon/easy-release@6fb967fe0de66ae629160ba29b180e7a424f549d # v0.2.0
+        with:
+          mode: prepare
+          release-type: ${{ inputs.release_type }}
+
   draft:
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/prepare-v') && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
+      ready: ${{ steps.draft.outputs.ready }}
+      tag: ${{ steps.draft.outputs.tag }}
+      commit: ${{ steps.draft.outputs.commit }}
+      release-id: ${{ steps.draft.outputs.release-id }}
     steps:
       - name: Setup | Checkout Merged Commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
-          fetch-depth: 0
-
-      - name: Run | Check Release Version
-        id: version
-        env:
-          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          version=$(node -p "require('./package.json').version")
-          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Package version must be X.Y.Z: $version" >&2
-            exit 1
-          fi
-
-          tag="v${version}"
-          if [[ "$RELEASE_BRANCH" != "release/prepare-${tag}" ]]; then
-            echo "Release branch and package version differ: $RELEASE_BRANCH, $tag" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Run | Create Draft Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-        run: |
-          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" > /dev/null; then
-            tagged_commit=$(git rev-list -n 1 "$RELEASE_TAG")
-            if [[ "$tagged_commit" != "$MERGE_SHA" ]]; then
-              echo "Release tag points to another commit: $RELEASE_TAG" >&2
-              exit 1
-            fi
-          else
-            git tag "$RELEASE_TAG"
-            git push origin "$RELEASE_TAG"
-          fi
-
-          if draft_state=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [[ "$draft_state" != true ]]; then
-              echo "Release is already published: $RELEASE_TAG" >&2
-              exit 1
-            fi
-          else
-            gh release create "$RELEASE_TAG" --draft --generate-notes --verify-tag
-          fi
+        id: draft
+        uses: shun-shobon/easy-release@6fb967fe0de66ae629160ba29b180e7a424f549d # v0.2.0
+        with:
+          mode: draft
 
   docker:
     needs: draft
+    if: needs.draft.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -83,7 +83,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ needs.draft.outputs.commit }}
 
       - name: Setup | QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -117,6 +117,7 @@ jobs:
 
   sea:
     needs: draft
+    if: needs.draft.outputs.ready == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -143,7 +144,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ needs.draft.outputs.commit }}
 
       - name: Setup | Development environment
         uses: ./.github/actions/setup
@@ -180,12 +181,18 @@ jobs:
 
   release:
     needs: [draft, docker, sea]
+    if: needs.draft.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
       packages: write
     steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.draft.outputs.commit }}
+
       - name: Setup | Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -196,12 +203,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run | Publish Release
+      - name: Run | Update Latest Docker Image
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.draft.outputs.tag }}
           IMAGE: ghcr.io/${{ github.repository }}
-        run: |
-          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$RELEASE_TAG"
-          gh release edit "$RELEASE_TAG" --draft=false
+        run: docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$RELEASE_TAG"
+
+      - name: Run | Publish Release
+        uses: shun-shobon/easy-release@6fb967fe0de66ae629160ba29b180e7a424f549d # v0.2.0
+        with:
+          mode: publish
+          release-id: ${{ needs.draft.outputs.release-id }}
+          tag: ${{ needs.draft.outputs.tag }}
+          commit: ${{ needs.draft.outputs.commit }}
