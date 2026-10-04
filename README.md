@@ -204,7 +204,9 @@ docker compose build  # Dockerイメージビルド
 
 ## リリース手順
 
-リポジトリのGitHub Actions（`prepare release` ワークフロー）から手動でリリース準備を開始できます。`patch`、`minor`、`major` を選択して実行すると、バージョン更新用のブランチとPull Requestが作成されます。このPRをmainブランチにマージすると、リリースタグの作成、GitHub Releasesへのバイナリ（各OS向けSEAアセット）の添付、GHCRへのDockerイメージのプッシュが自動的に行われます。
+GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`、`minor`、`major` を選択します。[easy-release](https://github.com/shun-shobon/easy-release) が最新の安定版Gitタグを基準に次のバージョンを計算し、`package.json` の更新後に `pnpm format` を実行し、整形結果を含むPull Requestを作成します。GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしてください。
+
+準備PRをmainブランチにマージすると、リリースタグとドラフトReleaseを作成し、各OS向けSEAアセットの添付とGHCRへのDockerイメージのプッシュを実行します。すべてのビルドと証明の付与が成功した後、Dockerイメージの `latest` タグを更新してGitHub Releaseを公開します。更新対象は `.github/easy-release.json` で指定します。
 
 ## ドキュメント一覧
 

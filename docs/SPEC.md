@@ -325,3 +325,9 @@ JSON形式が不正またはスキーマに合わない入力は `400`、JSON以
 ログはすべて標準出力にJSON Lines形式で出力される。
 `LOG_LEVEL=debug` または `trace` ではメッセージ本文やプロンプト、ツール引数が出力される。Botトークン等の既知の機密情報はマスクされるが、自由文に含まれる認証情報等の完全な除去は保証されない。
 外部監視は、プロセスの死活監視および終了コード（exit code）によって行う。
+
+## 19. リリース
+
+GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を指定する。easy-releaseが最新の安定版Gitタグを基準に次のバージョンを計算し、`package.json` の更新後に `pnpm format` を実行し、整形結果を含む準備PRを作成する。安定版タグがない場合の基準は `0.0.0` とする。
+
+準備PRのmainへのマージを契機に、`vX.Y.Z` 形式のタグとドラフトReleaseを作成する。通常のPR、未マージで閉じたPR、別リポジトリからのPRは公開対象にしない。Linux・macOSのamd64・arm64向けSEAアセットと、Linuxのamd64・arm64向けDockerイメージをビルドし、GitHub Artifact Attestationsを付与する。すべて成功した後にGHCRの `latest` タグを更新し、GitHub Releaseを公開する。ビルドや証明の付与に失敗した場合はドラフトのまま保持し、`latest` は更新しない。
