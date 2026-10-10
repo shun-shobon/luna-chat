@@ -2,6 +2,8 @@ minimumReleaseAge: 1440
 
 minimumReleaseAgeExclude:
   - "@openai/codex"
+  - "@shun-shobon/oxfmt-config"
+  - "@shun-shobon/oxlint-config"
 
 allowBuilds:
   esbuild: true
