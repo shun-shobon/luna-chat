@@ -260,12 +260,16 @@ class ConversationActor {
 
   async shutdown(): Promise<void> {
     if (this.#phase === "closed") return;
-    await new Promise<void>((resolve) => this.#post({ kind: "shutdown", resolve }));
+    await new Promise<void>((resolve) => {
+      this.#post({ kind: "shutdown", resolve });
+    });
   }
 
   async abort(): Promise<void> {
     if (this.#phase === "closed") return;
-    await new Promise<void>((resolve) => this.#post({ kind: "abort", resolve }));
+    await new Promise<void>((resolve) => {
+      this.#post({ kind: "abort", resolve });
+    });
   }
 
   #post(command: Command): void {
@@ -377,11 +381,9 @@ class ConversationActor {
           threadId: this.#threadId,
           turnId: command.turn.turnId,
         });
-        if (this.#turnPurpose === "conversation") {
-          if (!this.#endRequested) {
-            this.#steerQueue.push(...this.#queue);
-            this.#queue = [];
-          }
+        if (this.#turnPurpose === "conversation" && !this.#endRequested) {
+          this.#steerQueue.push(...this.#queue);
+          this.#queue = [];
         }
         this.#openingBatch = [];
         this.#kickSteer();
@@ -457,7 +459,7 @@ class ConversationActor {
           else this.#archive();
         }
         return;
-      case "abort":
+      case "abort": {
         this.#shutdownWaiters.push(command.resolve);
         this.#shutdownRequested = true;
         this.#queue = [];
@@ -475,6 +477,7 @@ class ConversationActor {
           this.#close();
         }
         return;
+      }
       case "connection_lost":
         this.#handleConnectionLost(command.error);
     }
@@ -535,7 +538,7 @@ class ConversationActor {
     ) {
       return;
     }
-    const batch = this.#queue.splice(0).sort(compareEvents);
+    const batch = this.#queue.splice(0).toSorted(compareEvents);
     for (const event of batch) this.#activeEventIds.add(event.id);
     const token = ++this.#operationToken;
     if (this.#threadId !== undefined) {
@@ -573,7 +576,7 @@ class ConversationActor {
         const batchIds = new Set(batch.map((event) => event.id));
         const deduplicatedHistory = history
           .filter((event) => !batchIds.has(event.id))
-          .sort(compareEvents);
+          .toSorted(compareEvents);
         this.#post({
           kind: "thread_ready",
           token,
@@ -598,7 +601,7 @@ class ConversationActor {
       .startTurn(threadId, {
         input,
         outputSchema: this.dependencies.effectOutput.jsonSchema,
-        ...(this.#modelSettings === undefined ? {} : this.#modelSettings),
+        ...this.#modelSettings,
       })
       .then(
         (turn) => this.#post({ kind: "turn_started", token, turn }),

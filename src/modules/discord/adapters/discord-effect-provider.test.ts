@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import { createEffectOutputContract } from "../../effect/application/effect-output-contract";
 import { createEffectRegistry } from "../../effect/application/effect-registry";
@@ -139,7 +140,7 @@ describe("Discord Effect Provider", () => {
         emoji: { kind: "custom", id: "400", name: null },
         extra: true,
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("execution ownerのtyping resourceを既存portへ解放する", async () => {
@@ -229,14 +230,14 @@ describe("Discord delegation Effect Provider", () => {
 
     expect(() =>
       definition.parseInput({ target: { kind: "channel", channelId: "200" }, brief: "" }),
-    ).toThrow();
+    ).toThrow(ZodError);
     expect(() =>
       definition.parseInput({
         target: { kind: "channel", channelId: "200" },
         brief: "brief",
         content: "hello",
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });
 

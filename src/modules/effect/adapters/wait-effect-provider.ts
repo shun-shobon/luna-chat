@@ -18,7 +18,9 @@ export function createWaitEffectProvider(): EffectProvider {
           let remainingSeconds = input.duration_seconds;
           while (remainingSeconds > 0) {
             const chunkSeconds = Math.min(remainingSeconds, MAXIMUM_DELAY_SECONDS);
-            await new Promise<void>((resolve) => setTimeout(resolve, chunkSeconds * 1_000));
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, chunkSeconds * 1_000);
+            });
             remainingSeconds -= chunkSeconds;
           }
           return { duration_seconds: input.duration_seconds };

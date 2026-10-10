@@ -34,7 +34,7 @@ export class ChokidarScheduleWatcher implements AutomationScheduleWatcherPort {
       });
       watcher.on("error", (error) => {
         if (ready) input.onError(error);
-        else reject(error);
+        else reject(error instanceof Error ? error : new Error(String(error)));
       });
     });
     this.#readyPromise = readyPromise;

@@ -1,5 +1,6 @@
 import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import { DiscordReadAdapter, type DiscordReadClient } from "./discord-read-adapter";
 
@@ -37,7 +38,7 @@ describe("DiscordReadAdapter", () => {
         beforeMessageId: "100",
         afterMessageId: "101",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ZodError);
     expect(fetchMessages).not.toHaveBeenCalled();
   });
 
@@ -66,7 +67,7 @@ describe("DiscordReadAdapter", () => {
       createClient({ listChannels: vi.fn(async () => [{ id: "not-snowflake" }]) }),
     );
 
-    await expect(adapter.listChannels()).rejects.toThrow();
+    await expect(adapter.listChannels()).rejects.toThrow(ZodError);
   });
 });
 

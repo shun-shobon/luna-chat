@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import {
   createDiscordConversationSession,
@@ -67,6 +68,6 @@ describe("Discord event factory", () => {
   it("空のbriefを拒否する", () => {
     expect(() =>
       createDiscordDelegatedEvent({ id: "delegation-1", scope, brief: "", occurredAt: new Date() }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });

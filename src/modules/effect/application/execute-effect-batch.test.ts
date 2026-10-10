@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { ZodError, z } from "zod";
 
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { EffectProvider } from "../ports/effect-provider";
@@ -27,7 +27,9 @@ describe("createEffectBatchExecutor", () => {
           parseInput: (input) => input,
           execute: async (input) => {
             started.push(input.value);
-            await new Promise<void>((resolve) => resolvers.set(input.value, resolve));
+            await new Promise<void>((resolve) => {
+              resolvers.set(input.value, resolve);
+            });
             return { recorded: input.value };
           },
           describeTarget: (input) => input.target,
@@ -133,7 +135,7 @@ describe("createEffectBatchExecutor", () => {
     ).rejects.toThrow("Unknown effect type: fake.unknown");
     await expect(
       executor.execute([{ type: "fake.record", input: { target: 123 } }], "owner-1"),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ZodError);
     expect(execute).not.toHaveBeenCalled();
   });
 

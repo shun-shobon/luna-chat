@@ -218,10 +218,11 @@ describe("ConversationCoordinator", () => {
     await flushPromises();
 
     expect(runtime.steerTurn).toHaveBeenCalledTimes(2);
-    expect(runtime.steerTurn.mock.calls.map((call) => JSON.parse(call[2]).events[0].id)).toEqual([
-      "101",
-      "102",
-    ]);
+    expect(
+      runtime.steerTurn.mock.calls.map((call) =>
+        conversationInputSchema.parse(JSON.parse(call[2])).events.map(({ id }) => id),
+      ),
+    ).toEqual([["101"], ["102"]]);
     firstCompletion.resolve(completed([]));
   });
 
@@ -557,21 +558,19 @@ describe("ConversationCoordinator", () => {
       .fn<EffectBatchPort["execute"]>(async () => [])
       .mockImplementationOnce(
         async () =>
-          await new Promise<readonly EffectResult[]>((resolve) =>
-            setTimeout(
-              () =>
-                resolve([
-                  {
-                    index: 0,
-                    type: "system.wait",
-                    target: null,
-                    success: true,
-                    value: { duration_seconds: 1_860 },
-                  },
-                ]),
-              1_860_000,
-            ),
-          ),
+          await new Promise<readonly EffectResult[]>((resolve) => {
+            setTimeout(() => {
+              resolve([
+                {
+                  index: 0,
+                  type: "system.wait",
+                  target: null,
+                  success: true,
+                  value: { duration_seconds: 1_860 },
+                },
+              ]);
+            }, 1_860_000);
+          }),
       );
     const effects: EffectBatchPort = {
       execute,
@@ -1024,12 +1023,12 @@ function createCoordinator(
       effectOutput,
       effects: overrides.effects ?? {
         execute: vi.fn<EffectBatchPort["execute"]>(async (effects) =>
-          effects.map((effect, index) => ({
+          effects.map((request, index) => ({
             index,
             success: true as const,
-            target: effect.input,
-            type: effect.type,
-            value: effect.input,
+            target: request.input,
+            type: request.type,
+            value: request.input,
           })),
         ),
         release: vi.fn(async () => undefined),

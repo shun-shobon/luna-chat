@@ -45,6 +45,7 @@ async function start(): Promise<void> {
   }
 }
 
+// oxlint-disable-next-line unicorn/prefer-top-level-await -- SEA 用に CJS へバンドルするためトップレベル await を使えない
 void start().catch((error: unknown) => {
   console.error(error);
   process.exitCode = 1;

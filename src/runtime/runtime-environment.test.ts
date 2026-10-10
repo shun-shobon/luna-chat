@@ -30,15 +30,17 @@ describe("readRuntimeEnvironment", () => {
   });
 
   it("空白tokenと不正levelを拒否する", () => {
-    expect(() => readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "  " })).toThrow();
+    expect(() => readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "  " })).toThrow(
+      "at DISCORD_BOT_TOKEN",
+    );
     expect(() =>
       readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LOG_LEVEL: "verbose" }),
-    ).toThrow();
+    ).toThrow("at LOG_LEVEL");
     expect(() =>
       readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_HTTP_PORT: "0" }),
-    ).toThrow();
+    ).toThrow("at LUNA_HTTP_PORT");
     expect(() =>
       readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_HTTP_HOST: "example.com" }),
-    ).toThrow();
+    ).toThrow("at LUNA_HTTP_HOST");
   });
 });

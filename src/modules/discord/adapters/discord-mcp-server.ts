@@ -263,7 +263,7 @@ async function startHttpServer(
       started = true;
       resolve({ port: info.port, server });
     });
-    server.on("error", (error) => {
+    server.on("error", (error: Error) => {
       if (!started) reject(error);
       else onError(error);
     });

@@ -67,7 +67,7 @@ describe("AllowedChannelSettings", () => {
     const settings = new AllowedChannelSettings(path, []);
     await chmod(dirname(path), 0o500);
     try {
-      await expect(settings.change("add", "200")).rejects.toThrow();
+      await expect(settings.change("add", "200")).rejects.toThrow("EACCES");
       expect(settings.ids.has("200")).toBe(false);
     } finally {
       await chmod(dirname(path), 0o700);

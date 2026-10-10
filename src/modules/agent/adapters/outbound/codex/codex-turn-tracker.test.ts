@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import { CodexTurnTracker, TurnCorrelationError } from "./codex-turn-tracker";
 
@@ -60,7 +61,7 @@ describe("CodexTurnTracker", () => {
         method: "item/reasoning/textDelta",
         params: { threadId: "thread-1" },
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("final_answer がJSONでなくても解釈せずraw textを返す", async () => {

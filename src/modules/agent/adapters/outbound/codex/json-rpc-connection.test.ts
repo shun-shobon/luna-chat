@@ -53,12 +53,11 @@ describe("JsonRpcConnection", () => {
 
     const first = connection.request("thread/archive", { threadId: "thread-1" });
     const second = connection.request("thread/delete", { threadId: "thread-2" });
-    const firstRejection = expect(first).rejects.toBeInstanceOf(RpcTimeoutError);
-    const secondRejection = expect(second).rejects.toBeInstanceOf(RpcTimeoutError);
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    await firstRejection;
-    await secondRejection;
+    await Promise.all([
+      expect(first).rejects.toBeInstanceOf(RpcTimeoutError),
+      expect(second).rejects.toBeInstanceOf(RpcTimeoutError),
+      vi.advanceTimersByTimeAsync(1_000),
+    ]);
     expect(fatalErrors).toHaveLength(1);
     expect(() => connection.notifyInitialized()).toThrow(RpcTimeoutError);
     vi.useRealTimers();

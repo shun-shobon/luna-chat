@@ -62,7 +62,7 @@ function serialize(value: unknown, seen: WeakSet<object>): unknown {
     };
   }
   if (Array.isArray(value)) return value.map((item) => serialize(item, seen));
-  if (typeof value !== "object" || value === null) return value;
+  if (typeof value !== "object" || value == null) return value;
   if (seen.has(value)) return "[Circular]";
   seen.add(value);
   const output: Record<string, unknown> = {};

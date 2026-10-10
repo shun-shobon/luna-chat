@@ -54,7 +54,7 @@ export function normalizeDiscordMessage(source: DiscordMessageSource): DiscordMe
   return discordMessageSchema.parse({
     id: source.id,
     timestamp: source.timestamp.toISOString(),
-    kind: source.system ? "system" : source.replyTo === null ? "default" : "reply",
+    kind: source.system ? "system" : source.replyTo == null ? "default" : "reply",
     guild: source.guild,
     channel: source.channel,
     author: {
@@ -73,7 +73,7 @@ export function normalizeDiscordMessage(source: DiscordMessageSource): DiscordMe
 }
 
 function authorKind(source: DiscordMessageSource): DiscordMessage["author"]["kind"] {
-  if (source.webhookId !== null) return "webhook";
+  if (source.webhookId != null) return "webhook";
   if (source.system || source.author.system) return "system";
   return source.author.bot ? "bot" : "human";
 }

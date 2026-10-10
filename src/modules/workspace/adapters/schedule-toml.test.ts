@@ -39,16 +39,10 @@ describe("workspace schedule TOML", () => {
     ["unknown top-level key", "unexpected = true"],
     ["unknown job key", `${RECURRING_JOB_SOURCE}\nunexpected = true`],
     ["duplicate id", `${RECURRING_JOB_SOURCE}\n${RECURRING_JOB_SOURCE}`],
-    [
-      "six-field cron",
-      `${RECURRING_JOB_SOURCE.replace('cron = "0 9 * * *"', 'cron = "0 0 9 * * *"')}`,
-    ],
-    [
-      "invalid cron",
-      `${RECURRING_JOB_SOURCE.replace('cron = "0 9 * * *"', 'cron = "invalid cron"')}`,
-    ],
+    ["six-field cron", RECURRING_JOB_SOURCE.replace('cron = "0 9 * * *"', 'cron = "0 0 9 * * *"')],
+    ["invalid cron", RECURRING_JOB_SOURCE.replace('cron = "0 9 * * *"', 'cron = "invalid cron"')],
     ["recurring job with at", `${RECURRING_JOB_SOURCE}\nat = "2026-08-01T10:00:00+09:00"`],
-    ["one-shot job without offset", `${ONE_SHOT_JOB_SOURCE.replace("+09:00", "")}`],
+    ["one-shot job without offset", ONE_SHOT_JOB_SOURCE.replace("+09:00", "")],
     ["one-shot job with cron", `${ONE_SHOT_JOB_SOURCE}\ncron = "0 9 * * *"`],
   ])("%s を拒否する", (_title, source) => {
     expect(() => parseWorkspaceSchedule(source)).toThrow("cron.toml is invalid");

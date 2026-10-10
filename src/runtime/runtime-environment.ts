@@ -8,7 +8,7 @@ const RuntimeEnvironmentSchema = z.object({
   LUNA_HTTP_HOST: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   LUNA_HTTP_PORT: z
     .string()
-    .regex(/^\d+$/)
+    .regex(/^\d+$/u)
     .transform(Number)
     .pipe(z.number().int().min(1).max(65_535))
     .default(3000),

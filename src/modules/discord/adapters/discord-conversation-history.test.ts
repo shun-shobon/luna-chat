@@ -1,5 +1,6 @@
 import { SnowflakeUtil } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import {
   createDiscordConversationSession,
@@ -71,7 +72,7 @@ describe("DiscordConversationHistory", () => {
         before,
         1,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ZodError);
     await expect(
       history.fetchBefore(createDiscordConversationSession(scope), { ...before, id: "999" }, 1),
     ).rejects.toThrow("does not match");

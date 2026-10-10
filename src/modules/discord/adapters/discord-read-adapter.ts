@@ -52,7 +52,7 @@ export class DiscordReadAdapter implements DiscordReadPort {
     const messages = await this.client.fetchMessages(validated);
     return messages
       .map((message) => toDiscordGatewayMessage(message).message)
-      .sort((left, right) =>
+      .toSorted((left, right) =>
         left.timestamp === right.timestamp
           ? left.id.localeCompare(right.id)
           : left.timestamp.localeCompare(right.timestamp),
@@ -61,7 +61,7 @@ export class DiscordReadAdapter implements DiscordReadPort {
 
   async listChannels(): Promise<readonly DiscordChannelSummary[]> {
     const channels = z.array(discordChannelSummarySchema).parse(await this.client.listChannels());
-    return channels.sort((left, right) =>
+    return channels.toSorted((left, right) =>
       channelSortKey(left).localeCompare(channelSortKey(right)),
     );
   }
@@ -78,7 +78,7 @@ export class DiscordReadAdapter implements DiscordReadPort {
     const emojis = z
       .array(discordGuildEmojiSchema)
       .parse(await this.client.fetchGuildEmojis(validatedGuildId));
-    return emojis.sort((left, right) => left.name.localeCompare(right.name));
+    return emojis.toSorted((left, right) => left.name.localeCompare(right.name));
   }
 
   async getGuildEmoji(
@@ -95,7 +95,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
   return {
     fetchMessages: async (input) => {
       const channel = await client.channels.fetch(input.channelId, { force: true });
-      if (channel === null || !channel.isTextBased()) {
+      if (channel == null || !channel.isTextBased()) {
         throw new Error(`Discord channel does not provide message history: ${input.channelId}`);
       }
       const messages = await channel.messages.fetch({
@@ -109,7 +109,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
     },
     listChannels: async () => {
       const lunaUser = client.user;
-      if (lunaUser === null) throw new Error("Discord client is not authenticated");
+      if (lunaUser == null) throw new Error("Discord client is not authenticated");
       const guildSummaries = await client.guilds.fetch();
       const guildChannelGroups = await Promise.all(
         Array.from(guildSummaries.values()).map(async (guildSummary) => {
@@ -120,7 +120,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
           ]);
           const guildChannels = Array.from(channels.values()).flatMap((channel) => {
             if (
-              channel === null ||
+              channel == null ||
               !channel.isTextBased() ||
               channel.permissionsFor(lunaUser)?.has(PermissionFlagsBits.ViewChannel) !== true
             ) {
@@ -149,7 +149,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
               name: thread.name,
               parentChannelId: thread.parentId,
             }));
-          return [...guildChannels, ...threads];
+          return [guildChannels, threads];
         }),
       );
       const directMessages = Array.from(client.channels.cache.values())
@@ -165,7 +165,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
             recipientUsername: recipient.username,
           };
         });
-      return [...guildChannelGroups.flat(), ...directMessages];
+      return [...guildChannelGroups.flat(2), ...directMessages];
     },
     fetchUser: async (input) => {
       const user = await client.users.fetch(input.userId, { force: true });

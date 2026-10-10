@@ -31,5 +31,9 @@ export function conversationScopeKey(scope: ConversationScope): string {
       return `guild_thread:${scope.guildId}:${scope.parentChannelId}:${scope.threadId}`;
     case "dm":
       return `dm:${scope.channelId}:${scope.userId}`;
+    default: {
+      const unknownScope: never = scope;
+      throw new Error(`Unknown conversation scope: ${JSON.stringify(unknownScope)}`);
+    }
   }
 }

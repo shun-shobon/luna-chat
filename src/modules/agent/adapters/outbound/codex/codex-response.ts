@@ -89,6 +89,6 @@ export function parseThreadList(
       id: thread.id,
       ...(thread.updatedAt === undefined ? {} : { updatedAt: thread.updatedAt }),
     })),
-    ...(response.nextCursor === null ? {} : { nextCursor: response.nextCursor }),
+    ...(response.nextCursor == null ? {} : { nextCursor: response.nextCursor }),
   };
 }

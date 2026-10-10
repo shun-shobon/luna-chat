@@ -27,7 +27,7 @@ describe("Discord MCP server", () => {
     const resource = await connect({ actions, read });
 
     const tools = await resource.client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
+    expect(tools.tools.map((tool) => tool.name).toSorted()).toEqual([
       "add_reaction",
       "get_guild_emoji",
       "get_user_detail",
@@ -205,7 +205,7 @@ async function connect(
   await client.connect(
     new StreamableHTTPClientTransport(new URL(server.url), {
       requestInit:
-        ownerId === null ? {} : { headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: ownerId } },
+        ownerId == null ? {} : { headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: ownerId } },
     }),
   );
   const resource = { client, server };

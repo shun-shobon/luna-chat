@@ -76,7 +76,7 @@ const selectedOptionSchema = z.string().min(1);
 const sdkInteractionSchema = z.custom<Interaction>(
   (value) =>
     typeof value === "object" &&
-    value !== null &&
+    value != null &&
     typeof Reflect.get(value, "isAutocomplete") === "function" &&
     typeof Reflect.get(value, "isChatInputCommand") === "function",
 );
@@ -93,7 +93,7 @@ export function createDiscordCommandClient(client: Client): DiscordCommandClient
     off: (_event, listener) => client.off("interactionCreate", listener),
     register: async () => {
       const application = client.application;
-      if (application === null) throw new Error("Discord application is unavailable after login");
+      if (application == null) throw new Error("Discord application is unavailable after login");
       await application.commands.create(command);
     },
   };
@@ -250,7 +250,7 @@ function resolveLocation(interaction: Interaction): {
   lunaIsThreadMember: boolean;
 } {
   const location = interactionLocationSchema.parse(interaction);
-  if (location.guildId === null) {
+  if (location.guildId == null) {
     return {
       scope: conversationScopeSchema.parse({
         kind: "dm",
@@ -261,7 +261,7 @@ function resolveLocation(interaction: Interaction): {
     };
   }
   const channel = location.channel;
-  if (channel === null) throw new Error("Discord interaction channel is unavailable");
+  if (channel == null) throw new Error("Discord interaction channel is unavailable");
   if (
     channel.type === ChannelType.AnnouncementThread ||
     channel.type === ChannelType.PublicThread ||
@@ -275,7 +275,7 @@ function resolveLocation(interaction: Interaction): {
         parentChannelId: channel.parentId,
         threadId: location.channelId,
       }),
-      lunaIsThreadMember: member.success && member.data.me !== null,
+      lunaIsThreadMember: member.success && member.data.me != null,
     };
   }
   return {

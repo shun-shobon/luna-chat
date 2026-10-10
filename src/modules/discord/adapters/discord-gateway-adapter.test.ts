@@ -1,7 +1,11 @@
 import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
+import type {
+  DiscordGatewayMessage,
+  DiscordGatewayPort,
+  DiscordGatewayTyping,
+} from "../ports/discord-gateway-port";
 
 import { DiscordGatewayAdapter, type DiscordGatewayEventClient } from "./discord-gateway-adapter";
 
@@ -10,7 +14,7 @@ describe("DiscordGatewayAdapter", () => {
     const client = new FakeGatewayClient();
     const onMessage = vi.fn(async (_event: DiscordGatewayMessage) => undefined);
     const onTyping = vi.fn(async (_event: DiscordGatewayTyping) => undefined);
-    const onError = vi.fn();
+    const onError = vi.fn<DiscordGatewayPort["onError"]>();
     const adapter = new DiscordGatewayAdapter(client, { onMessage, onTyping, onError });
 
     adapter.start();
@@ -39,9 +43,11 @@ describe("DiscordGatewayAdapter", () => {
 
   it("変換失敗とport失敗を明示的にonErrorへ渡す", async () => {
     const client = new FakeGatewayClient();
-    const onError = vi.fn();
+    const onError = vi.fn<DiscordGatewayPort["onError"]>();
     const adapter = new DiscordGatewayAdapter(client, {
-      onMessage: vi.fn(async () => await Promise.reject(new Error("port failed"))),
+      onMessage: vi.fn(async () => {
+        throw new Error("port failed");
+      }),
       onTyping: vi.fn(),
       onError,
     });

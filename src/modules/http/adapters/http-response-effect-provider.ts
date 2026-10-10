@@ -40,9 +40,9 @@ export function createHttpResponseEffectProvider(registry: HttpResponseRegistry)
           status: input.status,
           body: jsonValueSchema.parse(JSON.parse(input.body_json)),
         }),
-        execute: async (input) => {
+        execute: (input) => {
           registry.record(input.request_id, input.status, input.body);
-          return { request_id: input.request_id };
+          return Promise.resolve({ request_id: input.request_id });
         },
         describeTarget: (input) => ({ request_id: input.request_id }),
       }),

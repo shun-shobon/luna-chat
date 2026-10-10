@@ -59,7 +59,7 @@ export async function startHttpEventServer(
         resolve({ server: running, port: info.port });
       },
     );
-    running.on("error", (error) => {
+    running.on("error", (error: Error) => {
       if (started) input.onError(error);
       else reject(error);
     });

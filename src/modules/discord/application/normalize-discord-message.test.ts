@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import type { DiscordMessageSource } from "./normalize-discord-message";
 import { normalizeDiscordMessage } from "./normalize-discord-message";
@@ -25,7 +26,7 @@ describe("normalizeDiscordMessage", () => {
   it("不正なSDK由来metadataを境界で拒否する", () => {
     expect(() =>
       normalizeDiscordMessage(source({ attachments: [{ ...attachment, url: "invalid-url" }] })),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });
 

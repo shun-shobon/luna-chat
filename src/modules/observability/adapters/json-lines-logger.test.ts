@@ -42,7 +42,7 @@ describe("JsonLinesLogger", () => {
   });
 
   it("Errorと循環参照を直列化する", () => {
-    const write = vi.fn();
+    const write = vi.fn<(line: string) => void>();
     const logger = new JsonLinesLogger("debug", write);
     const payload: { error: Error; self?: unknown } = { error: new Error("boom") };
     payload.self = payload;
