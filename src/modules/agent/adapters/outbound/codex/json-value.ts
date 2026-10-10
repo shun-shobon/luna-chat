@@ -2,6 +2,7 @@ import type { JsonValue } from "../../../../../generated/codex/serde_json/JsonVa
 
 export function parseJsonValue(value: unknown, path = "value"): JsonValue {
   if (
+    // oxlint-disable-next-line shun-shobon/nullish-comparison -- undefined は JSON 値ではない
     value === null ||
     typeof value === "string" ||
     typeof value === "boolean" ||

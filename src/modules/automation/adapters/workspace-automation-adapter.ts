@@ -16,11 +16,11 @@ export class WorkspaceAutomationAdapter implements AutomationWorkspacePort {
   }
 
   async readHeartbeatChecklist(): Promise<string> {
-    return readHeartbeatChecklist(this.#workspaceDir);
+    return await readHeartbeatChecklist(this.#workspaceDir);
   }
 
   async readSchedule(): Promise<WorkspaceSchedule> {
-    return readWorkspaceSchedule(this.#schedulePath);
+    return await readWorkspaceSchedule(this.#schedulePath);
   }
 
   removeScheduleJob(jobId: string): boolean {

@@ -71,7 +71,7 @@ export class EventAgentAdapter implements EventAgentPort {
     initialCompletion: Promise<AgentTurnResult>,
   ): Promise<void> {
     let completion = initialCompletion;
-    while (true) {
+    for (;;) {
       try {
         const turn = await completion;
         if (turn.status !== "completed") {

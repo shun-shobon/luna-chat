@@ -23,7 +23,8 @@ import {
   isTurnScopedNotificationMethod,
   parseTurnScopedNotificationThreadId,
 } from "./codex-turn-tracker";
-import { JsonRpcConnection, JsonRpcProtocolError } from "./json-rpc-connection";
+import type { JsonRpcConnection } from "./json-rpc-connection";
+import { JsonRpcProtocolError } from "./json-rpc-connection";
 import { parseJsonConfig, parseJsonValue } from "./json-value";
 
 const ALL_THREAD_SOURCE_KINDS: ThreadSourceKind[] = [
@@ -82,7 +83,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
           const params = request.params;
           if (
             typeof params !== "object" ||
-            params === null ||
+            params == null ||
             !("threadId" in params) ||
             !("turnId" in params) ||
             typeof params.threadId !== "string" ||
@@ -151,7 +152,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
       );
       models.push(...page.data);
       cursor = page.nextCursor;
-    } while (cursor !== null);
+    } while (cursor != null);
     return models;
   }
 

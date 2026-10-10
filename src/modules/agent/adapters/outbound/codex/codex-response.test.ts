@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import { parseModelList, parseThreadList } from "./codex-response";
 
@@ -28,7 +29,7 @@ describe("Codex response parser", () => {
       ],
       nextCursor: null,
     });
-    expect(() => parseModelList({ data: [{ model: 1 }], nextCursor: null })).toThrow();
+    expect(() => parseModelList({ data: [{ model: 1 }], nextCursor: null })).toThrow(ZodError);
   });
 
   it("updatedAtがないthread summaryを受理する", () => {

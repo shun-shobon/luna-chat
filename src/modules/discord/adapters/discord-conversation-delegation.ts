@@ -44,14 +44,14 @@ export class DiscordConversationDelegation implements DiscordConversationDelegat
     if (target.kind === "dm_user") {
       const channel = await this.client.users.createDM(target.userId);
       const channelId = discordIdSchema.parse(
-        typeof channel === "object" && channel !== null ? Reflect.get(channel, "id") : undefined,
+        typeof channel === "object" && channel != null ? Reflect.get(channel, "id") : undefined,
       );
       return { kind: "dm", channelId, userId: target.userId };
     }
     const channel = await this.client.channels.fetch(target.channelId);
     if (
       typeof channel !== "object" ||
-      channel === null ||
+      channel == null ||
       typeof Reflect.get(channel, "send") !== "function"
     ) {
       throw new Error(`Discord channel cannot hold a conversation: ${target.channelId}`);

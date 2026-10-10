@@ -5,10 +5,5 @@ export function isValidFiveFieldCron(value: string): boolean {
     return false;
   }
 
-  try {
-    new CronTime(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return CronTime.validateCronExpression(value).valid;
 }

@@ -106,7 +106,11 @@ describe("DiscordConversationDelegation", () => {
 
   it("channel取得の例外をそのまま返す", async () => {
     const delegation = createDelegation({
-      channels: { fetch: vi.fn(async () => await Promise.reject(new Error("Unknown Channel"))) },
+      channels: {
+        fetch: vi.fn(async () => {
+          throw new Error("Unknown Channel");
+        }),
+      },
       users: { createDM: vi.fn() },
     });
 

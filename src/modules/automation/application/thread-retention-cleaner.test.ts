@@ -91,7 +91,7 @@ describe("ThreadRetentionCleaner", () => {
       listThreads: vi
         .fn<AgentRuntimePort["listThreads"]>()
         .mockResolvedValueOnce({ data: [] })
-        .mockImplementationOnce(async () => listing.promise),
+        .mockImplementationOnce(async () => await listing.promise),
     });
     const clock = new FakeClock(new Date("2026-01-01T00:00:00.000Z"));
     const cleaner = new ThreadRetentionCleaner({

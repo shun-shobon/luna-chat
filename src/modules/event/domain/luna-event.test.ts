@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import { lunaEventSchema } from "./luna-event";
 
@@ -33,7 +34,7 @@ describe("lunaEventSchema", () => {
         data: null,
         [field]: "",
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("offsetのない日時を拒否する", () => {
@@ -45,7 +46,7 @@ describe("lunaEventSchema", () => {
         occurredAt: "2026-08-09T12:34:56",
         data: null,
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("JSON valueではないdataを拒否する", () => {
@@ -57,7 +58,7 @@ describe("lunaEventSchema", () => {
         occurredAt: "2026-08-09T03:34:56Z",
         data: { invalid: undefined },
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("余分なfieldを拒否する", () => {
@@ -70,6 +71,6 @@ describe("lunaEventSchema", () => {
         data: null,
         extra: true,
       }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });

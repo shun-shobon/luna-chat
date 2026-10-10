@@ -5,6 +5,8 @@ import { delimiter, dirname, join } from "node:path";
 import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type * as DiscordGatewayAdapterModule from "../modules/discord/adapters/discord-gateway-adapter";
+
 const fakes = vi.hoisted(() => {
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const client = {
@@ -70,7 +72,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 }));
 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../modules/discord/adapters/discord-gateway-adapter")>()),
+  ...(await importOriginal<typeof DiscordGatewayAdapterModule>()),
   createDiscordGatewayClient: vi.fn(() => fakes.client),
   createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));

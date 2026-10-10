@@ -44,7 +44,7 @@ describe("system.wait", () => {
         contract.parse(
           JSON.stringify({ effects: [{ type: "system.wait", input: { duration_seconds } }] }),
         ),
-      ).toThrow();
+      ).toThrow("Invalid effect system.wait:");
     }
   });
 

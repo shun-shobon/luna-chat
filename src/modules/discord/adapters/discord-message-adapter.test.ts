@@ -1,5 +1,6 @@
 import { ChannelType } from "discord.js";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import {
   toDiscordGatewayMessage,
@@ -80,7 +81,7 @@ describe("discord message adapter", () => {
           channel: { ...createChannel({ type: ChannelType.PublicThread }), members: undefined },
         }),
       ),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("thread member managerのmeがundefinedのthread messageを拒否する", () => {
@@ -93,7 +94,7 @@ describe("discord message adapter", () => {
           },
         }),
       ),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("DM messageを必要ID付きscopeへ解決する", () => {
@@ -127,7 +128,7 @@ describe("discord message adapter", () => {
       attachments: collection([{ ...ATTACHMENT, url: "not-a-url" }]),
     });
     expect(() => toDiscordMessageSource(invalid)).not.toThrow();
-    expect(() => toDiscordGatewayMessage(invalid)).toThrow();
+    expect(() => toDiscordGatewayMessage(invalid)).toThrow(ZodError);
   });
 
   it("typing eventをpolicy判断せずscopeとuserへ変換する", () => {
@@ -167,7 +168,7 @@ describe("discord message adapter", () => {
   it("未知のchannel typeを拒否する", () => {
     expect(() =>
       toDiscordGatewayMessage(createMessage({ channel: createChannel({ type: 999 }) })),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });
 
@@ -225,11 +226,14 @@ function createChannel(
   } = {},
 ) {
   const type = input.type ?? ChannelType.GuildText;
-  const isThread =
-    type === ChannelType.AnnouncementThread ||
-    type === ChannelType.PublicThread ||
-    type === ChannelType.PrivateThread;
-  const isDm = type === ChannelType.DM || type === ChannelType.GroupDM;
+  const threadTypes: ReadonlySet<number> = new Set([
+    ChannelType.AnnouncementThread,
+    ChannelType.PublicThread,
+    ChannelType.PrivateThread,
+  ]);
+  const dmTypes: ReadonlySet<number> = new Set([ChannelType.DM, ChannelType.GroupDM]);
+  const isThread = threadTypes.has(type);
+  const isDm = dmTypes.has(type);
   return {
     id: input.id ?? "300",
     type,

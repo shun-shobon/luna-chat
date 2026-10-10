@@ -26,7 +26,9 @@ describe("DiscordActionAdapter", () => {
   });
 
   it("reply失敗を通常投稿へ変換しない", async () => {
-    const reply = vi.fn(async () => await Promise.reject(new Error("unknown message")));
+    const reply = vi.fn(async () => {
+      throw new Error("unknown message");
+    });
     const channel = createChannel({ reply });
     const adapter = createAdapter(createClient(channel));
 
@@ -83,7 +85,7 @@ function createAdapter(
   typing = new TypingLeaseRegistry(60_000, vi.fn()),
 ): DiscordActionAdapter {
   const files: SendFileResolverPort = {
-    resolve: vi.fn(async (file) => ({ path: file.path })),
+    resolve: vi.fn<SendFileResolverPort["resolve"]>(async (file) => ({ path: file.path })),
   };
   return new DiscordActionAdapter(client, files, typing);
 }

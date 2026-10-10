@@ -187,7 +187,7 @@ export function createDiscordDelegationEffectProvider(
         describeTarget: (input) => input.target,
       }),
     ]),
-    release: async () => undefined,
+    release: () => Promise.resolve(),
   });
 }
 
@@ -195,7 +195,7 @@ function requireMessageBody(
   input: { content: string | null; files: readonly unknown[] | null },
   context: z.RefinementCtx,
 ): void {
-  if (input.content === null && input.files === null) {
+  if (input.content == null && input.files == null) {
     context.addIssue({ code: "custom", message: "A message requires content or files" });
   }
 }
@@ -208,14 +208,14 @@ function normalizeMessageFields(input: {
   files?: readonly Readonly<{ path: string; fileName?: string; description?: string }>[];
 }> {
   return {
-    ...(input.content === null ? {} : { content: input.content }),
-    ...(input.files === null
+    ...(input.content == null ? {} : { content: input.content }),
+    ...(input.files == null
       ? {}
       : {
           files: input.files.map((file) => ({
             path: file.path,
-            ...(file.fileName === null ? {} : { fileName: file.fileName }),
-            ...(file.description === null ? {} : { description: file.description }),
+            ...(file.fileName == null ? {} : { fileName: file.fileName }),
+            ...(file.description == null ? {} : { description: file.description }),
           })),
         }),
   };
@@ -227,7 +227,7 @@ function normalizeEmoji(emoji: z.infer<typeof agentDiscordEmojiSchema>): Discord
     : {
         kind: emoji.kind,
         id: emoji.id,
-        ...(emoji.name === null ? {} : { name: emoji.name }),
+        ...(emoji.name == null ? {} : { name: emoji.name }),
       };
 }
 

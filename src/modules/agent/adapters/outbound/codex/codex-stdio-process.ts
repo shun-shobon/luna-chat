@@ -81,7 +81,7 @@ function createCodexLineTransport(child: ChildProcessWithoutNullStreams): CodexL
       }
       closing = true;
       lineReader.close();
-      if (child.exitCode !== null || child.signalCode !== null) {
+      if (child.exitCode != null || child.signalCode != null) {
         return;
       }
 
@@ -111,7 +111,11 @@ function createCodexLineTransport(child: ChildProcessWithoutNullStreams): CodexL
 }
 
 function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
-  return new Promise((resolve) => child.once("exit", () => resolve()));
+  return new Promise((resolve) => {
+    child.once("exit", () => {
+      resolve();
+    });
+  });
 }
 
 async function exitsWithin(exitPromise: Promise<void>, timeoutMs: number): Promise<boolean> {

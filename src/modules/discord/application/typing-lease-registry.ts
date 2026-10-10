@@ -28,7 +28,10 @@ export class TypingLeaseRegistry {
     const key = leaseKey(context);
     if (this.#leases.has(key)) return;
     const pending = this.#pendingStarts.get(key);
-    if (pending !== undefined) return await pending;
+    if (pending !== undefined) {
+      await pending;
+      return;
+    }
 
     const startToken = Symbol(key);
     this.#startTokens.set(key, startToken);

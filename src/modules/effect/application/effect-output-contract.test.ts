@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -61,7 +63,7 @@ describe("createEffectOutputContract", () => {
     const contract = createEffectOutputContract(createEffectRegistry([createProvider()]));
 
     expect(contract.jsonSchema).not.toHaveProperty("properties.effects.items.oneOf");
-    validateStructuredOutputSchema(contract.jsonSchema);
+    expect(collectStructuredOutputSchemaViolations(contract.jsonSchema)).toEqual([]);
   });
 
   it("空のeffectsを受理する", () => {
@@ -110,7 +112,7 @@ describe("createEffectOutputContract", () => {
           type: "fake.normalize",
           agentInputSchema: z.strictObject({ value: z.string().nullable() }),
           inputSchema: z.strictObject({ value: z.string().optional() }),
-          parseInput: (input) => (input.value === null ? {} : { value: input.value }),
+          parseInput: (input) => (input.value == null ? {} : { value: input.value }),
           execute: async (input) => z.json().parse(input),
           describeTarget: () => null,
         }),
@@ -147,12 +149,15 @@ describe("createEffectOutputContract", () => {
   });
 
   it.each([
-    { effects: [{ input: { target: "audit", value: "first" } }] },
-    { effects: [{ type: "fake.record" }] },
-  ])("typeまたはinputが欠けたEffectを拒否する", (output) => {
+    {
+      output: { effects: [{ input: { target: "audit", value: "first" } }] },
+      message: "at effects[0].type",
+    },
+    { output: { effects: [{ type: "fake.record" }] }, message: "at effects[0].input" },
+  ])("typeまたはinputが欠けたEffectを拒否する", ({ output, message }) => {
     const contract = createEffectOutputContract(createEffectRegistry([createProvider()]));
 
-    expect(() => contract.parse(JSON.stringify(output))).toThrow();
+    expect(() => contract.parse(JSON.stringify(output))).toThrow(message);
   });
 
   it("余分なpropertyを拒否する", () => {
@@ -170,7 +175,7 @@ describe("createEffectOutputContract", () => {
           ],
         }),
       ),
-    ).toThrow();
+    ).toThrow('Unrecognized key: "extra"');
   });
 
   it("definitionのinput schemaに反する入力を拒否する", () => {
@@ -222,7 +227,7 @@ describe("createEffectOutputContract", () => {
     };
 
     expect(() => createEffectOutputContract(createEffectRegistry([provider]))).toThrow(
-      /unsupported JSON Schema keyword: \$ref/,
+      /unsupported JSON Schema keyword: \$ref/u,
     );
   });
 });
@@ -241,33 +246,39 @@ describe("createEffectRegistry", () => {
   });
 });
 
-function validateStructuredOutputSchema(value: unknown): void {
+function collectStructuredOutputSchemaViolations(value: unknown): string[] {
   if (Array.isArray(value)) {
-    for (const item of value) validateStructuredOutputSchema(item);
-    return;
+    return value.flatMap((item) => collectStructuredOutputSchemaViolations(item));
   }
-  if (typeof value !== "object" || value === null) return;
+  if (typeof value !== "object" || value == null) return [];
 
-  for (const keyword of Object.keys(value)) {
-    expect(SUPPORTED_SCHEMA_KEYWORDS).toContain(keyword);
-  }
+  const violations = Object.keys(value)
+    .filter((keyword) => !SUPPORTED_SCHEMA_KEYWORDS.has(keyword))
+    .map((keyword) => `unsupported keyword: ${keyword}`);
 
   if ("type" in value && value.type === "object") {
-    expect(value).toHaveProperty("additionalProperties", false);
-    if ("properties" in value && isRecord(value.properties)) {
-      expect(value).toHaveProperty("required", Object.keys(value.properties));
+    if (!("additionalProperties" in value) || value.additionalProperties !== false) {
+      violations.push("object schema must set additionalProperties: false");
+    }
+    if (
+      "properties" in value &&
+      isRecord(value.properties) &&
+      !("required" in value && isDeepStrictEqual(value.required, Object.keys(value.properties)))
+    ) {
+      violations.push("object schema must require every property");
     }
   }
 
   if ("properties" in value && isRecord(value.properties)) {
     for (const propertySchema of Object.values(value.properties)) {
-      validateStructuredOutputSchema(propertySchema);
+      violations.push(...collectStructuredOutputSchemaViolations(propertySchema));
     }
   }
-  if ("items" in value) validateStructuredOutputSchema(value.items);
-  if ("anyOf" in value) validateStructuredOutputSchema(value.anyOf);
+  if ("items" in value) violations.push(...collectStructuredOutputSchemaViolations(value.items));
+  if ("anyOf" in value) violations.push(...collectStructuredOutputSchemaViolations(value.anyOf));
+  return violations;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value != null && !Array.isArray(value);
 }

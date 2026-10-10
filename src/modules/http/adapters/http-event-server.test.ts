@@ -76,16 +76,18 @@ describe("HTTP event server", () => {
     void waiting.then(() => {
       responded = true;
     });
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 20);
+    });
     expect(responded).toBe(false);
     completion.resolve();
 
     const response = await waiting;
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ answer: "world" });
-    expect(() =>
-      effect.parseInput({ request_id: requestId, status: 200, body_json: "{" }),
-    ).toThrow();
+    expect(() => effect.parseInput({ request_id: requestId, status: 200, body_json: "{" })).toThrow(
+      SyntaxError,
+    );
     await expect(effect.execute(input, "owner-1")).rejects.toThrow("not waiting");
   });
 

@@ -66,8 +66,8 @@ export class ScheduleController {
       return;
     }
     this.#accepting = true;
-    await this.#enqueueReload(async () => {
-      await this.#applySchedule(initialSchedule);
+    await this.#enqueueReload(() => {
+      this.#applySchedule(initialSchedule);
     });
     await this.#watcher.start({
       onChange: () => {
@@ -88,7 +88,7 @@ export class ScheduleController {
         this.#logger.error("automation.schedule.reload_failed", { error });
         return;
       }
-      await this.#applySchedule(schedule);
+      this.#applySchedule(schedule);
     });
   }
 
@@ -102,7 +102,7 @@ export class ScheduleController {
     await this.#watcher.close().catch((error: unknown) => {
       this.#logger.error("automation.schedule.watcher_close_failed", { error });
     });
-    await this.#enqueueReload(async () => {
+    await this.#enqueueReload(() => {
       for (const job of this.#jobs.values()) {
         job.timer.stop();
       }
@@ -128,7 +128,7 @@ export class ScheduleController {
     });
   }
 
-  async #applySchedule(schedule: WorkspaceSchedule): Promise<void> {
+  #applySchedule(schedule: WorkspaceSchedule): void {
     const nowMs = this.#clock.now().getTime();
     const schedulableJobs: WorkspaceScheduleJob[] = [];
     const sourceJobIds = new Set(schedule.jobs.map((job) => job.id));
@@ -143,12 +143,12 @@ export class ScheduleController {
       const firedState = this.#firedOneShots.get(job.id);
       if (firedState !== undefined) {
         if (firedState === "delete_only") {
-          await this.#removePastOneShot(job.id);
+          this.#removePastOneShot(job.id);
         }
         continue;
       }
       if (job.kind === "one_shot" && Date.parse(job.at) <= nowMs) {
-        await this.#removePastOneShot(job.id);
+        this.#removePastOneShot(job.id);
         continue;
       }
       if (job.enabled) {
@@ -171,7 +171,7 @@ export class ScheduleController {
           this.#register(job);
         } catch (error: unknown) {
           if (job.kind === "one_shot" && Date.parse(job.at) <= this.#clock.now().getTime()) {
-            await this.#removePastOneShot(job.id);
+            this.#removePastOneShot(job.id);
             continue;
           }
           throw error;
@@ -180,7 +180,7 @@ export class ScheduleController {
     }
   }
 
-  async #removePastOneShot(jobId: string): Promise<void> {
+  #removePastOneShot(jobId: string): void {
     try {
       this.#workspace.removeScheduleJob(jobId);
     } catch (error: unknown) {
@@ -230,14 +230,15 @@ export class ScheduleController {
         data: { jobId: job.id, prompt: job.prompt, kind: job.kind },
       },
       job.kind === "one_shot"
-        ? async () => {
-            await this.#deleteStartedOneShot(job.id);
+        ? () => {
+            this.#deleteStartedOneShot(job.id);
+            return Promise.resolve();
           }
         : undefined,
     );
   }
 
-  async #deleteStartedOneShot(jobId: string): Promise<void> {
+  #deleteStartedOneShot(jobId: string): void {
     this.#firedOneShots.set(jobId, "delete_only");
     try {
       this.#workspace.removeScheduleJob(jobId);
@@ -246,7 +247,7 @@ export class ScheduleController {
     }
   }
 
-  async #enqueueReload(operation: () => Promise<void>): Promise<void> {
+  async #enqueueReload(operation: () => Promise<void> | void): Promise<void> {
     const execution = this.#reloadChain.then(operation, operation);
     this.#reloadChain = execution.then(
       () => undefined,

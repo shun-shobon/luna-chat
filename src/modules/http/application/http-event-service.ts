@@ -6,7 +6,8 @@ import {
   type HttpEventRequest,
 } from "../domain/http-event";
 
-import { HttpResponseRegistry, type HttpEventOutcome } from "./http-response-registry";
+import type { HttpResponseRegistry } from "./http-response-registry";
+import { type HttpEventOutcome } from "./http-response-registry";
 
 type ConversationIntake = Readonly<{ accept(input: AcceptedConversationEvent): boolean }>;
 

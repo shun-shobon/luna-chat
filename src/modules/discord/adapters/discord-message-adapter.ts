@@ -14,7 +14,7 @@ type CollectionLike = Readonly<{ values: () => unknown }>;
 const collectionSchema = z.custom<CollectionLike>(
   (value) =>
     typeof value === "object" &&
-    value !== null &&
+    value != null &&
     typeof Reflect.get(value, "values") === "function",
 );
 const userSchema = z.object({
@@ -138,7 +138,7 @@ export function toDiscordMessageSource(message: unknown): DiscordMessageSource {
 function toDiscordMessageSourceFromParsed(
   parsed: z.infer<typeof sdkMessageSchema>,
 ): DiscordMessageSource {
-  const guild = parsed.guild === null ? null : { id: parsed.guild.id, name: parsed.guild.name };
+  const guild = parsed.guild == null ? null : { id: parsed.guild.id, name: parsed.guild.name };
 
   return {
     id: parsed.id,
@@ -187,7 +187,7 @@ function toDiscordMessageSourceFromParsed(
 
 function resolveLunaIsThreadMember(channel: z.infer<typeof channelSchema>): boolean {
   if (!isThreadChannel(channel.type)) return false;
-  return threadMemberManagerSchema.parse(channel.members).me !== null;
+  return threadMemberManagerSchema.parse(channel.members).me != null;
 }
 
 function resolveScope(input: {
@@ -222,9 +222,9 @@ function toReplyReference(
   message: z.infer<typeof sdkMessageSchema>,
 ): DiscordMessageSource["replyTo"] {
   const messageId = message.reference?.messageId;
-  if (messageId === undefined || messageId === null) return null;
+  if (messageId == null) return null;
 
-  if (message.guild === null) {
+  if (message.guild == null) {
     return {
       kind: "dm",
       channelId: discordIdSchema.parse(message.reference?.channelId),
@@ -242,7 +242,7 @@ function toReplyReference(
 
 function toReactionSource(value: unknown): DiscordMessageSource["reactions"][number] {
   const reaction = reactionSchema.parse(value);
-  if (reaction.emoji.id === null) {
+  if (reaction.emoji.id == null) {
     return {
       emoji: { kind: "unicode", value: z.string().min(1).parse(reaction.emoji.name) },
       count: reaction.count,
@@ -271,7 +271,7 @@ function collectionValues(collection: CollectionLike): unknown[] {
 function isIterable(value: unknown): value is Iterable<unknown> {
   return (
     typeof value === "object" &&
-    value !== null &&
+    value != null &&
     typeof Reflect.get(value, Symbol.iterator) === "function"
   );
 }

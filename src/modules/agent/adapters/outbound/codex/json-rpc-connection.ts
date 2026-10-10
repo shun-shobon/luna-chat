@@ -313,7 +313,7 @@ function scheduleTimeout(callback: () => void, milliseconds: number): Readonly<{
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value != null && !Array.isArray(value);
 }
 
 function isRequestId(value: unknown): value is RequestId {

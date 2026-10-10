@@ -244,10 +244,9 @@ export class CodexTurnTracker {
       return;
     }
     if (status !== "completed") {
+      const errorMessage = error ?? this.#lastErrorMessage;
       this.#resolveCompletion({
-        ...((error ?? this.#lastErrorMessage) === undefined
-          ? {}
-          : { errorMessage: error ?? this.#lastErrorMessage }),
+        ...(errorMessage === undefined ? {} : { errorMessage }),
         status,
       });
       return;

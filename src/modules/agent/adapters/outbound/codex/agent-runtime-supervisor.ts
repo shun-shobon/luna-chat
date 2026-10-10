@@ -53,7 +53,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
   }
 
   public async archiveThread(threadId: ThreadId): Promise<void> {
-    return await (await this.#getRuntime()).archiveThread(threadId);
+    await (await this.#getRuntime()).archiveThread(threadId);
   }
 
   public async close(): Promise<void> {
@@ -80,11 +80,11 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
   }
 
   public async deleteThread(threadId: ThreadId): Promise<void> {
-    return await (await this.#getRuntime()).deleteThread(threadId);
+    await (await this.#getRuntime()).deleteThread(threadId);
   }
 
   public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
-    return await (await this.#getRuntime()).interruptTurn(threadId, turnId);
+    await (await this.#getRuntime()).interruptTurn(threadId, turnId);
   }
 
   public async listThreads(input?: {
@@ -131,7 +131,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
   }
 
   public async steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void> {
-    return await (await this.#getRuntime()).steerTurn(threadId, turnId, input);
+    await (await this.#getRuntime()).steerTurn(threadId, turnId, input);
   }
 
   async #boot(): Promise<AgentRuntimePort> {
@@ -139,7 +139,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
       const generation = ++this.#runtimeGeneration;
       try {
         const managed = await this.#startRuntime(this.#closeController.signal);
-        if (this.#closed || generation !== this.#runtimeGeneration) {
+        if (this.#isSuperseded(generation)) {
           await managed.close();
           throw new Error("Codex runtime startup was superseded.");
         }
@@ -160,7 +160,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
         accepted = true;
         return managed.port;
       } catch (error: unknown) {
-        if (this.#closed || generation !== this.#runtimeGeneration) {
+        if (this.#isSuperseded(generation)) {
           break;
         }
         const restartDelay = this.#registerRestart(toError(error));
@@ -179,16 +179,14 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
     if (this.#managed !== undefined) {
       return this.#managed.port;
     }
-    if (this.#bootPromise === undefined) {
-      this.#bootPromise = this.#boot().finally(() => {
-        this.#bootPromise = undefined;
-      });
-    }
+    this.#bootPromise ??= this.#boot().finally(() => {
+      this.#bootPromise = undefined;
+    });
     return await this.#bootPromise;
   }
 
   #handleRuntimeFailure(generation: number, managed: ManagedAgentRuntime, error: Error): void {
-    if (this.#closed || generation !== this.#runtimeGeneration || this.#managed !== managed) {
+    if (this.#isSuperseded(generation) || this.#managed !== managed) {
       return;
     }
     this.#managed = undefined;
@@ -235,6 +233,10 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
     this.#restartTimestamps.push(now);
     const exponent = this.#restartTimestamps.length - 1;
     return Math.min(this.#policy.initialDelayMs * 2 ** exponent, this.#policy.maxDelayMs);
+  }
+
+  #isSuperseded(generation: number): boolean {
+    return this.#closed || generation !== this.#runtimeGeneration;
   }
 
   #assertAvailable(): void {

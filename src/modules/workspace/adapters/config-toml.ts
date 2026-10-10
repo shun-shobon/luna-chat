@@ -8,7 +8,7 @@ import { DEFAULT_WORKSPACE_CONFIG, type WorkspaceConfig } from "../domain/worksp
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);
-const discordSnowflake = z.string().regex(/^\d+$/);
+const discordSnowflake = z.string().regex(/^\d+$/u);
 
 const WorkspaceConfigTomlSchema = z
   .strictObject({

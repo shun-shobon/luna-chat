@@ -2,7 +2,7 @@ import { basename } from "node:path";
 
 import { AttachmentBuilder, type MessageCreateOptions } from "discord.js";
 
-import { TypingLeaseRegistry } from "../application/typing-lease-registry";
+import type { TypingLeaseRegistry } from "../application/typing-lease-registry";
 import {
   discordActionSchema,
   type DiscordAction,
@@ -87,11 +87,16 @@ export class DiscordActionAdapter implements DiscordActionPort {
         this.typing.stop({ ownerId, channelId: channel.id });
         return success(action.kind, { channelId: channel.id });
       }
+      default: {
+        const unknownAction: never = action;
+        throw new Error(`Unknown Discord action: ${JSON.stringify(unknownAction)}`);
+      }
     }
   }
 
-  async releaseTyping(ownerId: string): Promise<void> {
+  releaseTyping(ownerId: string): Promise<void> {
     this.typing.releaseOwner(ownerId);
+    return Promise.resolve();
   }
 
   async #resolveChannelId(target: DiscordTarget): Promise<string> {
@@ -164,12 +169,12 @@ function messageId(message: unknown): string {
 }
 
 function readProperty(value: unknown, property: string): unknown {
-  return typeof value === "object" && value !== null ? Reflect.get(value, property) : undefined;
+  return typeof value === "object" && value != null ? Reflect.get(value, property) : undefined;
 }
 
 function hasMethod(value: unknown, method: string): boolean {
   return (
-    typeof value === "object" && value !== null && typeof Reflect.get(value, method) === "function"
+    typeof value === "object" && value != null && typeof Reflect.get(value, method) === "function"
   );
 }
 
