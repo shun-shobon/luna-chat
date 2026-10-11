@@ -1,34 +1,34 @@
 import { CronJob } from "cron";
 
 import type {
-  AutomationScheduleTimerPort,
-  ScheduledAutomationJob,
+	AutomationScheduleTimerPort,
+	ScheduledAutomationJob,
 } from "../ports/automation-schedule-port";
 
 export class CronScheduleTimer implements AutomationScheduleTimerPort {
-  scheduleOneShot(at: Date, onTick: () => Promise<void>): ScheduledAutomationJob {
-    return createCronJob(at, onTick);
-  }
+	scheduleOneShot(at: Date, onTick: () => Promise<void>): ScheduledAutomationJob {
+		return createCronJob(at, onTick);
+	}
 
-  scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob {
-    return createCronJob(cron, onTick);
-  }
+	scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob {
+		return createCronJob(cron, onTick);
+	}
 }
 
 function createCronJob(
-  cronTime: Date | string,
-  onTick: () => Promise<void>,
+	cronTime: Date | string,
+	onTick: () => Promise<void>,
 ): ScheduledAutomationJob {
-  const job = CronJob.from({
-    cronTime,
-    onTick,
-    start: true,
-    waitForCompletion: false,
-  });
+	const job = CronJob.from({
+		cronTime,
+		onTick,
+		start: true,
+		waitForCompletion: false,
+	});
 
-  return {
-    stop: () => {
-      void job.stop();
-    },
-  };
+	return {
+		stop: () => {
+			void job.stop();
+		},
+	};
 }

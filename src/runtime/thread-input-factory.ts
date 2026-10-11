@@ -3,56 +3,55 @@ import { resolve } from "node:path";
 
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import {
-  readWorkspaceBaseInstructions,
-  type DailyMemory,
+	readWorkspaceBaseInstructions,
+	type DailyMemory,
 } from "../modules/workspace/application/workspace-instructions";
-
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 
 export function buildBaseInstructions(input: {
-  luna: string | undefined;
-  memory: string | undefined;
-  dailyMemories: readonly DailyMemory[];
+	luna: string | undefined;
+	memory: string | undefined;
+	dailyMemories: readonly DailyMemory[];
 }): string {
-  return [
-    input.luna,
-    input.memory,
-    ...input.dailyMemories.map((daily) => `# memory/${daily.date}.md\n\n${daily.content}`),
-  ]
-    .filter((content) => content !== undefined)
-    .join("\n\n");
+	return [
+		input.luna,
+		input.memory,
+		...input.dailyMemories.map((daily) => `# memory/${daily.date}.md\n\n${daily.content}`),
+	]
+		.filter((content) => content !== undefined)
+		.join("\n\n");
 }
 
 export function buildCodexThreadConfig(
-  mcpServers: Readonly<Record<string, unknown>>,
-  workspaceDir: string,
+	mcpServers: Readonly<Record<string, unknown>>,
+	workspaceDir: string,
 ): Record<string, unknown> {
-  const resolvedWorkspaceDir = resolve(workspaceDir);
-  return {
-    mcp_servers: mcpServers,
-    projects: { [resolvedWorkspaceDir]: { trust_level: "trusted" } },
-  };
+	const resolvedWorkspaceDir = resolve(workspaceDir);
+	return {
+		mcp_servers: mcpServers,
+		projects: { [resolvedWorkspaceDir]: { trust_level: "trusted" } },
+	};
 }
 
 export function createThreadInputFactory(input: {
-  buildMcpServers: (executionOwnerId: string) => Readonly<Record<string, unknown>>;
-  capabilityInstructions: readonly string[];
-  now: () => Date;
-  workspaceDir: string;
-  createExecutionOwnerId?: (() => string) | undefined;
+	buildMcpServers: (executionOwnerId: string) => Readonly<Record<string, unknown>>;
+	capabilityInstructions: readonly string[];
+	now: () => Date;
+	workspaceDir: string;
+	createExecutionOwnerId?: (() => string) | undefined;
 }): () => Promise<AgentThreadInput> {
-  const createExecutionOwnerId = input.createExecutionOwnerId ?? randomUUID;
-  return async () => {
-    const executionOwnerId = createExecutionOwnerId();
-    const instructions = await readWorkspaceBaseInstructions(input.workspaceDir, input.now());
-    return {
-      baseInstructions: buildBaseInstructions(instructions),
-      config: buildCodexThreadConfig(input.buildMcpServers(executionOwnerId), input.workspaceDir),
-      cwd: input.workspaceDir,
-      developerInstructions: [LUNA_DEVELOPER_INSTRUCTIONS, ...input.capabilityInstructions].join(
-        "\n\n",
-      ),
-      executionOwnerId,
-    };
-  };
+	const createExecutionOwnerId = input.createExecutionOwnerId ?? randomUUID;
+	return async () => {
+		const executionOwnerId = createExecutionOwnerId();
+		const instructions = await readWorkspaceBaseInstructions(input.workspaceDir, input.now());
+		return {
+			baseInstructions: buildBaseInstructions(instructions),
+			config: buildCodexThreadConfig(input.buildMcpServers(executionOwnerId), input.workspaceDir),
+			cwd: input.workspaceDir,
+			developerInstructions: [LUNA_DEVELOPER_INSTRUCTIONS, ...input.capabilityInstructions].join(
+				"\n\n",
+			),
+			executionOwnerId,
+		};
+	};
 }

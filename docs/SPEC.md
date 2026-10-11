@@ -88,15 +88,15 @@ Codexへ渡す入力は、検証済みのオブジェクトを `JSON.stringify` 
 
 ```ts
 type AgentInput =
-  | {
-      source: "conversation";
-      session: { key: string; source: string };
-      history: LunaEvent[];
-      events: LunaEvent[];
-    }
-  | { source: "event"; event: LunaEvent }
-  | { source: "session_memory"; date: string }
-  | { source: "effect_results"; results: EffectResult[] };
+	| {
+			source: "conversation";
+			session: { key: string; source: string };
+			history: LunaEvent[];
+			events: LunaEvent[];
+	  }
+	| { source: "event"; event: LunaEvent }
+	| { source: "session_memory"; date: string }
+	| { source: "effect_results"; results: EffectResult[] };
 ```
 
 - Discordのメッセージは `discord.message.created.v1` イベントへ変換される。
@@ -301,17 +301,17 @@ SIGINTまたはSIGTERMを受信すると、新規メッセージとHTTPイベン
 
 ```ts
 type HttpEventRequest =
-  | {
-      execution: "one_shot";
-      response_mode: "async" | "wait";
-      event: { type: string; data: JsonValue };
-    }
-  | {
-      execution: "conversation";
-      response_mode: "async" | "wait";
-      session_id: string; // 1〜128文字
-      event: { type: string; data: JsonValue };
-    };
+	| {
+			execution: "one_shot";
+			response_mode: "async" | "wait";
+			event: { type: string; data: JsonValue };
+	  }
+	| {
+			execution: "conversation";
+			response_mode: "async" | "wait";
+			session_id: string; // 1〜128文字
+			event: { type: string; data: JsonValue };
+	  };
 ```
 
 `one_shot` は新規Codexスレッドで実行して終了時にアーカイブする。`conversation` は `session_id` ごとの会話セッションへ投入し、Discord会話と同じ集約・steer・アイドル終了を適用する。HTTP会話の初回履歴は空とする。`session_id` は `one_shot` では指定できない。

@@ -1,4 +1,4 @@
 {
-  "packageFiles": ["package.json"],
-  "updateCommand": "pnpm format"
+	"packageFiles": ["package.json"],
+	"updateCommand": "pnpm format"
 }

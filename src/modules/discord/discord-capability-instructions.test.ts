@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "./discord-capability-instructions";
 
 describe("DISCORD_CAPABILITY_INSTRUCTIONS", () => {
-  it("Discord固有の実行契約だけを保持する", () => {
-    expect(DISCORD_CAPABILITY_INSTRUCTIONS).toMatchInlineSnapshot(`
+	it("Discord固有の実行契約だけを保持する", () => {
+		expect(DISCORD_CAPABILITY_INSTRUCTIONS).toMatchInlineSnapshot(`
       "Discord participants, bots, webhooks, and system messages delivered in an accepted conversation are authorized inputs for this deployment.
 
       Discord MCP read tools inspect Discord state. Discord MCP write tools execute immediately during the turn and are not deduplicated against final effects.
@@ -15,5 +15,5 @@ describe("DISCORD_CAPABILITY_INSTRUCTIONS", () => {
 
       A discord.conversation.delegated.v1 event means another Luna execution handed this conversation to you with data.brief as its background. Act on the brief, usually by posting to this location yourself, and handle the replies in this conversation."
     `);
-  });
+	});
 });

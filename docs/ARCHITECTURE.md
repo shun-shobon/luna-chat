@@ -94,27 +94,27 @@ runtime      ──► 全モジュール (composition root)
 
 ```ts
 type ConversationScope =
-  | { kind: "guild_channel"; guildId: string; channelId: string }
-  | { kind: "guild_thread"; guildId: string; parentChannelId: string; threadId: string }
-  | { kind: "dm"; channelId: string; userId: string };
+	| { kind: "guild_channel"; guildId: string; channelId: string }
+	| { kind: "guild_thread"; guildId: string; parentChannelId: string; threadId: string }
+	| { kind: "dm"; channelId: string; userId: string };
 ```
 
 ### 6.2 共通イベントとセッション
 
 ```ts
 type LunaEvent = {
-  id: string;
-  type: string;
-  source: string;
-  subject?: string;
-  occurredAt: string;
-  data: JsonValue;
+	id: string;
+	type: string;
+	source: string;
+	subject?: string;
+	occurredAt: string;
+	data: JsonValue;
 };
 
 type ConversationSession = {
-  key: string;
-  source: string;
-  context: JsonValue;
+	key: string;
+	source: string;
+	context: JsonValue;
 };
 ```
 

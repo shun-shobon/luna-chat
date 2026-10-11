@@ -4,193 +4,192 @@ import type { EventExecutionPort } from "../../event/ports/event-execution-port"
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
-
 import { HeartbeatController } from "./heartbeat-controller";
 
 describe("HeartbeatController", () => {
-  it("抽選した間隔後にchecklistを読み、完了後だけ次回を予約する", async () => {
-    const clock = new FakeClock();
-    const completion = createDeferred<void>();
-    const executor = createExecutor(async () => {
-      await completion.promise;
-      return { status: "completed" };
-    });
-    const random = { integerInclusive: vi.fn(() => 15) };
-    const controller = new HeartbeatController({
-      clock,
-      createEventId: () => "heartbeat-event-1",
-      enabled: true,
-      executor,
-      logger: createLogger(),
-      maximumIntervalMs: 30,
-      minimumIntervalMs: 10,
-      random,
-      workspace: createWorkspace(),
-    });
+	it("抽選した間隔後にchecklistを読み、完了後だけ次回を予約する", async () => {
+		const clock = new FakeClock();
+		const completion = createDeferred<void>();
+		const executor = createExecutor(async () => {
+			await completion.promise;
+			return { status: "completed" };
+		});
+		const random = { integerInclusive: vi.fn(() => 15) };
+		const controller = new HeartbeatController({
+			clock,
+			createEventId: () => "heartbeat-event-1",
+			enabled: true,
+			executor,
+			logger: createLogger(),
+			maximumIntervalMs: 30,
+			minimumIntervalMs: 10,
+			random,
+			workspace: createWorkspace(),
+		});
 
-    controller.start();
-    expect(clock.delays).toEqual([15]);
-    const tick = clock.fireNext();
-    await vi.waitFor(() => {
-      expect(executor.execute).toHaveBeenCalledWith({
-        id: "heartbeat-event-1",
-        type: "system.heartbeat.fired.v1",
-        source: "system/heartbeat",
-        occurredAt: "2026-01-01T00:00:00.000Z",
-        data: { checklist: "checklist" },
-      });
-    });
-    expect(clock.delays).toEqual([]);
+		controller.start();
+		expect(clock.delays).toEqual([15]);
+		const tick = clock.fireNext();
+		await vi.waitFor(() => {
+			expect(executor.execute).toHaveBeenCalledWith({
+				id: "heartbeat-event-1",
+				type: "system.heartbeat.fired.v1",
+				source: "system/heartbeat",
+				occurredAt: "2026-01-01T00:00:00.000Z",
+				data: { checklist: "checklist" },
+			});
+		});
+		expect(clock.delays).toEqual([]);
 
-    completion.resolve();
-    await tick;
-    await vi.waitFor(() => {
-      expect(clock.delays).toEqual([15]);
-    });
-    expect(random.integerInclusive).toHaveBeenCalledWith(10, 30);
-  });
+		completion.resolve();
+		await tick;
+		await vi.waitFor(() => {
+			expect(clock.delays).toEqual([15]);
+		});
+		expect(random.integerInclusive).toHaveBeenCalledWith(10, 30);
+	});
 
-  it("checklist読込失敗を記録し、次回を予約する", async () => {
-    const clock = new FakeClock();
-    const logger = createLogger();
-    const executor = createExecutor();
-    const workspace = createWorkspace({
-      readHeartbeatChecklist: vi.fn(async () => {
-        throw new Error("unreadable");
-      }),
-    });
-    const controller = new HeartbeatController({
-      clock,
-      createEventId: () => "heartbeat-event-read-failure",
-      enabled: true,
-      executor,
-      logger,
-      maximumIntervalMs: 10,
-      minimumIntervalMs: 10,
-      random: { integerInclusive: () => 10 },
-      workspace,
-    });
+	it("checklist読込失敗を記録し、次回を予約する", async () => {
+		const clock = new FakeClock();
+		const logger = createLogger();
+		const executor = createExecutor();
+		const workspace = createWorkspace({
+			readHeartbeatChecklist: vi.fn(async () => {
+				throw new Error("unreadable");
+			}),
+		});
+		const controller = new HeartbeatController({
+			clock,
+			createEventId: () => "heartbeat-event-read-failure",
+			enabled: true,
+			executor,
+			logger,
+			maximumIntervalMs: 10,
+			minimumIntervalMs: 10,
+			random: { integerInclusive: () => 10 },
+			workspace,
+		});
 
-    controller.start();
-    await clock.fireNext();
-    await vi.waitFor(() => {
-      expect(clock.delays).toEqual([10]);
-    });
-    expect(executor.execute).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      "automation.heartbeat.checklist_read_failed",
-      expect.any(Object),
-    );
-  });
+		controller.start();
+		await clock.fireNext();
+		await vi.waitFor(() => {
+			expect(clock.delays).toEqual([10]);
+		});
+		expect(executor.execute).not.toHaveBeenCalled();
+		expect(logger.error).toHaveBeenCalledWith(
+			"automation.heartbeat.checklist_read_failed",
+			expect.any(Object),
+		);
+	});
 
-  it("無効時は開始せず、stop後はactive実行完了を待っても再予約しない", async () => {
-    const disabledClock = new FakeClock();
-    new HeartbeatController({
-      clock: disabledClock,
-      createEventId: () => "heartbeat-event-disabled",
-      enabled: false,
-      executor: createExecutor(),
-      logger: createLogger(),
-      maximumIntervalMs: 10,
-      minimumIntervalMs: 10,
-      random: { integerInclusive: () => 10 },
-      workspace: createWorkspace(),
-    }).start();
-    expect(disabledClock.delays).toEqual([]);
+	it("無効時は開始せず、stop後はactive実行完了を待っても再予約しない", async () => {
+		const disabledClock = new FakeClock();
+		new HeartbeatController({
+			clock: disabledClock,
+			createEventId: () => "heartbeat-event-disabled",
+			enabled: false,
+			executor: createExecutor(),
+			logger: createLogger(),
+			maximumIntervalMs: 10,
+			minimumIntervalMs: 10,
+			random: { integerInclusive: () => 10 },
+			workspace: createWorkspace(),
+		}).start();
+		expect(disabledClock.delays).toEqual([]);
 
-    const clock = new FakeClock();
-    const completion = createDeferred<void>();
-    const controller = new HeartbeatController({
-      clock,
-      createEventId: () => "heartbeat-event-drain",
-      enabled: true,
-      executor: createExecutor(async () => {
-        await completion.promise;
-        return { status: "completed" };
-      }),
-      logger: createLogger(),
-      maximumIntervalMs: 10,
-      minimumIntervalMs: 10,
-      random: { integerInclusive: () => 10 },
-      workspace: createWorkspace(),
-    });
-    controller.start();
-    const tick = clock.fireNext();
-    controller.stopIntake();
-    const draining = controller.drain();
-    completion.resolve();
-    await Promise.all([tick, draining]);
-    expect(clock.delays).toEqual([]);
-  });
+		const clock = new FakeClock();
+		const completion = createDeferred<void>();
+		const controller = new HeartbeatController({
+			clock,
+			createEventId: () => "heartbeat-event-drain",
+			enabled: true,
+			executor: createExecutor(async () => {
+				await completion.promise;
+				return { status: "completed" };
+			}),
+			logger: createLogger(),
+			maximumIntervalMs: 10,
+			minimumIntervalMs: 10,
+			random: { integerInclusive: () => 10 },
+			workspace: createWorkspace(),
+		});
+		controller.start();
+		const tick = clock.fireNext();
+		controller.stopIntake();
+		const draining = controller.drain();
+		completion.resolve();
+		await Promise.all([tick, draining]);
+		expect(clock.delays).toEqual([]);
+	});
 });
 
 class FakeClock implements AutomationClockPort {
-  readonly #timers: Array<{
-    callback: () => void;
-    delayMs: number;
-    handle: AutomationTimerHandle;
-  }> = [];
-  readonly now = vi.fn(() => new Date("2026-01-01T00:00:00.000Z"));
+	readonly #timers: Array<{
+		callback: () => void;
+		delayMs: number;
+		handle: AutomationTimerHandle;
+	}> = [];
+	readonly now = vi.fn(() => new Date("2026-01-01T00:00:00.000Z"));
 
-  get delays(): number[] {
-    return this.#timers.map((timer) => timer.delayMs);
-  }
+	get delays(): number[] {
+		return this.#timers.map((timer) => timer.delayMs);
+	}
 
-  setTimer(delayMs: number, callback: () => void): AutomationTimerHandle {
-    const handle = {
-      cancel: vi.fn(() => {
-        const index = this.#timers.findIndex((timer) => timer.handle === handle);
-        if (index >= 0) {
-          this.#timers.splice(index, 1);
-        }
-      }),
-    };
-    this.#timers.push({ callback, delayMs, handle });
-    return handle;
-  }
+	setTimer(delayMs: number, callback: () => void): AutomationTimerHandle {
+		const handle = {
+			cancel: vi.fn(() => {
+				const index = this.#timers.findIndex((timer) => timer.handle === handle);
+				if (index >= 0) {
+					this.#timers.splice(index, 1);
+				}
+			}),
+		};
+		this.#timers.push({ callback, delayMs, handle });
+		return handle;
+	}
 
-  async fireNext(): Promise<void> {
-    const timer = this.#timers.shift();
-    if (timer === undefined) {
-      throw new Error("No timer is scheduled.");
-    }
-    timer.callback();
-    await Promise.resolve();
-  }
+	async fireNext(): Promise<void> {
+		const timer = this.#timers.shift();
+		if (timer === undefined) {
+			throw new Error("No timer is scheduled.");
+		}
+		timer.callback();
+		await Promise.resolve();
+	}
 }
 
 function createExecutor(
-  implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
+	implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
 ): { execute: Mock<EventExecutionPort["execute"]> } {
-  return { execute: vi.fn(implementation) };
+	return { execute: vi.fn(implementation) };
 }
 
 type LoggerStub = {
-  [Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
+	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
 };
 
 function createLogger(): LoggerStub {
-  return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
 }
 
 function createWorkspace(
-  overrides: Partial<AutomationWorkspacePort> = {},
+	overrides: Partial<AutomationWorkspacePort> = {},
 ): AutomationWorkspacePort {
-  return {
-    readHeartbeatChecklist: vi.fn(async () => "checklist"),
-    readSchedule: vi.fn(async () => ({ jobs: [] })),
-    removeScheduleJob: vi.fn(() => true),
-    ...overrides,
-  };
+	return {
+		readHeartbeatChecklist: vi.fn(async () => "checklist"),
+		readSchedule: vi.fn(async () => ({ jobs: [] })),
+		removeScheduleJob: vi.fn(() => true),
+		...overrides,
+	};
 }
 
 function createDeferred<Value>(): {
-  promise: Promise<Value>;
-  resolve: (value: Value | PromiseLike<Value>) => void;
+	promise: Promise<Value>;
+	resolve: (value: Value | PromiseLike<Value>) => void;
 } {
-  let resolve!: (value: Value | PromiseLike<Value>) => void;
-  const promise = new Promise<Value>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
+	let resolve!: (value: Value | PromiseLike<Value>) => void;
+	const promise = new Promise<Value>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
 }

@@ -1,9 +1,9 @@
 {
-  "extends": ["@tsconfig/node-lts/tsconfig.json", "@tsconfig/strictest/tsconfig.json"],
-  "compilerOptions": {
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "exactOptionalPropertyTypes": false
-  }
+	"extends": ["@tsconfig/node-lts/tsconfig.json", "@tsconfig/strictest/tsconfig.json"],
+	"compilerOptions": {
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"verbatimModuleSyntax": true,
+		"exactOptionalPropertyTypes": false
+	}
 }

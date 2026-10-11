@@ -2,11 +2,10 @@ import { z } from "zod";
 
 import type { ConversationSession } from "../../conversation/domain/conversation-session";
 import { lunaEventSchema, type LunaEvent } from "../../event/domain/luna-event";
-
 import {
-  conversationScopeKey,
-  conversationScopeSchema,
-  type ConversationScope,
+	conversationScopeKey,
+	conversationScopeSchema,
+	type ConversationScope,
 } from "./conversation-scope";
 import { discordMessageSchema, type DiscordMessage } from "./discord-message";
 
@@ -15,53 +14,53 @@ export const DISCORD_MESSAGE_CREATED_EVENT_TYPE = "discord.message.created.v1";
 export const DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE = "discord.conversation.delegated.v1";
 
 export const discordMessageEventDataSchema = z.strictObject({
-  scope: conversationScopeSchema,
-  message: discordMessageSchema,
+	scope: conversationScopeSchema,
+	message: discordMessageSchema,
 });
 
 export const discordDelegatedEventDataSchema = z.strictObject({
-  scope: conversationScopeSchema,
-  brief: z.string().min(1),
+	scope: conversationScopeSchema,
+	brief: z.string().min(1),
 });
 
 export function createDiscordConversationSession(scope: ConversationScope): ConversationSession {
-  const validatedScope = conversationScopeSchema.parse(scope);
-  return {
-    key: `discord:${conversationScopeKey(validatedScope)}`,
-    source: DISCORD_EVENT_SOURCE,
-    context: validatedScope,
-  };
+	const validatedScope = conversationScopeSchema.parse(scope);
+	return {
+		key: `discord:${conversationScopeKey(validatedScope)}`,
+		source: DISCORD_EVENT_SOURCE,
+		context: validatedScope,
+	};
 }
 
 export function createDiscordMessageEvent(
-  scope: ConversationScope,
-  message: DiscordMessage,
+	scope: ConversationScope,
+	message: DiscordMessage,
 ): LunaEvent {
-  const session = createDiscordConversationSession(scope);
-  const validatedMessage = discordMessageSchema.parse(message);
-  return lunaEventSchema.parse({
-    id: validatedMessage.id,
-    type: DISCORD_MESSAGE_CREATED_EVENT_TYPE,
-    source: DISCORD_EVENT_SOURCE,
-    subject: session.key,
-    occurredAt: validatedMessage.timestamp,
-    data: {
-      scope: session.context,
-      message: validatedMessage,
-    },
-  });
+	const session = createDiscordConversationSession(scope);
+	const validatedMessage = discordMessageSchema.parse(message);
+	return lunaEventSchema.parse({
+		id: validatedMessage.id,
+		type: DISCORD_MESSAGE_CREATED_EVENT_TYPE,
+		source: DISCORD_EVENT_SOURCE,
+		subject: session.key,
+		occurredAt: validatedMessage.timestamp,
+		data: {
+			scope: session.context,
+			message: validatedMessage,
+		},
+	});
 }
 
 export function createDiscordDelegatedEvent(
-  input: Readonly<{ id: string; scope: ConversationScope; brief: string; occurredAt: Date }>,
+	input: Readonly<{ id: string; scope: ConversationScope; brief: string; occurredAt: Date }>,
 ): LunaEvent {
-  const session = createDiscordConversationSession(input.scope);
-  return lunaEventSchema.parse({
-    id: input.id,
-    type: DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
-    source: DISCORD_EVENT_SOURCE,
-    subject: session.key,
-    occurredAt: input.occurredAt.toISOString(),
-    data: discordDelegatedEventDataSchema.parse({ scope: session.context, brief: input.brief }),
-  });
+	const session = createDiscordConversationSession(input.scope);
+	return lunaEventSchema.parse({
+		id: input.id,
+		type: DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
+		source: DISCORD_EVENT_SOURCE,
+		subject: session.key,
+		occurredAt: input.occurredAt.toISOString(),
+		data: discordDelegatedEventDataSchema.parse({ scope: session.context, brief: input.brief }),
+	});
 }
