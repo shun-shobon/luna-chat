@@ -54,7 +54,7 @@ export class DiscordConversationController implements DiscordGatewayPort {
 		if (accepted) {
 			this.conversation.accept({
 				session,
-				event: createDiscordMessageEvent(event.scope, event.message),
+				event: createDiscordMessageEvent(session, event.message),
 			});
 			this.onAccepted(event);
 		}

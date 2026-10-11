@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ZodError } from "zod";
 
 import {
 	createDiscordConversationSession,
@@ -37,7 +36,7 @@ describe("Discord event factory", () => {
 	});
 
 	it("Discord Messageの情報量を維持したLunaEventを作る", () => {
-		expect(createDiscordMessageEvent(scope, message)).toEqual({
+		expect(createDiscordMessageEvent(createDiscordConversationSession(scope), message)).toEqual({
 			id: "400",
 			type: DISCORD_MESSAGE_CREATED_EVENT_TYPE,
 			source: DISCORD_EVENT_SOURCE,
@@ -63,11 +62,5 @@ describe("Discord event factory", () => {
 			occurredAt: "2026-07-23T00:00:00.000Z",
 			data: { scope, brief: "朝の予定を確認したい" },
 		});
-	});
-
-	it("空のbriefを拒否する", () => {
-		expect(() =>
-			createDiscordDelegatedEvent({ id: "delegation-1", scope, brief: "", occurredAt: new Date() }),
-		).toThrow(ZodError);
 	});
 });

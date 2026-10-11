@@ -39,7 +39,7 @@ export class DiscordConversationHistory implements ConversationHistoryPort {
 				channelId,
 				limit: pageLimit,
 			});
-			events.unshift(...page.map((message) => createDiscordMessageEvent(scope, message)));
+			events.unshift(...page.map((message) => createDiscordMessageEvent(session, message)));
 			if (page.length < pageLimit) break;
 			const oldestMessage = page[0];
 			if (oldestMessage === undefined) break;
