@@ -84,9 +84,8 @@ export class JsonRpcConnection {
 		if (this.#closePromise !== undefined) return this.#closePromise;
 		this.#closed = true;
 		this.#rejectPending(new Error("Codex JSON-RPC connection was closed."));
-		const closePromise = (async () => await this.#transport.close())();
-		this.#closePromise = closePromise;
-		return closePromise;
+		this.#closePromise = this.#transport.close();
+		return this.#closePromise;
 	}
 
 	public fail(error: Error): void {

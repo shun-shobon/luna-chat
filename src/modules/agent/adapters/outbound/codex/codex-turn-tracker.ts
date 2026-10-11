@@ -105,26 +105,20 @@ const USER_INPUT_REQUESTED_MESSAGE =
 	"Codex requested interactive user input during an unattended turn.";
 
 export class CodexTurnTracker {
-	readonly #completion: Promise<AgentTurnResult>;
+	readonly #completion = Promise.withResolvers<AgentTurnResult>();
 	readonly #threadId: ThreadId;
 	#finalMessage: string | undefined;
 	#forcedFailureMessage: string | undefined;
 	#lastErrorMessage: string | undefined;
-	#rejectCompletion: (error: Error) => void = () => undefined;
-	#resolveCompletion: (result: AgentTurnResult) => void = () => undefined;
 	#settled = false;
 	#turnId: TurnId | undefined;
 
 	public constructor(threadId: ThreadId) {
 		this.#threadId = threadId;
-		this.#completion = new Promise((resolve, reject) => {
-			this.#resolveCompletion = resolve;
-			this.#rejectCompletion = reject;
-		});
 	}
 
 	public get completion(): Promise<AgentTurnResult> {
-		return this.#completion;
+		return this.#completion.promise;
 	}
 
 	public assertSteerable(turnId: TurnId): void {
@@ -135,9 +129,6 @@ export class CodexTurnTracker {
 	}
 
 	public bindTurnId(turnId: TurnId): void {
-		if (turnId.length === 0) {
-			throw new TurnCorrelationError("turn/start returned an empty turn id.");
-		}
 		if (this.#turnId !== undefined && this.#turnId !== turnId) {
 			throw new TurnCorrelationError("turn/start response and notification turn ids differ.");
 		}
@@ -149,7 +140,7 @@ export class CodexTurnTracker {
 			return;
 		}
 		this.#settled = true;
-		this.#rejectCompletion(error);
+		this.#completion.reject(error);
 	}
 
 	/** Handles a turn-scoped notification already routed to this tracker's thread. */
@@ -202,7 +193,7 @@ export class CodexTurnTracker {
 		}
 		this.#settled = true;
 		if (this.#forcedFailureMessage !== undefined) {
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				errorMessage: this.#forcedFailureMessage,
 				status: "failed",
 			});
@@ -210,20 +201,20 @@ export class CodexTurnTracker {
 		}
 		if (status !== "completed") {
 			const errorMessage = error ?? this.#lastErrorMessage;
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				...(errorMessage === undefined ? {} : { errorMessage }),
 				status,
 			});
 			return;
 		}
 		if (this.#finalMessage === undefined) {
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				errorMessage: "Completed turn did not emit a final agent message.",
 				status: "failed",
 			});
 			return;
 		}
-		this.#resolveCompletion({ outputText: this.#finalMessage, status: "completed" });
+		this.#completion.resolve({ outputText: this.#finalMessage, status: "completed" });
 	}
 
 	#correlateTurn(turnId: string): void {
