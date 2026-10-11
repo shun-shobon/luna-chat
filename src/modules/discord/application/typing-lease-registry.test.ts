@@ -18,7 +18,6 @@ describe("TypingLeaseRegistry", () => {
 		await vi.advanceTimersByTimeAsync(2_000);
 
 		expect(refresh).toHaveBeenCalledTimes(3);
-		expect(registry.size).toBe(0);
 	});
 
 	it("同じownerとchannelのleaseを重複作成しない", async () => {
@@ -49,51 +48,60 @@ describe("TypingLeaseRegistry", () => {
 		await Promise.all([firstStart, secondStart]);
 		await vi.advanceTimersByTimeAsync(1_000);
 		registry.releaseAll();
+		await vi.advanceTimersByTimeAsync(1_000);
 
 		expect(first).toHaveBeenCalledTimes(2);
 		expect(second).not.toHaveBeenCalled();
-		expect(registry.size).toBe(0);
 	});
 
 	it("pending start中のreleaseAllでinterval作成を中止する", async () => {
+		vi.useFakeTimers();
 		const refreshing = deferred<void>();
+		const refresh = vi.fn(async () => await refreshing.promise);
 		const registry = new TypingLeaseRegistry(1_000, vi.fn());
-		const starting = registry.start(
-			{ ownerId: "turn-1", channelId: "100" },
-			async () => await refreshing.promise,
-		);
+		const starting = registry.start({ ownerId: "turn-1", channelId: "100" }, refresh);
 
 		registry.releaseAll();
 		refreshing.resolve(undefined);
 		await starting;
+		await vi.advanceTimersByTimeAsync(2_000);
 
-		expect(registry.size).toBe(0);
+		expect(refresh).toHaveBeenCalledOnce();
 	});
 
 	it("pending start中のstopで対象interval作成を中止する", async () => {
+		vi.useFakeTimers();
 		const refreshing = deferred<void>();
+		const refresh = vi.fn(async () => await refreshing.promise);
 		const registry = new TypingLeaseRegistry(1_000, vi.fn());
 		const context = { ownerId: "turn-1", channelId: "100" };
-		const starting = registry.start(context, async () => await refreshing.promise);
+		const starting = registry.start(context, refresh);
 
 		registry.stop(context);
 		refreshing.resolve(undefined);
 		await starting;
+		await vi.advanceTimersByTimeAsync(2_000);
 
-		expect(registry.size).toBe(0);
+		expect(refresh).toHaveBeenCalledOnce();
+	});
+
+	it("初回送信の失敗後は同じleaseを再開始できる", async () => {
+		const registry = new TypingLeaseRegistry(1_000, vi.fn());
+		const context = { ownerId: "turn-1", channelId: "100" };
+		const retry = vi.fn(async () => undefined);
+
+		await expect(
+			registry.start(context, async () => {
+				throw new Error("typing failed");
+			}),
+		).rejects.toThrow("typing failed");
+		await registry.start(context, retry);
+		registry.releaseAll();
+
+		expect(retry).toHaveBeenCalledOnce();
 	});
 });
 
-function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
-	let resolvePromise: ((value: T | PromiseLike<T>) => void) | undefined;
-	const promise = new Promise<T>((resolve) => {
-		resolvePromise = resolve;
-	});
-	return {
-		promise,
-		resolve(value) {
-			if (resolvePromise === undefined) throw new Error("deferred is not initialized");
-			resolvePromise(value);
-		},
-	};
+function deferred<T>() {
+	return Promise.withResolvers<T>();
 }

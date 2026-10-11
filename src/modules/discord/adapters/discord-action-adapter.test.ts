@@ -42,9 +42,9 @@ describe("DiscordActionAdapter", () => {
 	});
 
 	it("ownerが開始したtypingだけを停止する", async () => {
+		vi.useFakeTimers();
 		const channel = createChannel();
-		const registry = new TypingLeaseRegistry(60_000, vi.fn());
-		const adapter = createAdapter(createClient(channel), registry);
+		const adapter = createAdapter(createClient(channel), new TypingLeaseRegistry(1_000, vi.fn()));
 
 		await adapter.execute(
 			{ kind: "start_typing", target: { kind: "channel", channelId: "200" } },
@@ -54,10 +54,13 @@ describe("DiscordActionAdapter", () => {
 			{ kind: "stop_typing", target: { kind: "channel", channelId: "200" } },
 			"turn-2",
 		);
-		expect(registry.size).toBe(1);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(channel.sendTyping).toHaveBeenCalledTimes(2);
 
 		await adapter.releaseTyping("turn-1");
-		expect(registry.size).toBe(0);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(channel.sendTyping).toHaveBeenCalledTimes(2);
+		vi.useRealTimers();
 	});
 
 	it("Luna自身のreactionを削除する", async () => {
