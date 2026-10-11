@@ -107,19 +107,6 @@ describe("JsonRpcConnection", () => {
 		]);
 	});
 
-	it("Node上限を超えるRPC timeoutを1msへ短縮しない", async () => {
-		vi.useFakeTimers();
-		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 2_147_483_648);
-		const request = connection.request("thread/archive", { threadId: "thread-1" });
-
-		await vi.advanceTimersByTimeAsync(1);
-		transport.emitLine('{"id":1,"result":{}}');
-
-		await expect(request).resolves.toEqual({});
-		vi.useRealTimers();
-	});
-
 	it("並行closeが同じtransport cleanup完了を待つ", async () => {
 		const closing = deferred<void>();
 		const closeOperation = vi.fn(async () => await closing.promise);

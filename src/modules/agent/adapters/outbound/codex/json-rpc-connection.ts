@@ -33,7 +33,7 @@ type PendingRequest = {
 	method: SupportedClientRequestMethod;
 	reject: (error: Error) => void;
 	resolve: (result: unknown) => void;
-	timeout: Readonly<{ cancel(): void }>;
+	timeout: NodeJS.Timeout;
 };
 
 type RpcEventHandler = (
@@ -137,7 +137,7 @@ export class JsonRpcConnection {
 		const id = this.#nextRequestId++;
 		this.onEvent?.("agent.rpc_requested", { requestId: id }, { method }, params);
 		return await new Promise((resolve, reject) => {
-			const timeout = scheduleTimeout(() => {
+			const timeout = setTimeout(() => {
 				const error = new RpcTimeoutError(method, this.#rpcTimeoutMs);
 				this.fail(error);
 			}, this.#rpcTimeoutMs);
@@ -254,7 +254,7 @@ export class JsonRpcConnection {
 				this.fail(new JsonRpcProtocolError("Codex emitted an invalid RPC error response."));
 				return;
 			}
-			pending.timeout.cancel();
+			clearTimeout(pending.timeout);
 			this.#pending.delete(value["id"]);
 			this.onEvent?.(
 				"agent.rpc_failed",
@@ -267,7 +267,7 @@ export class JsonRpcConnection {
 			pending.reject(new Error(`Codex RPC error ${String(error["code"])}: ${error["message"]}`));
 			return;
 		}
-		pending.timeout.cancel();
+		clearTimeout(pending.timeout);
 		this.#pending.delete(value["id"]);
 		this.onEvent?.(
 			"agent.rpc_completed",
@@ -280,35 +280,11 @@ export class JsonRpcConnection {
 
 	#rejectPending(error: Error): void {
 		for (const pending of this.#pending.values()) {
-			pending.timeout.cancel();
+			clearTimeout(pending.timeout);
 			pending.reject(error);
 		}
 		this.#pending.clear();
 	}
-}
-
-const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
-
-function scheduleTimeout(callback: () => void, milliseconds: number): Readonly<{ cancel(): void }> {
-	let cancelled = false;
-	let remaining = milliseconds;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const schedule = () => {
-		const chunk = Math.min(remaining, MAXIMUM_TIMEOUT_MS);
-		timer = setTimeout(() => {
-			remaining -= chunk;
-			if (cancelled) return;
-			if (remaining > 0) schedule();
-			else callback();
-		}, chunk);
-	};
-	schedule();
-	return {
-		cancel() {
-			cancelled = true;
-			if (timer !== undefined) clearTimeout(timer);
-		},
-	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -187,7 +187,7 @@ HTTPの完了待ち入力には `http.respond` Effectを利用できる。入力
 
 ### 10.4 待機Effect (`system.wait`)
 
-`{ duration_seconds: number }` を指定して指定秒数待機する。完了後は結果を同一スレッドのフォローアップターンへ渡す。
+`{ duration_seconds: number }` を指定して指定秒数待機する。`duration_seconds` は1以上 `2147483` 以下の整数とする。完了後は結果を同一スレッドのフォローアップターンへ渡す。
 
 ### 10.5 実行制御とフォローアップ
 
@@ -263,6 +263,8 @@ restart_max_delay_ms = 30000
 restart_window_ms = 300000
 restart_failure_limit = 5
 ```
+
+`*_ms` のうちタイマーとして使う値（`thread_retention_ms` と `restart_window_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
 
 ### 14.2 環境変数
 

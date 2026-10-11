@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import type {
 	AgentRuntimePort,
 	AgentTurnRequest,
@@ -267,34 +269,8 @@ function validatePolicy(policy: AgentRestartPolicy): void {
 }
 
 async function defaultDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-	await new Promise<void>((resolve, reject) => {
-		let remaining = milliseconds;
-		let timeout: ReturnType<typeof setTimeout> | undefined;
-		const abort = () => {
-			if (timeout !== undefined) clearTimeout(timeout);
-			reject(signal?.reason instanceof Error ? signal.reason : new Error("Delay was aborted."));
-		};
-		const schedule = () => {
-			const chunk = Math.min(remaining, MAXIMUM_TIMEOUT_MS);
-			timeout = setTimeout(() => {
-				remaining -= chunk;
-				if (remaining > 0) schedule();
-				else {
-					signal?.removeEventListener("abort", abort);
-					resolve();
-				}
-			}, chunk);
-		};
-		if (signal?.aborted === true) {
-			abort();
-			return;
-		}
-		signal?.addEventListener("abort", abort, { once: true });
-		schedule();
-	});
+	await delay(milliseconds, undefined, { signal });
 }
-
-const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
 
 function toError(error: unknown): Error {
 	return error instanceof Error ? error : new Error("Failed to start Codex app-server.");

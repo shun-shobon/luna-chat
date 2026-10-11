@@ -896,26 +896,7 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
-
 function scheduleTimeout(callback: () => void, milliseconds: number): ScheduledTimeout {
-	let cancelled = false;
-	let remaining = milliseconds;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const schedule = () => {
-		const chunk = Math.min(remaining, MAXIMUM_TIMEOUT_MS);
-		timer = setTimeout(() => {
-			remaining -= chunk;
-			if (cancelled) return;
-			if (remaining > 0) schedule();
-			else callback();
-		}, chunk);
-	};
-	schedule();
-	return {
-		cancel() {
-			cancelled = true;
-			if (timer !== undefined) clearTimeout(timer);
-		},
-	};
+	const timer = setTimeout(callback, milliseconds);
+	return { cancel: () => clearTimeout(timer) };
 }

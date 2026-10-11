@@ -9,6 +9,10 @@ import type { WorkspaceConfig } from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);
+// Node.jsのsetTimeoutは2^31-1msを超えると1msに丸めるため、タイマーに渡す値はここで上限を課す。
+const MAXIMUM_TIMER_MS = 2_147_483_647;
+const positiveTimerMs = positiveSafeInteger.max(MAXIMUM_TIMER_MS);
+const nonNegativeTimerMs = nonNegativeSafeInteger.max(MAXIMUM_TIMER_MS);
 const discordSnowflake = z.string().regex(/^\d+$/u);
 
 const WorkspaceConfigTomlSchema = z
@@ -18,17 +22,17 @@ const WorkspaceConfigTomlSchema = z
 				restart_failure_limit: positiveSafeInteger.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.restartFailureLimit,
 				),
-				restart_initial_delay_ms: nonNegativeSafeInteger.default(
+				restart_initial_delay_ms: nonNegativeTimerMs.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.restartInitialDelayMs,
 				),
-				restart_max_delay_ms: nonNegativeSafeInteger.default(
+				restart_max_delay_ms: nonNegativeTimerMs.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.restartMaxDelayMs,
 				),
 				restart_window_ms: positiveSafeInteger.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.restartWindowMs,
 				),
-				rpc_timeout_ms: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.agent.rpcTimeoutMs),
-				thread_cleanup_interval_ms: positiveSafeInteger.default(
+				rpc_timeout_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.agent.rpcTimeoutMs),
+				thread_cleanup_interval_ms: positiveTimerMs.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.threadCleanupIntervalMs,
 				),
 				thread_retention_ms: positiveSafeInteger.default(
@@ -42,25 +46,19 @@ const WorkspaceConfigTomlSchema = z
 					.array(discordSnowflake)
 					.default(DEFAULT_WORKSPACE_CONFIG.discord.allowedChannelIds),
 				allow_dm: z.boolean().default(DEFAULT_WORKSPACE_CONFIG.discord.allowDm),
-				debounce_ms: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.discord.debounceMs),
+				debounce_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.discord.debounceMs),
 				initial_history_limit: nonNegativeSafeInteger.default(
 					DEFAULT_WORKSPACE_CONFIG.discord.initialHistoryLimit,
 				),
-				session_idle_ms: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.discord.sessionIdleMs,
-				),
-				typing_idle_ms: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.discord.typingIdleMs),
+				session_idle_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.discord.sessionIdleMs),
+				typing_idle_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.discord.typingIdleMs),
 			})
 			.prefault({}),
 		heartbeat: z
 			.strictObject({
 				enabled: z.boolean().default(DEFAULT_WORKSPACE_CONFIG.heartbeat.enabled),
-				max_interval_ms: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.heartbeat.maxIntervalMs,
-				),
-				min_interval_ms: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.heartbeat.minIntervalMs,
-				),
+				max_interval_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.heartbeat.maxIntervalMs),
+				min_interval_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.heartbeat.minIntervalMs),
 			})
 			.prefault({}),
 		memory: z.strictObject({
