@@ -156,6 +156,29 @@ describe("ConversationCoordinator", () => {
 		expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
 	});
 
+	it("コマンド処理の例外をその場で記録し、sessionを閉じる", async () => {
+		vi.useFakeTimers();
+		const runtime = createRuntime();
+		const onError = vi.fn();
+		const failure = new Error("handler failed");
+		const coordinator = createCoordinator(runtime.port, {
+			onError,
+			onEvent: (name) => {
+				if (name === "conversation.thread_opened") throw failure;
+			},
+		});
+
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+
+		expect(onError).toHaveBeenCalledExactlyOnceWith(failure, {
+			session,
+			operation: "actor/mailbox",
+		});
+		expect(coordinator.hasSession(session.key)).toBe(false);
+	});
+
 	it("受理した入力にtrue、intake停止後の入力にfalseを返す", async () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime();
@@ -1012,6 +1035,7 @@ function createCoordinator(
 			error: unknown,
 			context: { session: ConversationSession; operation: string },
 		) => void;
+		onEvent?: (event: string) => void;
 		sessionMemory?: ConversationSessionMemoryOptions;
 	} = {},
 ): ConversationCoordinator {
@@ -1041,7 +1065,7 @@ function createCoordinator(
 			})),
 			onError: overrides.onError ?? vi.fn(),
 			onBatchSettled: overrides.onBatchSettled ?? vi.fn(),
-			onEvent: vi.fn(),
+			onEvent: overrides.onEvent ?? vi.fn(),
 		},
 		{
 			debounceMs: 100,

@@ -270,15 +270,14 @@ class ConversationActor {
 	}
 
 	#post(command: Command): void {
-		this.#mailbox = this.#mailbox.then(
-			() => {
+		this.#mailbox = this.#mailbox.then(() => {
+			try {
 				this.#handle(command);
-			},
-			(error: unknown) => {
+			} catch (error: unknown) {
 				this.dependencies.onError(error, { session: this.session, operation: "actor/mailbox" });
 				this.#close();
-			},
-		);
+			}
+		});
 	}
 
 	#handle(command: Command): void {
