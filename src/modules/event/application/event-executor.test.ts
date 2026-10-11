@@ -1,4 +1,5 @@
-import { describe, expect, it, type Mock, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { LunaEvent } from "../domain/luna-event";

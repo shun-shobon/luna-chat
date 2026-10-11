@@ -4,14 +4,14 @@ import {
 	InteractionContextType,
 	MessageFlags,
 	SlashCommandBuilder,
-	type Client,
-	type Interaction,
 } from "discord.js";
+import type { Client, Interaction } from "discord.js";
 import { z } from "zod";
 
 import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
 import type { ConversationCoordinator } from "../../conversation/application/conversation-coordinator";
-import { conversationScopeSchema, type ConversationScope } from "../domain/conversation-scope";
+import { conversationScopeSchema } from "../domain/conversation-scope";
+import type { ConversationScope } from "../domain/conversation-scope";
 import { createDiscordConversationSession } from "../domain/discord-event";
 import { shouldAcceptCommand } from "../domain/message-acceptance";
 

@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type {
 	AutomationClockPort,
 	AutomationRandomPort,
@@ -97,6 +100,3 @@ export class HeartbeatController {
 		});
 	}
 }
-import { randomUUID } from "node:crypto";
-
-import type { EventExecutionPort } from "../../event/ports/event-execution-port";

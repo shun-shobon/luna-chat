@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
-import { jsonValueSchema, type JsonValue } from "../../event/domain/luna-event";
+import { jsonValueSchema } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../event/domain/luna-event";
 
 export interface EffectDefinition {
 	readonly type: string;

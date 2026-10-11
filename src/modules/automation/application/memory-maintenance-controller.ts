@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { AutomationClockPort } from "../ports/automation-clock-port";
 import type {
 	AutomationScheduleTimerPort,
@@ -82,6 +85,3 @@ function formatLocalDate(date: Date): string {
 	const day = date.getDate().toString().padStart(2, "0");
 	return `${year}-${month}-${day}`;
 }
-import { randomUUID } from "node:crypto";
-
-import type { EventExecutionPort } from "../../event/ports/event-execution-port";

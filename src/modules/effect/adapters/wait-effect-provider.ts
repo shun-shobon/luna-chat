@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { WAIT_EFFECT_TYPE } from "../domain/effect";
-import { defineEffect, type EffectProvider } from "../ports/effect-provider";
+import { defineEffect } from "../ports/effect-provider";
+import type { EffectProvider } from "../ports/effect-provider";
 
 const waitInputSchema = z.strictObject({ duration_seconds: z.number().int().min(1) });
 const MAXIMUM_DELAY_SECONDS = 2_147_483;

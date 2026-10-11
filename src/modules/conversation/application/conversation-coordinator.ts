@@ -4,11 +4,8 @@ import type {
 	AgentTurnResult,
 	StartedAgentTurn,
 } from "../../agent/ports/outbound/agent-runtime-port";
-import {
-	requiresEffectFollowUp,
-	type EffectRequest,
-	type EffectResult,
-} from "../../effect/domain/effect";
+import { requiresEffectFollowUp } from "../../effect/domain/effect";
+import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
 import type { LunaEvent } from "../../event/domain/luna-event";

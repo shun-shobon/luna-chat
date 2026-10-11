@@ -1,4 +1,5 @@
-import chokidar, { type FSWatcher } from "chokidar";
+import { watch } from "chokidar";
+import type { FSWatcher } from "chokidar";
 
 import type { AutomationScheduleWatcherPort } from "../ports/automation-schedule-port";
 
@@ -18,7 +19,7 @@ export class ChokidarScheduleWatcher implements AutomationScheduleWatcherPort {
 			return;
 		}
 
-		const watcher = chokidar.watch(this.#schedulePath, { ignoreInitial: true });
+		const watcher = watch(this.#schedulePath, { ignoreInitial: true });
 		watcher.on("add", input.onChange);
 		watcher.on("change", input.onChange);
 		watcher.on("unlink", input.onChange);

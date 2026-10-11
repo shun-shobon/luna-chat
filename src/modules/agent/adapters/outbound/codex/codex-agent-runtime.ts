@@ -1,12 +1,12 @@
 import type { InitializeParams } from "../../../../../generated/codex/InitializeParams";
 import type { ThreadSourceKind } from "../../../../../generated/codex/v2/ThreadSourceKind";
 import type { UserInput } from "../../../../../generated/codex/v2/UserInput";
-import {
-	type AgentRuntimePort,
-	type AgentTurnRequest,
-	type StartedAgentTurn,
-	type ThreadId,
-	type TurnId,
+import type {
+	AgentRuntimePort,
+	AgentTurnRequest,
+	StartedAgentTurn,
+	ThreadId,
+	TurnId,
 } from "../../../ports/outbound/agent-runtime-port";
 import {
 	parseEmptyResponse,

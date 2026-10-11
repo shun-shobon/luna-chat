@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TypingLeaseRegistry } from "../application/typing-lease-registry";
 import type { SendFileResolverPort } from "../ports/send-file-resolver-port";
-import { DiscordActionAdapter, type DiscordActionClient } from "./discord-action-adapter";
+import { DiscordActionAdapter } from "./discord-action-adapter";
+import type { DiscordActionClient } from "./discord-action-adapter";
 
 describe("DiscordActionAdapter", () => {
 	it("DMを解決してmessageを送信する", async () => {

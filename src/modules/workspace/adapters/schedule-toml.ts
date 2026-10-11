@@ -5,7 +5,8 @@ import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
-import { EMPTY_WORKSPACE_SCHEDULE, type WorkspaceSchedule } from "../domain/workspace-schedule";
+import { EMPTY_WORKSPACE_SCHEDULE } from "../domain/workspace-schedule";
+import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 
 const ScheduleJobBaseSchema = z.strictObject({
 	enabled: z.boolean(),

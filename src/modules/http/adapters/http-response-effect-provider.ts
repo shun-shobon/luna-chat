@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { defineEffect, type EffectProvider } from "../../effect/ports/effect-provider";
+import { defineEffect } from "../../effect/ports/effect-provider";
+import type { EffectProvider } from "../../effect/ports/effect-provider";
 import { jsonValueSchema } from "../../event/domain/luna-event";
 import type { HttpResponseRegistry } from "../application/http-response-registry";
 

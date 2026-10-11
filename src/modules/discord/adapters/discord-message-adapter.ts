@@ -1,11 +1,10 @@
 import { ChannelType } from "discord.js";
 import { z } from "zod";
 
-import {
-	normalizeDiscordMessage,
-	type DiscordMessageSource,
-} from "../application/normalize-discord-message";
-import { conversationScopeSchema, type ConversationScope } from "../domain/conversation-scope";
+import { normalizeDiscordMessage } from "../application/normalize-discord-message";
+import type { DiscordMessageSource } from "../application/normalize-discord-message";
+import { conversationScopeSchema } from "../domain/conversation-scope";
+import type { ConversationScope } from "../domain/conversation-scope";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
 

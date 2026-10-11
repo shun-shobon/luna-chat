@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { type JsonValue, jsonValueSchema } from "../../event/domain/luna-event";
+import { jsonValueSchema } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../event/domain/luna-event";
 import type { EffectOutput } from "../domain/effect";
 import type { EffectOutputContract } from "../ports/effect-output-contract";
 import type { EffectRegistry } from "./effect-registry";

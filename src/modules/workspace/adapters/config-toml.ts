@@ -4,7 +4,8 @@ import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
-import { DEFAULT_WORKSPACE_CONFIG, type WorkspaceConfig } from "../domain/workspace-config";
+import { DEFAULT_WORKSPACE_CONFIG } from "../domain/workspace-config";
+import type { WorkspaceConfig } from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);

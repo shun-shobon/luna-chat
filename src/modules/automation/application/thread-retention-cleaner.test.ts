@@ -1,4 +1,5 @@
-import { describe, expect, it, type Mock, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";

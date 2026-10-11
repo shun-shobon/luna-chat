@@ -6,6 +6,7 @@ import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as DiscordGatewayAdapterModule from "../modules/discord/adapters/discord-gateway-adapter";
+import { startLunaApplication } from "./composition-root";
 
 const fakes = vi.hoisted(() => {
 	const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -99,8 +100,6 @@ vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 		}
 	},
 }));
-
-import { startLunaApplication } from "./composition-root";
 
 const temporaryDirectories: string[] = [];
 const originalEnvironment = { ...process.env };

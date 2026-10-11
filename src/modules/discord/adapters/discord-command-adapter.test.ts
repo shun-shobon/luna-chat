@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
 import type { ConversationCoordinator } from "../../conversation/application/conversation-coordinator";
-import { DiscordCommandAdapter, type DiscordCommandClient } from "./discord-command-adapter";
+import { DiscordCommandAdapter } from "./discord-command-adapter";
+import type { DiscordCommandClient } from "./discord-command-adapter";
 
 const models = [
 	{

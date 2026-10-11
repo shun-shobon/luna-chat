@@ -8,13 +8,12 @@ import type {
 } from "../../agent/ports/outbound/agent-runtime-port";
 import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
-import { lunaEventSchema, type LunaEvent } from "../../event/domain/luna-event";
+import { lunaEventSchema } from "../../event/domain/luna-event";
+import type { LunaEvent } from "../../event/domain/luna-event";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
-import {
-	ConversationCoordinator,
-	type ConversationSessionMemoryOptions,
-} from "./conversation-coordinator";
+import { ConversationCoordinator } from "./conversation-coordinator";
+import type { ConversationSessionMemoryOptions } from "./conversation-coordinator";
 
 afterEach(() => {
 	vi.useRealTimers();

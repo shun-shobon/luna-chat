@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { StreamableHTTPTransport } from "@hono/mcp";
-import { serve, type ServerType } from "@hono/node-server";
+import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -11,8 +12,8 @@ import {
 	discordEmojiSchema,
 	discordTargetSchema,
 	sendFileSchema,
-	type DiscordAction,
 } from "../domain/discord-action";
+import type { DiscordAction } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
 import type { DiscordReadPort } from "../ports/discord-read-port";

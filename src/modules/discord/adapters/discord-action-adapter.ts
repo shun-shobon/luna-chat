@@ -1,14 +1,15 @@
 import { basename } from "node:path";
 
-import { AttachmentBuilder, type MessageCreateOptions } from "discord.js";
+import { AttachmentBuilder } from "discord.js";
+import type { MessageCreateOptions } from "discord.js";
 
 import type { TypingLeaseRegistry } from "../application/typing-lease-registry";
-import {
-	discordActionSchema,
-	type DiscordAction,
-	type DiscordEmoji,
-	type DiscordTarget,
-	type SendFile,
+import { discordActionSchema } from "../domain/discord-action";
+import type {
+	DiscordAction,
+	DiscordEmoji,
+	DiscordTarget,
+	SendFile,
 } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";

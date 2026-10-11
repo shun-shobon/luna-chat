@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ChokidarScheduleWatcher } from "./chokidar-schedule-watcher";
+
 const fake = vi.hoisted(() => {
 	const listeners = new Map<string, Set<(value?: unknown) => void>>();
 	const watcher = {
@@ -26,9 +28,7 @@ const fake = vi.hoisted(() => {
 	return { watcher };
 });
 
-vi.mock("chokidar", () => ({ default: { watch: vi.fn(() => fake.watcher) } }));
-
-import { ChokidarScheduleWatcher } from "./chokidar-schedule-watcher";
+vi.mock("chokidar", () => ({ watch: vi.fn(() => fake.watcher) }));
 
 describe("ChokidarScheduleWatcher", () => {
 	it("ready待機中のcloseでstartを失敗させる", async () => {

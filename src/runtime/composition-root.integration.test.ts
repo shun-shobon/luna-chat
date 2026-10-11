@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
+import * as effectOutputModule from "../modules/effect/application/effect-output-contract";
+import * as effectRegistryModule from "../modules/effect/application/effect-registry";
+import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
+import { startLunaApplication } from "./composition-root";
+import * as threadInputModule from "./thread-input-factory";
+
 const fakes = vi.hoisted(() => {
 	const client = {
 		application: { commands: { create: vi.fn(async () => undefined) } },
@@ -104,13 +111,6 @@ vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 		}
 	},
 }));
-
-import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
-import * as effectOutputModule from "../modules/effect/application/effect-output-contract";
-import * as effectRegistryModule from "../modules/effect/application/effect-registry";
-import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
-import { startLunaApplication } from "./composition-root";
-import * as threadInputModule from "./thread-input-factory";
 
 const originalEnvironment = { ...process.env };
 

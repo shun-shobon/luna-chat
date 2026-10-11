@@ -1,6 +1,7 @@
 import type { AgentRuntimePort } from "../../../ports/outbound/agent-runtime-port";
 import { CodexAgentRuntime } from "./codex-agent-runtime";
-import { startCodexStdioProcess, type StartCodexStdioProcessOptions } from "./codex-stdio-process";
+import { startCodexStdioProcess } from "./codex-stdio-process";
+import type { StartCodexStdioProcessOptions } from "./codex-stdio-process";
 import { JsonRpcConnection } from "./json-rpc-connection";
 
 export interface ManagedAgentRuntime {

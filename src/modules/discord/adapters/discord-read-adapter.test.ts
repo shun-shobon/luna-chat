@@ -2,7 +2,8 @@ import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
-import { DiscordReadAdapter, type DiscordReadClient } from "./discord-read-adapter";
+import { DiscordReadAdapter } from "./discord-read-adapter";
+import type { DiscordReadClient } from "./discord-read-adapter";
 
 describe("DiscordReadAdapter", () => {
 	it("cursor付きhistoryを取得し、検証後にtimestampとIDの昇順へ並べる", async () => {

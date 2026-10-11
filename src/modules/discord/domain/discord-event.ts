@@ -1,13 +1,12 @@
 import { z } from "zod";
 
 import type { ConversationSession } from "../../conversation/domain/conversation-session";
-import { lunaEventSchema, type LunaEvent } from "../../event/domain/luna-event";
-import {
-	conversationScopeKey,
-	conversationScopeSchema,
-	type ConversationScope,
-} from "./conversation-scope";
-import { discordMessageSchema, type DiscordMessage } from "./discord-message";
+import { lunaEventSchema } from "../../event/domain/luna-event";
+import type { LunaEvent } from "../../event/domain/luna-event";
+import { conversationScopeKey, conversationScopeSchema } from "./conversation-scope";
+import type { ConversationScope } from "./conversation-scope";
+import { discordMessageSchema } from "./discord-message";
+import type { DiscordMessage } from "./discord-message";
 
 export const DISCORD_EVENT_SOURCE = "discord/main";
 export const DISCORD_MESSAGE_CREATED_EVENT_TYPE = "discord.message.created.v1";

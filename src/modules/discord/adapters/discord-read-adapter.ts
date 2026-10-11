@@ -1,4 +1,5 @@
-import { ChannelType, type Client, type DMChannel, PermissionFlagsBits } from "discord.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
+import type { Client, DMChannel } from "discord.js";
 import { z } from "zod";
 
 import { discordIdSchema } from "../domain/discord-id";
@@ -6,11 +7,13 @@ import {
 	discordChannelSummarySchema,
 	discordGuildEmojiSchema,
 	discordUserDetailSchema,
-	type DiscordChannelSummary,
-	type DiscordGuildEmoji,
-	type DiscordReadPort,
-	type DiscordUserDetail,
-	type ReadMessageHistoryInput,
+} from "../ports/discord-read-port";
+import type {
+	DiscordChannelSummary,
+	DiscordGuildEmoji,
+	DiscordReadPort,
+	DiscordUserDetail,
+	ReadMessageHistoryInput,
 } from "../ports/discord-read-port";
 import { toDiscordGatewayMessage } from "./discord-message-adapter";
 

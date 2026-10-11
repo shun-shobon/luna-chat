@@ -48,10 +48,8 @@ import { createEffectRegistry } from "../modules/effect/application/effect-regis
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
 import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
 import { EventExecutor } from "../modules/event/application/event-executor";
-import {
-	startHttpEventServer,
-	type HttpEventServerHandle,
-} from "../modules/http/adapters/http-event-server";
+import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
+import type { HttpEventServerHandle } from "../modules/http/adapters/http-event-server";
 import { createHttpResponseEffectProvider } from "../modules/http/adapters/http-response-effect-provider";
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";

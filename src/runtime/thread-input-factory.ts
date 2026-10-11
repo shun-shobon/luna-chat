@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
-import {
-	readWorkspaceBaseInstructions,
-	type DailyMemory,
-} from "../modules/workspace/application/workspace-instructions";
+import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
+import type { DailyMemory } from "../modules/workspace/application/workspace-instructions";
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 
 export function buildBaseInstructions(input: {

@@ -6,7 +6,8 @@ import type {
 	DiscordGatewayPort,
 	DiscordGatewayTyping,
 } from "../ports/discord-gateway-port";
-import { DiscordGatewayAdapter, type DiscordGatewayEventClient } from "./discord-gateway-adapter";
+import { DiscordGatewayAdapter } from "./discord-gateway-adapter";
+import type { DiscordGatewayEventClient } from "./discord-gateway-adapter";
 
 describe("DiscordGatewayAdapter", () => {
 	it("messageCreateとtypingStartだけを購読し、正規化済みeventをportへ渡す", async () => {

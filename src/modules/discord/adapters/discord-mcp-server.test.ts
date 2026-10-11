@@ -4,11 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DiscordActionPort } from "../ports/discord-action-port";
 import type { DiscordReadPort } from "../ports/discord-read-port";
-import {
-	DISCORD_MCP_TYPING_OWNER_HEADER,
-	startDiscordMcpServer,
-	type DiscordMcpServerHandle,
-} from "./discord-mcp-server";
+import { DISCORD_MCP_TYPING_OWNER_HEADER, startDiscordMcpServer } from "./discord-mcp-server";
+import type { DiscordMcpServerHandle } from "./discord-mcp-server";
 
 const resources: Array<{ client: McpClient; server: DiscordMcpServerHandle }> = [];
 

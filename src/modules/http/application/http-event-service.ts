@@ -1,12 +1,8 @@
 import type { AcceptedConversationEvent } from "../../conversation/domain/conversation-session";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
-import {
-	createHttpConversationSession,
-	createHttpEvent,
-	type HttpEventRequest,
-} from "../domain/http-event";
-import type { HttpResponseRegistry } from "./http-response-registry";
-import { type HttpEventOutcome } from "./http-response-registry";
+import { createHttpConversationSession, createHttpEvent } from "../domain/http-event";
+import type { HttpEventRequest } from "../domain/http-event";
+import type { HttpResponseRegistry, HttpEventOutcome } from "./http-response-registry";
 
 type ConversationIntake = Readonly<{ accept(input: AcceptedConversationEvent): boolean }>;
 
