@@ -65,16 +65,8 @@ export class EventExecutor implements EventExecutionPort {
 
 		// connectionLost が所有者を解放済みなら、そのthreadは旧接続のものなのでarchiveしない。
 		if (thread !== undefined && this.#activeOwners.delete(thread.ownerId)) {
-			const threadId = thread.id;
 			await this.#releaseEffects(thread.ownerId);
-			await this.dependencies.agent.archiveThread(threadId).catch((error: unknown) => {
-				this.dependencies.logger.log(
-					"error",
-					"event.thread_archive_failed",
-					{ threadId },
-					{ error },
-				);
-			});
+			await this.#archiveThread(thread.id);
 		}
 
 		return result;
@@ -88,10 +80,17 @@ export class EventExecutor implements EventExecutionPort {
 		}
 		const threadId = await this.dependencies.agent.openThread(input);
 		if (connectionGeneration !== this.#connectionGeneration) {
+			await this.#archiveThread(threadId);
 			throw new Error("Codex connection was lost while opening an event thread");
 		}
 		this.#activeOwners.add(input.executionOwnerId);
 		return { id: threadId, ownerId: input.executionOwnerId };
+	}
+
+	async #archiveThread(threadId: string): Promise<void> {
+		await this.dependencies.agent.archiveThread(threadId).catch((error: unknown) => {
+			this.dependencies.logger.log("error", "event.thread_archive_failed", { threadId }, { error });
+		});
 	}
 
 	async #completeChain(

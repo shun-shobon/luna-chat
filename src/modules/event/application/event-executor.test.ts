@@ -152,6 +152,22 @@ describe("EventExecutor", () => {
 		expect(harness.archiveThread).not.toHaveBeenCalled();
 	});
 
+	it("thread作成中のconnection loss後に作成応答が届いたthreadをarchiveする", async () => {
+		const opened = createDeferred<string>();
+		const harness = createHarness([]);
+		harness.openThread.mockImplementationOnce(async () => await opened.promise);
+		const execution = harness.executor.execute(event);
+		await vi.waitFor(() => expect(harness.openThread).toHaveBeenCalledOnce());
+
+		harness.executor.connectionLost();
+		opened.resolve("thread-1");
+
+		const result = await execution;
+		expect(result.status === "failed" && String(result.error)).toContain("connection was lost");
+		expect(harness.startTurn).not.toHaveBeenCalled();
+		expect(harness.archiveThread).toHaveBeenCalledWith("thread-1");
+	});
+
 	it("archive失敗をlogし、完了結果を変更しない", async () => {
 		const archiveFailure = new Error("archive failed");
 		const harness = createHarness([completed([])]);
