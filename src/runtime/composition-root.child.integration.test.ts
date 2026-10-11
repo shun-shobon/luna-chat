@@ -90,11 +90,7 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
 
 vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	CronScheduleTimer: class {
-		scheduleOneShot(): never {
-			throw new Error("Unexpected one-shot schedule");
-		}
-
-		scheduleRecurring(): { stop(): void } {
+		schedule(): { stop(): void } {
 			return { stop() {} };
 		}
 	},

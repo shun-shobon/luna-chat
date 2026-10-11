@@ -44,10 +44,9 @@ describe("ScheduleController", () => {
 			.mockReturnValueOnce(new Date("2026-01-01T00:00:00.000Z"))
 			.mockReturnValueOnce(new Date("2026-01-01T00:00:02.000Z"));
 		const scheduleTimer: AutomationScheduleTimerPort = {
-			scheduleOneShot: vi.fn(() => {
+			schedule: vi.fn(() => {
 				throw new Error("Date in past. Will never be fired.");
 			}),
-			scheduleRecurring: vi.fn(),
 		};
 		const workspace = createWorkspace();
 		const controller = createController({ clock, scheduleTimer, workspace });
@@ -101,7 +100,6 @@ describe("ScheduleController", () => {
 		const workspace = createWorkspace({
 			removeScheduleJob: () => {
 				order.push("delete");
-				return true;
 			},
 		});
 		const executor = createExecutor(async (_input, afterTurnStarted) => {
@@ -293,15 +291,14 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 	readonly oneShots: FakeTimer[] = [];
 	readonly recurring: FakeTimer[] = [];
 
-	scheduleOneShot(at: Date, onTick: () => Promise<void>): ScheduledAutomationJob {
-		const timer = { at, cron: "", onTick, stop: vi.fn() };
+	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob {
+		if (typeof cronTime === "string") {
+			const timer = { at: new Date(0), cron: cronTime, onTick, stop: vi.fn() };
+			this.recurring.push(timer);
+			return timer;
+		}
+		const timer = { at: cronTime, cron: "", onTick, stop: vi.fn() };
 		this.oneShots.push(timer);
-		return timer;
-	}
-
-	scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob {
-		const timer = { at: new Date(0), cron, onTick, stop: vi.fn() };
-		this.recurring.push(timer);
 		return timer;
 	}
 }
@@ -358,7 +355,7 @@ function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {
 	return {
 		readHeartbeatChecklist: vi.fn(overrides.readHeartbeatChecklist ?? (async () => "checklist")),
 		readSchedule: vi.fn(overrides.readSchedule ?? (async () => ({ jobs: [] }))),
-		removeScheduleJob: vi.fn(overrides.removeScheduleJob ?? (() => true)),
+		removeScheduleJob: vi.fn(overrides.removeScheduleJob ?? (() => undefined)),
 	};
 }
 

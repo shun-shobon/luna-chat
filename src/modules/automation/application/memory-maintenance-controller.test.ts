@@ -107,12 +107,9 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 	readonly stop = vi.fn();
 	#onTick: (() => Promise<void>) | undefined;
 
-	scheduleOneShot(): ScheduledAutomationJob {
-		throw new Error("Unexpected one-shot schedule");
-	}
-
-	scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob {
-		this.cron = cron;
+	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob {
+		if (typeof cronTime !== "string") throw new Error("Unexpected one-shot schedule");
+		this.cron = cronTime;
 		this.#onTick = onTick;
 		return { stop: this.stop };
 	}

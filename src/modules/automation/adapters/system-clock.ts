@@ -1,8 +1,4 @@
-import type {
-	AutomationClockPort,
-	AutomationRandomPort,
-	AutomationTimerHandle,
-} from "../ports/automation-clock-port";
+import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 
 export class SystemAutomationClock implements AutomationClockPort {
 	now(): Date {
@@ -15,8 +11,6 @@ export class SystemAutomationClock implements AutomationClockPort {
 	}
 }
 
-export class SystemAutomationRandom implements AutomationRandomPort {
-	integerInclusive(minimum: number, maximum: number): number {
-		return Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
-	}
+export function randomIntegerInclusive(minimum: number, maximum: number): number {
+	return Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
 }

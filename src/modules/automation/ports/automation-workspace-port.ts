@@ -3,5 +3,5 @@ import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedul
 export interface AutomationWorkspacePort {
 	readHeartbeatChecklist(): Promise<string>;
 	readSchedule(): Promise<WorkspaceSchedule>;
-	removeScheduleJob(jobId: string): boolean;
+	removeScheduleJob(jobId: string): void;
 }

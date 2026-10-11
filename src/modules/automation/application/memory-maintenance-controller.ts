@@ -44,7 +44,7 @@ export class MemoryMaintenanceController {
 			return;
 		}
 		this.#accepting = true;
-		this.#timer = this.#scheduleTimer.scheduleRecurring(this.#cron, async () => {
+		this.#timer = this.#scheduleTimer.schedule(this.#cron, async () => {
 			if (!this.#accepting) {
 				return;
 			}

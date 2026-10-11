@@ -213,10 +213,10 @@ export class ScheduleController {
 			await execution;
 		};
 
-		const timer =
-			job.kind === "recurring"
-				? this.#scheduleTimer.scheduleRecurring(job.cron, onTick)
-				: this.#scheduleTimer.scheduleOneShot(new Date(job.at), onTick);
+		const timer = this.#scheduleTimer.schedule(
+			job.kind === "recurring" ? job.cron : new Date(job.at),
+			onTick,
+		);
 		this.#jobs.set(job.id, { definition: job, timer });
 	}
 

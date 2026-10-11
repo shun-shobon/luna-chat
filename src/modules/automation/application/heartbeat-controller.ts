@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
-import type {
-	AutomationClockPort,
-	AutomationRandomPort,
-	AutomationTimerHandle,
-} from "../ports/automation-clock-port";
+import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { ActiveExecutionSet } from "./active-execution-set";
 
@@ -17,9 +13,7 @@ export class HeartbeatController {
 	readonly #createEventId: () => string;
 	readonly #executor: EventExecutionPort;
 	readonly #logger: LoggerPort;
-	readonly #maximumIntervalMs: number;
-	readonly #minimumIntervalMs: number;
-	readonly #random: AutomationRandomPort;
+	readonly #nextDelayMs: () => number;
 	readonly #workspace: AutomationWorkspacePort;
 
 	#accepting = false;
@@ -32,9 +26,7 @@ export class HeartbeatController {
 		executions?: ActiveExecutionSet;
 		executor: EventExecutionPort;
 		logger: LoggerPort;
-		maximumIntervalMs: number;
-		minimumIntervalMs: number;
-		random: AutomationRandomPort;
+		nextDelayMs: () => number;
 		workspace: AutomationWorkspacePort;
 	}) {
 		this.#clock = input.clock;
@@ -43,9 +35,7 @@ export class HeartbeatController {
 		this.#executions = input.executions ?? new ActiveExecutionSet();
 		this.#executor = input.executor;
 		this.#logger = input.logger;
-		this.#maximumIntervalMs = input.maximumIntervalMs;
-		this.#minimumIntervalMs = input.minimumIntervalMs;
-		this.#random = input.random;
+		this.#nextDelayMs = input.nextDelayMs;
 		this.#workspace = input.workspace;
 	}
 
@@ -72,8 +62,7 @@ export class HeartbeatController {
 			return;
 		}
 
-		const delayMs = this.#random.integerInclusive(this.#minimumIntervalMs, this.#maximumIntervalMs);
-		this.#timer = this.#clock.setTimer(delayMs, () => {
+		this.#timer = this.#clock.setTimer(this.#nextDelayMs(), () => {
 			this.#timer = undefined;
 			const execution = this.#runOnce().finally(() => {
 				this.#scheduleNext();

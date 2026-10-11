@@ -6,15 +6,15 @@ import { startCodexStdioProcess } from "../modules/agent/adapters/outbound/codex
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
 import {
+	randomIntegerInclusive,
 	SystemAutomationClock,
-	SystemAutomationRandom,
 } from "../modules/automation/adapters/system-clock";
-import { WorkspaceAutomationAdapter } from "../modules/automation/adapters/workspace-automation-adapter";
 import { AutomationService } from "../modules/automation/application/automation-service";
 import { HeartbeatController } from "../modules/automation/application/heartbeat-controller";
 import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
 import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
+import type { AutomationWorkspacePort } from "../modules/automation/ports/automation-workspace-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
 import {
@@ -52,6 +52,11 @@ import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
+import {
+	readWorkspaceSchedule,
+	removeWorkspaceScheduleJob,
+} from "../modules/workspace/adapters/schedule-toml";
+import { readHeartbeatChecklist } from "../modules/workspace/application/workspace-instructions";
 import { createEffectProviders } from "./effect-providers";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createThreadInputFactory } from "./thread-input-factory";
@@ -215,10 +220,13 @@ export async function startLunaApplication(
 			logger,
 		});
 		eventExecutor = executor;
-		const automationWorkspace = new WorkspaceAutomationAdapter({
-			schedulePath: workspace.cronPath,
-			workspaceDir: workspace.workspaceDir,
-		});
+		const automationWorkspace: AutomationWorkspacePort = {
+			readHeartbeatChecklist: async () => await readHeartbeatChecklist(workspace.workspaceDir),
+			readSchedule: async () => await readWorkspaceSchedule(workspace.cronPath),
+			removeScheduleJob: (jobId) => {
+				removeWorkspaceScheduleJob(workspace.cronPath, jobId);
+			},
+		};
 		httpService = new HttpEventService({
 			conversation,
 			executor,
@@ -231,9 +239,11 @@ export async function startLunaApplication(
 				enabled: workspace.config.heartbeat.enabled,
 				executor,
 				logger,
-				maximumIntervalMs: workspace.config.heartbeat.maxIntervalMs,
-				minimumIntervalMs: workspace.config.heartbeat.minIntervalMs,
-				random: new SystemAutomationRandom(),
+				nextDelayMs: () =>
+					randomIntegerInclusive(
+						workspace.config.heartbeat.minIntervalMs,
+						workspace.config.heartbeat.maxIntervalMs,
+					),
 				workspace: automationWorkspace,
 			}),
 			memoryMaintenance: new MemoryMaintenanceController({
