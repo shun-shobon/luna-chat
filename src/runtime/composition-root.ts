@@ -45,7 +45,6 @@ import { createEffectRegistry } from "../modules/effect/application/effect-regis
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
 import { EventExecutor } from "../modules/event/application/event-executor";
 import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
-import type { HttpEventServerHandle } from "../modules/http/adapters/http-event-server";
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
@@ -145,25 +144,19 @@ export async function startLunaApplication(
 		},
 	);
 
-	let automation: AutomationService | undefined;
-	let httpService: HttpEventService | undefined;
-	let httpServer: HttpEventServerHandle | undefined;
-	let gateway: DiscordGatewayAdapter | undefined;
-	let commands: DiscordCommandAdapter | undefined;
-	let shutdownPromise: Promise<void> | undefined;
+	const startupCleanups: Array<() => Promise<void> | void> = [
+		() => httpResponses.failAll(),
+		() => typing.releaseAll(),
+		async () => await client.destroy(),
+		async () => await supervisor.close(),
+		async () => await mcp.close(),
+	];
+	// abort時は待機中の起動処理を解くだけにする。ここで全て閉じるとabort後に生成されたリソースが漏れ、
+	// catchで再実行するとHTTP/MCPサーバーを二重closeするため、後始末はcatchで1回だけ行う。
 	const abortStartup = () => {
-		void Promise.allSettled([
-			runCleanup(() => gateway?.stop()),
-			runCleanup(() => commands?.stop()),
-			runCleanup(async () => await automation?.stopIntake()),
-			runCleanup(() => httpService?.stopIntake()),
-			runCleanup(() => httpResponses.failAll()),
-			runCleanup(async () => await httpServer?.close()),
-			runCleanup(() => typing.releaseAll()),
-			client.destroy(),
-			supervisor.close(),
-			mcp.close(),
-		]);
+		void Promise.allSettled([client.destroy(), supervisor.close()]).then((results) => {
+			logCleanupFailures(results, logger, "application.startup_cleanup_failed");
+		});
 	};
 	options.startupSignal?.addEventListener("abort", abortStartup, { once: true });
 	try {
@@ -184,7 +177,7 @@ export async function startLunaApplication(
 			now: () => new Date(),
 			workspaceDir: workspace.workspaceDir,
 		});
-		conversation = new ConversationCoordinator(
+		const coordinator = new ConversationCoordinator(
 			{
 				agent: supervisor,
 				createThreadInput,
@@ -210,6 +203,7 @@ export async function startLunaApplication(
 				typingIdleMs: workspace.config.discord.typingIdleMs,
 			},
 		);
+		conversation = coordinator;
 
 		const clock = new SystemAutomationClock();
 		const executor = new EventExecutor({
@@ -227,13 +221,14 @@ export async function startLunaApplication(
 				removeWorkspaceScheduleJob(workspace.cronPath, jobId);
 			},
 		};
-		httpService = new HttpEventService({
-			conversation,
+		const httpService = new HttpEventService({
+			conversation: coordinator,
 			executor,
 			responses: httpResponses,
 		});
+		startupCleanups.push(() => httpService.stopIntake());
 		const scheduleTimer = new CronScheduleTimer();
-		automation = new AutomationService({
+		const automation = new AutomationService({
 			heartbeat: new HeartbeatController({
 				clock,
 				enabled: workspace.config.heartbeat.enabled,
@@ -270,10 +265,11 @@ export async function startLunaApplication(
 				workspace: automationWorkspace,
 			}),
 		});
+		startupCleanups.push(async () => await automation.stopIntake());
 		await automation.startAutomation(workspace.schedule);
 		options.startupSignal?.throwIfAborted();
 
-		const gatewayController = new DiscordConversationController(conversation, lunaUserId, {
+		const gatewayController = new DiscordConversationController(coordinator, lunaUserId, {
 			allowDm: workspace.config.discord.allowDm,
 			allowedChannelIds: allowedChannels.ids,
 			onAccepted: (event) => {
@@ -289,32 +285,29 @@ export async function startLunaApplication(
 				logger.log("error", "discord.gateway_event_failed", {}, { error, event });
 			},
 		});
-		const commandAdapter = new DiscordCommandAdapter(
+		const commands = new DiscordCommandAdapter(
 			createDiscordCommandClient(client),
-			conversation,
+			coordinator,
 			supervisor,
 			workspace.config.discord.allowDm,
 			allowedChannels,
 			(error) => logger.log("error", "discord.command_failed", {}, { error }),
 		);
-		await commandAdapter.start();
-		commands = commandAdapter;
-		gateway = new DiscordGatewayAdapter(client, gatewayController);
+		startupCleanups.push(() => commands.stop());
+		await commands.start();
+		const gateway = new DiscordGatewayAdapter(client, gatewayController);
+		startupCleanups.push(() => gateway.stop());
 		gateway.start();
-		httpServer = await startHttpEventServer({
+		const httpServer = await startHttpEventServer({
 			hostname: environment.httpHost,
 			port: environment.httpPort,
 			service: httpService,
 			onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
 		});
+		startupCleanups.push(async () => await httpServer.close());
 		options.startupSignal?.throwIfAborted();
 		logger.log("info", "application.started");
-		const runningAutomation = automation;
-		const runningConversation = conversation;
-		const runningGateway = gateway;
-		const runningCommands = commands;
-		const runningHttpService = httpService;
-		const runningHttpServer = httpServer;
+		let shutdownPromise: Promise<void> | undefined;
 		let fatalShutdownRequested = false;
 
 		const application = {
@@ -323,17 +316,17 @@ export async function startLunaApplication(
 				if (shutdownPromise === undefined) {
 					fatalShutdownRequested = isFatal;
 					shutdownPromise = shutdownApplication({
-						automation: runningAutomation,
+						automation,
 						clientDestroy: async () => await client.destroy(),
-						conversation: runningConversation,
+						conversation: coordinator,
 						gateway: {
 							stop: () => {
-								runningGateway.stop();
-								runningCommands.stop();
+								gateway.stop();
+								commands.stop();
 							},
 						},
-						http: runningHttpService,
-						httpClose: () => runningHttpServer.close(),
+						http: httpService,
+						httpClose: () => httpServer.close(),
 						httpFailPending: () => httpResponses.failAll(),
 						logger,
 						mcpClose: () => mcp.close(),
@@ -343,7 +336,7 @@ export async function startLunaApplication(
 					});
 				} else if (isFatal && !fatalShutdownRequested) {
 					fatalShutdownRequested = true;
-					await runningConversation.abort();
+					await coordinator.abort();
 				}
 				await shutdownPromise;
 			},
@@ -352,18 +345,7 @@ export async function startLunaApplication(
 		return application;
 	} catch (error: unknown) {
 		options.startupSignal?.removeEventListener("abort", abortStartup);
-		const cleanupResults = await Promise.allSettled([
-			runCleanup(() => gateway?.stop()),
-			runCleanup(() => commands?.stop()),
-			runCleanup(async () => await automation?.stopIntake()),
-			runCleanup(() => httpService?.stopIntake()),
-			runCleanup(() => httpResponses.failAll()),
-			runCleanup(async () => await httpServer?.close()),
-			runCleanup(() => typing.releaseAll()),
-			client.destroy(),
-			supervisor.close(),
-			mcp.close(),
-		]);
+		const cleanupResults = await Promise.allSettled(startupCleanups.map(runCleanup));
 		logCleanupFailures(cleanupResults, logger, "application.startup_cleanup_failed");
 		throw error;
 	}
