@@ -5,8 +5,8 @@ import { startManagedCodexRuntime } from "../modules/agent/adapters/outbound/cod
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
 import {
-  SystemAutomationClock,
-  SystemAutomationRandom,
+	SystemAutomationClock,
+	SystemAutomationRandom,
 } from "../modules/automation/adapters/system-clock";
 import { WorkspaceAutomationAdapter } from "../modules/automation/adapters/workspace-automation-adapter";
 import { AutomationService } from "../modules/automation/application/automation-service";
@@ -18,25 +18,25 @@ import type { AutomationLogPort } from "../modules/automation/ports/automation-l
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
 import {
-  createDiscordCommandClient,
-  DiscordCommandAdapter,
+	createDiscordCommandClient,
+	DiscordCommandAdapter,
 } from "../modules/discord/adapters/discord-command-adapter";
 import { DiscordConversationController } from "../modules/discord/adapters/discord-conversation-controller";
 import { DiscordConversationDelegation } from "../modules/discord/adapters/discord-conversation-delegation";
 import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
 import {
-  createDiscordDelegationEffectProvider,
-  createDiscordEffectProvider,
+	createDiscordDelegationEffectProvider,
+	createDiscordEffectProvider,
 } from "../modules/discord/adapters/discord-effect-provider";
 import {
-  createDiscordGatewayClient,
-  createDiscordGatewayEventClient,
-  DiscordGatewayAdapter,
+	createDiscordGatewayClient,
+	createDiscordGatewayEventClient,
+	DiscordGatewayAdapter,
 } from "../modules/discord/adapters/discord-gateway-adapter";
 import { startDiscordMcpServer } from "../modules/discord/adapters/discord-mcp-server";
 import {
-  createDiscordReadClient,
-  DiscordReadAdapter,
+	createDiscordReadClient,
+	DiscordReadAdapter,
 } from "../modules/discord/adapters/discord-read-adapter";
 import { FilesystemSendFileResolver } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
@@ -48,10 +48,8 @@ import { createEffectRegistry } from "../modules/effect/application/effect-regis
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
 import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
 import { EventExecutor } from "../modules/event/application/event-executor";
-import {
-  startHttpEventServer,
-  type HttpEventServerHandle,
-} from "../modules/http/adapters/http-event-server";
+import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
+import type { HttpEventServerHandle } from "../modules/http/adapters/http-event-server";
 import { createHttpResponseEffectProvider } from "../modules/http/adapters/http-response-effect-provider";
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
@@ -59,7 +57,6 @@ import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
-
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createThreadInputFactory } from "./thread-input-factory";
 
@@ -67,430 +64,430 @@ const TYPING_REFRESH_INTERVAL_MS = 8_000;
 const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
 
 interface LunaApplication {
-  fatal: Promise<Error>;
-  shutdown(fatal?: boolean): Promise<void>;
+	fatal: Promise<Error>;
+	shutdown(fatal?: boolean): Promise<void>;
 }
 
 export async function startLunaApplication(
-  options: Readonly<{ startupSignal?: AbortSignal }> = {},
+	options: Readonly<{ startupSignal?: AbortSignal }> = {},
 ): Promise<LunaApplication> {
-  options.startupSignal?.throwIfAborted();
-  const environment = readRuntimeEnvironment(process.env);
-  const workspace = await initializeWorkspace({ lunaHome: environment.lunaHome });
-  const allowedChannels = new AllowedChannelSettings(
-    workspace.configPath,
-    workspace.config.discord.allowedChannelIds,
-  );
-  const logger = new JsonLinesLogger(environment.logLevel);
-  const client = createDiscordGatewayClient();
-  const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
-    logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
-  });
-  const actionAdapter = new DiscordActionAdapter(client, new FilesystemSendFileResolver(), typing);
-  let conversation: ConversationCoordinator | undefined;
-  const delegation = new DiscordConversationDelegation(client, {
-    accept: (input) => conversation?.accept(input) ?? false,
-    allowDm: workspace.config.discord.allowDm,
-    createId: randomUUID,
-    now: () => new Date(),
-  });
-  const httpResponses = new HttpResponseRegistry();
-  const effectRegistry = createEffectRegistry([
-    createDiscordEffectProvider(actionAdapter),
-    createDiscordDelegationEffectProvider(delegation),
-    createWaitEffectProvider(),
-    createHttpResponseEffectProvider(httpResponses),
-  ]);
-  const effectOutput = createEffectOutputContract(effectRegistry);
-  const effects = createEffectBatchExecutor(effectRegistry, logger);
-  const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
-  const discordHistory = new DiscordConversationHistory(readAdapter);
-  const mcp = await startDiscordMcpServer({
-    actions: actionAdapter,
-    onError: (error) => logger.log("error", "discord.mcp_transport_failed", {}, { error }),
-    onEvent: (event, context, details, payload) => {
-      logger.log("info", event, context, details, payload);
-    },
-    read: readAdapter,
-  });
+	options.startupSignal?.throwIfAborted();
+	const environment = readRuntimeEnvironment(process.env);
+	const workspace = await initializeWorkspace({ lunaHome: environment.lunaHome });
+	const allowedChannels = new AllowedChannelSettings(
+		workspace.configPath,
+		workspace.config.discord.allowedChannelIds,
+	);
+	const logger = new JsonLinesLogger(environment.logLevel);
+	const client = createDiscordGatewayClient();
+	const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
+		logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
+	});
+	const actionAdapter = new DiscordActionAdapter(client, new FilesystemSendFileResolver(), typing);
+	let conversation: ConversationCoordinator | undefined;
+	const delegation = new DiscordConversationDelegation(client, {
+		accept: (input) => conversation?.accept(input) ?? false,
+		allowDm: workspace.config.discord.allowDm,
+		createId: randomUUID,
+		now: () => new Date(),
+	});
+	const httpResponses = new HttpResponseRegistry();
+	const effectRegistry = createEffectRegistry([
+		createDiscordEffectProvider(actionAdapter),
+		createDiscordDelegationEffectProvider(delegation),
+		createWaitEffectProvider(),
+		createHttpResponseEffectProvider(httpResponses),
+	]);
+	const effectOutput = createEffectOutputContract(effectRegistry);
+	const effects = createEffectBatchExecutor(effectRegistry, logger);
+	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
+	const discordHistory = new DiscordConversationHistory(readAdapter);
+	const mcp = await startDiscordMcpServer({
+		actions: actionAdapter,
+		onError: (error) => logger.log("error", "discord.mcp_transport_failed", {}, { error }),
+		onEvent: (event, context, details, payload) => {
+			logger.log("info", event, context, details, payload);
+		},
+		read: readAdapter,
+	});
 
-  let eventAgent: EventAgentAdapter | undefined;
-  const fatal = deferred<Error>();
-  const supervisor = new AgentRuntimeSupervisor(
-    {
-      initialDelayMs: workspace.config.agent.restartInitialDelayMs,
-      limit: workspace.config.agent.restartFailureLimit,
-      maxDelayMs: workspace.config.agent.restartMaxDelayMs,
-      windowMs: workspace.config.agent.restartWindowMs,
-    },
-    {
-      startRuntime: async (signal) =>
-        await startManagedCodexRuntime({
-          codexHomeDir: workspace.codexHomeDir,
-          cwd: workspace.workspaceDir,
-          onRpcEvent: (event, context, details, payload) => {
-            logger.log("info", event, context, details, payload);
-          },
-          rpcTimeoutMs: workspace.config.agent.rpcTimeoutMs,
-          signal,
-        }),
-    },
-  );
-  supervisor.onFailure((error) => {
-    logger.log("error", "agent.connection_failed", {}, { error });
-    conversation?.connectionLost(error);
-    eventAgent?.connectionLost();
-  });
-  supervisor.onFatal((error) => {
-    logger.log("error", "agent.restart_budget_exceeded", {}, { error });
-    fatal.resolve(error);
-  });
+	let eventAgent: EventAgentAdapter | undefined;
+	const fatal = deferred<Error>();
+	const supervisor = new AgentRuntimeSupervisor(
+		{
+			initialDelayMs: workspace.config.agent.restartInitialDelayMs,
+			limit: workspace.config.agent.restartFailureLimit,
+			maxDelayMs: workspace.config.agent.restartMaxDelayMs,
+			windowMs: workspace.config.agent.restartWindowMs,
+		},
+		{
+			startRuntime: async (signal) =>
+				await startManagedCodexRuntime({
+					codexHomeDir: workspace.codexHomeDir,
+					cwd: workspace.workspaceDir,
+					onRpcEvent: (event, context, details, payload) => {
+						logger.log("info", event, context, details, payload);
+					},
+					rpcTimeoutMs: workspace.config.agent.rpcTimeoutMs,
+					signal,
+				}),
+		},
+	);
+	supervisor.onFailure((error) => {
+		logger.log("error", "agent.connection_failed", {}, { error });
+		conversation?.connectionLost(error);
+		eventAgent?.connectionLost();
+	});
+	supervisor.onFatal((error) => {
+		logger.log("error", "agent.restart_budget_exceeded", {}, { error });
+		fatal.resolve(error);
+	});
 
-  let automation: AutomationService | undefined;
-  let httpService: HttpEventService | undefined;
-  let httpServer: HttpEventServerHandle | undefined;
-  let gateway: DiscordGatewayAdapter | undefined;
-  let commands: DiscordCommandAdapter | undefined;
-  let shutdownPromise: Promise<void> | undefined;
-  const abortStartup = () => {
-    void Promise.allSettled([
-      runCleanup(() => gateway?.stop()),
-      runCleanup(() => commands?.stop()),
-      runCleanup(async () => await automation?.stopIntake()),
-      runCleanup(() => httpService?.stopIntake()),
-      runCleanup(() => httpService?.failPending()),
-      runCleanup(async () => await httpServer?.close()),
-      runCleanup(() => typing.releaseAll()),
-      client.destroy(),
-      supervisor.close(),
-      mcp.close(),
-    ]);
-  };
-  options.startupSignal?.addEventListener("abort", abortStartup, { once: true });
-  try {
-    options.startupSignal?.throwIfAborted();
-    await supervisor.start();
-    options.startupSignal?.throwIfAborted();
-    await client.login(environment.discordBotToken);
-    options.startupSignal?.throwIfAborted();
-    const lunaUserId = discordIdSchema.parse(client.user?.id);
-    const createThreadInput = createThreadInputFactory({
-      buildMcpServers: (executionOwnerId) => ({
-        discord: {
-          url: mcp.url,
-          http_headers: { "X-Luna-Typing-Owner": executionOwnerId },
-        },
-      }),
-      capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
-      now: () => new Date(),
-      workspaceDir: workspace.workspaceDir,
-    });
-    conversation = new ConversationCoordinator(
-      {
-        agent: supervisor,
-        createThreadInput,
-        effectOutput,
-        effects,
-        history: {
-          fetchBefore: async (session, beforeEvent, limit) => {
-            if (session.source === HTTP_EVENT_SOURCE) return [];
-            return await discordHistory.fetchBefore(session, beforeEvent, limit);
-          },
-        },
-        onBatchSettled: (eventIds, succeeded) => {
-          for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
-        },
-        onError: (error, context) => {
-          logger.log(
-            "error",
-            "conversation.operation_failed",
-            { conversationSession: context.session.key },
-            { error, operation: context.operation },
-          );
-        },
-        onEvent: (event, context, details, payload) => {
-          logger.log(
-            "info",
-            event,
-            {
-              ...(context.effectIndex === undefined ? {} : { effectIndex: context.effectIndex }),
-              conversationSession: context.session.key,
-              ...(context.threadId === undefined ? {} : { threadId: context.threadId }),
-              ...(context.turnId === undefined ? {} : { turnId: context.turnId }),
-            },
-            details,
-            payload,
-          );
-        },
-      },
-      {
-        debounceMs: workspace.config.discord.debounceMs,
-        initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
-        sessionMemory: workspace.config.memory.enabled
-          ? { enabled: true, now: () => new Date() }
-          : { enabled: false },
-        sessionIdleMs: workspace.config.discord.sessionIdleMs,
-        typingIdleMs: workspace.config.discord.typingIdleMs,
-      },
-    );
+	let automation: AutomationService | undefined;
+	let httpService: HttpEventService | undefined;
+	let httpServer: HttpEventServerHandle | undefined;
+	let gateway: DiscordGatewayAdapter | undefined;
+	let commands: DiscordCommandAdapter | undefined;
+	let shutdownPromise: Promise<void> | undefined;
+	const abortStartup = () => {
+		void Promise.allSettled([
+			runCleanup(() => gateway?.stop()),
+			runCleanup(() => commands?.stop()),
+			runCleanup(async () => await automation?.stopIntake()),
+			runCleanup(() => httpService?.stopIntake()),
+			runCleanup(() => httpService?.failPending()),
+			runCleanup(async () => await httpServer?.close()),
+			runCleanup(() => typing.releaseAll()),
+			client.destroy(),
+			supervisor.close(),
+			mcp.close(),
+		]);
+	};
+	options.startupSignal?.addEventListener("abort", abortStartup, { once: true });
+	try {
+		options.startupSignal?.throwIfAborted();
+		await supervisor.start();
+		options.startupSignal?.throwIfAborted();
+		await client.login(environment.discordBotToken);
+		options.startupSignal?.throwIfAborted();
+		const lunaUserId = discordIdSchema.parse(client.user?.id);
+		const createThreadInput = createThreadInputFactory({
+			buildMcpServers: (executionOwnerId) => ({
+				discord: {
+					url: mcp.url,
+					http_headers: { "X-Luna-Typing-Owner": executionOwnerId },
+				},
+			}),
+			capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
+			now: () => new Date(),
+			workspaceDir: workspace.workspaceDir,
+		});
+		conversation = new ConversationCoordinator(
+			{
+				agent: supervisor,
+				createThreadInput,
+				effectOutput,
+				effects,
+				history: {
+					fetchBefore: async (session, beforeEvent, limit) => {
+						if (session.source === HTTP_EVENT_SOURCE) return [];
+						return await discordHistory.fetchBefore(session, beforeEvent, limit);
+					},
+				},
+				onBatchSettled: (eventIds, succeeded) => {
+					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
+				},
+				onError: (error, context) => {
+					logger.log(
+						"error",
+						"conversation.operation_failed",
+						{ conversationSession: context.session.key },
+						{ error, operation: context.operation },
+					);
+				},
+				onEvent: (event, context, details, payload) => {
+					logger.log(
+						"info",
+						event,
+						{
+							...(context.effectIndex === undefined ? {} : { effectIndex: context.effectIndex }),
+							conversationSession: context.session.key,
+							...(context.threadId === undefined ? {} : { threadId: context.threadId }),
+							...(context.turnId === undefined ? {} : { turnId: context.turnId }),
+						},
+						details,
+						payload,
+					);
+				},
+			},
+			{
+				debounceMs: workspace.config.discord.debounceMs,
+				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
+				sessionMemory: workspace.config.memory.enabled
+					? { enabled: true, now: () => new Date() }
+					: { enabled: false },
+				sessionIdleMs: workspace.config.discord.sessionIdleMs,
+				typingIdleMs: workspace.config.discord.typingIdleMs,
+			},
+		);
 
-    const automationLogger = createAutomationLogger(logger);
-    const clock = new SystemAutomationClock();
-    eventAgent = new EventAgentAdapter({
-      agent: supervisor,
-      createThreadInput,
-      effectOutput,
-      effects,
-      onError: (error, operation) => {
-        logger.log("error", "event.operation_failed", {}, { error, operation });
-      },
-    });
-    const automationWorkspace = new WorkspaceAutomationAdapter({
-      schedulePath: workspace.cronPath,
-      workspaceDir: workspace.workspaceDir,
-    });
-    const executor = new EventExecutor({ agent: eventAgent, logger });
-    httpService = new HttpEventService({
-      conversation,
-      executor,
-      responses: httpResponses,
-    });
-    const scheduleTimer = new CronScheduleTimer();
-    automation = new AutomationService({
-      heartbeat: new HeartbeatController({
-        clock,
-        enabled: workspace.config.heartbeat.enabled,
-        executor,
-        logger: automationLogger,
-        maximumIntervalMs: workspace.config.heartbeat.maxIntervalMs,
-        minimumIntervalMs: workspace.config.heartbeat.minIntervalMs,
-        random: new SystemAutomationRandom(),
-        workspace: automationWorkspace,
-      }),
-      memoryMaintenance: new MemoryMaintenanceController({
-        clock,
-        cron: workspace.config.memory.maintenanceCron,
-        enabled: workspace.config.memory.enabled,
-        executor,
-        scheduleTimer,
-      }),
-      retention: new ThreadRetentionCleaner({
-        agent: supervisor,
-        cleanupIntervalMs: workspace.config.agent.threadCleanupIntervalMs,
-        clock,
-        logger: automationLogger,
-        retentionMs: workspace.config.agent.threadRetentionMs,
-      }),
-      schedule: new ScheduleController({
-        clock,
-        executor,
-        logger: automationLogger,
-        reloadDebounceMs: SCHEDULE_RELOAD_DEBOUNCE_MS,
-        scheduleTimer,
-        watcher: new ChokidarScheduleWatcher(workspace.cronPath),
-        workspace: automationWorkspace,
-      }),
-    });
-    await automation.startAutomation(workspace.schedule);
-    options.startupSignal?.throwIfAborted();
+		const automationLogger = createAutomationLogger(logger);
+		const clock = new SystemAutomationClock();
+		eventAgent = new EventAgentAdapter({
+			agent: supervisor,
+			createThreadInput,
+			effectOutput,
+			effects,
+			onError: (error, operation) => {
+				logger.log("error", "event.operation_failed", {}, { error, operation });
+			},
+		});
+		const automationWorkspace = new WorkspaceAutomationAdapter({
+			schedulePath: workspace.cronPath,
+			workspaceDir: workspace.workspaceDir,
+		});
+		const executor = new EventExecutor({ agent: eventAgent, logger });
+		httpService = new HttpEventService({
+			conversation,
+			executor,
+			responses: httpResponses,
+		});
+		const scheduleTimer = new CronScheduleTimer();
+		automation = new AutomationService({
+			heartbeat: new HeartbeatController({
+				clock,
+				enabled: workspace.config.heartbeat.enabled,
+				executor,
+				logger: automationLogger,
+				maximumIntervalMs: workspace.config.heartbeat.maxIntervalMs,
+				minimumIntervalMs: workspace.config.heartbeat.minIntervalMs,
+				random: new SystemAutomationRandom(),
+				workspace: automationWorkspace,
+			}),
+			memoryMaintenance: new MemoryMaintenanceController({
+				clock,
+				cron: workspace.config.memory.maintenanceCron,
+				enabled: workspace.config.memory.enabled,
+				executor,
+				scheduleTimer,
+			}),
+			retention: new ThreadRetentionCleaner({
+				agent: supervisor,
+				cleanupIntervalMs: workspace.config.agent.threadCleanupIntervalMs,
+				clock,
+				logger: automationLogger,
+				retentionMs: workspace.config.agent.threadRetentionMs,
+			}),
+			schedule: new ScheduleController({
+				clock,
+				executor,
+				logger: automationLogger,
+				reloadDebounceMs: SCHEDULE_RELOAD_DEBOUNCE_MS,
+				scheduleTimer,
+				watcher: new ChokidarScheduleWatcher(workspace.cronPath),
+				workspace: automationWorkspace,
+			}),
+		});
+		await automation.startAutomation(workspace.schedule);
+		options.startupSignal?.throwIfAborted();
 
-    const gatewayController = new DiscordConversationController(conversation, lunaUserId, {
-      allowDm: workspace.config.discord.allowDm,
-      allowedChannelIds: allowedChannels.ids,
-      onAccepted: (event) => {
-        logger.log(
-          "info",
-          "conversation.message_accepted",
-          { conversationScope: JSON.stringify(event.scope) },
-          { authorId: event.message.author.id, messageId: event.message.id },
-          event.message,
-        );
-      },
-      onError: (error, event) => {
-        logger.log("error", "discord.gateway_event_failed", {}, { error, event });
-      },
-    });
-    const commandAdapter = new DiscordCommandAdapter(
-      createDiscordCommandClient(client),
-      conversation,
-      supervisor,
-      workspace.config.discord.allowDm,
-      allowedChannels,
-      (error) => logger.log("error", "discord.command_failed", {}, { error }),
-    );
-    await commandAdapter.start();
-    commands = commandAdapter;
-    gateway = new DiscordGatewayAdapter(createDiscordGatewayEventClient(client), gatewayController);
-    gateway.start();
-    httpServer = await startHttpEventServer({
-      hostname: environment.httpHost,
-      port: environment.httpPort,
-      service: httpService,
-      onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
-    });
-    options.startupSignal?.throwIfAborted();
-    logger.log("info", "application.started");
-    const runningAutomation = automation;
-    const runningConversation = conversation;
-    const runningGateway = gateway;
-    const runningCommands = commands;
-    const runningHttpService = httpService;
-    const runningHttpServer = httpServer;
-    let fatalShutdownRequested = false;
+		const gatewayController = new DiscordConversationController(conversation, lunaUserId, {
+			allowDm: workspace.config.discord.allowDm,
+			allowedChannelIds: allowedChannels.ids,
+			onAccepted: (event) => {
+				logger.log(
+					"info",
+					"conversation.message_accepted",
+					{ conversationScope: JSON.stringify(event.scope) },
+					{ authorId: event.message.author.id, messageId: event.message.id },
+					event.message,
+				);
+			},
+			onError: (error, event) => {
+				logger.log("error", "discord.gateway_event_failed", {}, { error, event });
+			},
+		});
+		const commandAdapter = new DiscordCommandAdapter(
+			createDiscordCommandClient(client),
+			conversation,
+			supervisor,
+			workspace.config.discord.allowDm,
+			allowedChannels,
+			(error) => logger.log("error", "discord.command_failed", {}, { error }),
+		);
+		await commandAdapter.start();
+		commands = commandAdapter;
+		gateway = new DiscordGatewayAdapter(createDiscordGatewayEventClient(client), gatewayController);
+		gateway.start();
+		httpServer = await startHttpEventServer({
+			hostname: environment.httpHost,
+			port: environment.httpPort,
+			service: httpService,
+			onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
+		});
+		options.startupSignal?.throwIfAborted();
+		logger.log("info", "application.started");
+		const runningAutomation = automation;
+		const runningConversation = conversation;
+		const runningGateway = gateway;
+		const runningCommands = commands;
+		const runningHttpService = httpService;
+		const runningHttpServer = httpServer;
+		let fatalShutdownRequested = false;
 
-    const application = {
-      fatal: fatal.promise,
-      shutdown: async (isFatal = false) => {
-        if (shutdownPromise === undefined) {
-          fatalShutdownRequested = isFatal;
-          shutdownPromise = shutdownApplication({
-            automation: runningAutomation,
-            clientDestroy: async () => await client.destroy(),
-            conversation: runningConversation,
-            gateway: {
-              stop: () => {
-                runningGateway.stop();
-                runningCommands.stop();
-              },
-            },
-            http: runningHttpService,
-            httpClose: () => runningHttpServer.close(),
-            logger,
-            mcpClose: () => mcp.close(),
-            supervisorClose: () => supervisor.close(),
-            typingRelease: () => typing.releaseAll(),
-            isFatal,
-          });
-        } else if (isFatal && !fatalShutdownRequested) {
-          fatalShutdownRequested = true;
-          await runningConversation.abort();
-        }
-        await shutdownPromise;
-      },
-    };
-    options.startupSignal?.removeEventListener("abort", abortStartup);
-    return application;
-  } catch (error: unknown) {
-    options.startupSignal?.removeEventListener("abort", abortStartup);
-    const cleanupResults = await Promise.allSettled([
-      runCleanup(() => gateway?.stop()),
-      runCleanup(() => commands?.stop()),
-      runCleanup(async () => await automation?.stopIntake()),
-      runCleanup(() => httpService?.stopIntake()),
-      runCleanup(() => httpService?.failPending()),
-      runCleanup(async () => await httpServer?.close()),
-      runCleanup(() => typing.releaseAll()),
-      client.destroy(),
-      supervisor.close(),
-      mcp.close(),
-    ]);
-    logCleanupFailures(cleanupResults, logger, "application.startup_cleanup_failed");
-    throw error;
-  }
+		const application = {
+			fatal: fatal.promise,
+			shutdown: async (isFatal = false) => {
+				if (shutdownPromise === undefined) {
+					fatalShutdownRequested = isFatal;
+					shutdownPromise = shutdownApplication({
+						automation: runningAutomation,
+						clientDestroy: async () => await client.destroy(),
+						conversation: runningConversation,
+						gateway: {
+							stop: () => {
+								runningGateway.stop();
+								runningCommands.stop();
+							},
+						},
+						http: runningHttpService,
+						httpClose: () => runningHttpServer.close(),
+						logger,
+						mcpClose: () => mcp.close(),
+						supervisorClose: () => supervisor.close(),
+						typingRelease: () => typing.releaseAll(),
+						isFatal,
+					});
+				} else if (isFatal && !fatalShutdownRequested) {
+					fatalShutdownRequested = true;
+					await runningConversation.abort();
+				}
+				await shutdownPromise;
+			},
+		};
+		options.startupSignal?.removeEventListener("abort", abortStartup);
+		return application;
+	} catch (error: unknown) {
+		options.startupSignal?.removeEventListener("abort", abortStartup);
+		const cleanupResults = await Promise.allSettled([
+			runCleanup(() => gateway?.stop()),
+			runCleanup(() => commands?.stop()),
+			runCleanup(async () => await automation?.stopIntake()),
+			runCleanup(() => httpService?.stopIntake()),
+			runCleanup(() => httpService?.failPending()),
+			runCleanup(async () => await httpServer?.close()),
+			runCleanup(() => typing.releaseAll()),
+			client.destroy(),
+			supervisor.close(),
+			mcp.close(),
+		]);
+		logCleanupFailures(cleanupResults, logger, "application.startup_cleanup_failed");
+		throw error;
+	}
 }
 
 export async function shutdownApplication(input: {
-  automation: Pick<AutomationService, "drain" | "stopIntake">;
-  clientDestroy(): Promise<void>;
-  conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
-  gateway: Pick<DiscordGatewayAdapter, "stop">;
-  http: Pick<HttpEventService, "stopIntake" | "drain" | "failPending">;
-  httpClose(): Promise<void>;
-  logger: Pick<JsonLinesLogger, "flush" | "log">;
-  mcpClose(): Promise<void>;
-  supervisorClose(): Promise<void>;
-  typingRelease(): void;
-  isFatal: boolean;
+	automation: Pick<AutomationService, "drain" | "stopIntake">;
+	clientDestroy(): Promise<void>;
+	conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
+	gateway: Pick<DiscordGatewayAdapter, "stop">;
+	http: Pick<HttpEventService, "stopIntake" | "drain" | "failPending">;
+	httpClose(): Promise<void>;
+	logger: Pick<JsonLinesLogger, "flush" | "log">;
+	mcpClose(): Promise<void>;
+	supervisorClose(): Promise<void>;
+	typingRelease(): void;
+	isFatal: boolean;
 }): Promise<void> {
-  input.logger.log("info", "application.shutdown_started");
-  const failures: unknown[] = [];
-  await settleCleanup(
-    [
-      runCleanup(() => input.gateway.stop()),
-      runCleanup(() => input.conversation.stopIntake()),
-      runCleanup(() => input.http.stopIntake()),
-      input.automation.stopIntake(),
-    ],
-    failures,
-  );
-  await settleCleanup(
-    [
-      input.isFatal ? input.conversation.abort() : input.conversation.drain(),
-      input.automation.drain(),
-      input.http.drain(),
-    ],
-    failures,
-  );
-  await settleCleanup(
-    [
-      runCleanup(() => input.http.failPending()),
-      input.httpClose(),
-      runCleanup(() => input.typingRelease()),
-      input.mcpClose(),
-      input.clientDestroy(),
-      input.supervisorClose(),
-    ],
-    failures,
-  );
-  for (const error of failures) {
-    input.logger.log("error", "application.shutdown_cleanup_failed", {}, { error });
-  }
-  input.logger.log("info", "application.shutdown_completed");
-  await input.logger.flush().catch((error: unknown) => failures.push(error));
-  if (failures.length > 0) throw new AggregateError(failures, "Application shutdown failed");
+	input.logger.log("info", "application.shutdown_started");
+	const failures: unknown[] = [];
+	await settleCleanup(
+		[
+			runCleanup(() => input.gateway.stop()),
+			runCleanup(() => input.conversation.stopIntake()),
+			runCleanup(() => input.http.stopIntake()),
+			input.automation.stopIntake(),
+		],
+		failures,
+	);
+	await settleCleanup(
+		[
+			input.isFatal ? input.conversation.abort() : input.conversation.drain(),
+			input.automation.drain(),
+			input.http.drain(),
+		],
+		failures,
+	);
+	await settleCleanup(
+		[
+			runCleanup(() => input.http.failPending()),
+			input.httpClose(),
+			runCleanup(() => input.typingRelease()),
+			input.mcpClose(),
+			input.clientDestroy(),
+			input.supervisorClose(),
+		],
+		failures,
+	);
+	for (const error of failures) {
+		input.logger.log("error", "application.shutdown_cleanup_failed", {}, { error });
+	}
+	input.logger.log("info", "application.shutdown_completed");
+	await input.logger.flush().catch((error: unknown) => failures.push(error));
+	if (failures.length > 0) throw new AggregateError(failures, "Application shutdown failed");
 }
 
 async function runCleanup(cleanup: () => void | Promise<void>): Promise<void> {
-  await cleanup();
+	await cleanup();
 }
 
 async function settleCleanup(
-  promises: readonly Promise<void>[],
-  failures: unknown[],
+	promises: readonly Promise<void>[],
+	failures: unknown[],
 ): Promise<void> {
-  const results = await Promise.allSettled(promises);
-  for (const result of results) {
-    if (result.status === "rejected") failures.push(result.reason);
-  }
+	const results = await Promise.allSettled(promises);
+	for (const result of results) {
+		if (result.status === "rejected") failures.push(result.reason);
+	}
 }
 
 function logCleanupFailures(
-  results: readonly PromiseSettledResult<void>[],
-  logger: Pick<JsonLinesLogger, "log">,
-  event: string,
+	results: readonly PromiseSettledResult<void>[],
+	logger: Pick<JsonLinesLogger, "log">,
+	event: string,
 ): void {
-  for (const result of results) {
-    if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
-  }
+	for (const result of results) {
+		if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
+	}
 }
 
 function createAutomationLogger(logger: JsonLinesLogger): AutomationLogPort {
-  const log = (
-    level: "debug" | "error" | "info" | "warn",
-    event: string,
-    details?: Readonly<Record<string, unknown>>,
-  ) => {
-    const jobId = details?.["jobId"];
-    logger.log(level, event, typeof jobId === "string" ? { jobId } : {}, details, details);
-  };
-  return {
-    debug: (event, details) => log("debug", event, details),
-    error: (event, details) => log("error", event, details),
-    info: (event, details) => log("info", event, details),
-    warn: (event, details) => log("warn", event, details),
-  };
+	const log = (
+		level: "debug" | "error" | "info" | "warn",
+		event: string,
+		details?: Readonly<Record<string, unknown>>,
+	) => {
+		const jobId = details?.["jobId"];
+		logger.log(level, event, typeof jobId === "string" ? { jobId } : {}, details, details);
+	};
+	return {
+		debug: (event, details) => log("debug", event, details),
+		error: (event, details) => log("error", event, details),
+		info: (event, details) => log("info", event, details),
+		warn: (event, details) => log("warn", event, details),
+	};
 }
 
 function deferred<Value>(): { promise: Promise<Value>; resolve(value: Value): void } {
-  let resolvePromise: ((value: Value) => void) | undefined;
-  const promise = new Promise<Value>((resolve) => {
-    resolvePromise = resolve;
-  });
-  return {
-    promise,
-    resolve: (value) => {
-      if (resolvePromise === undefined) throw new Error("Deferred value is unavailable");
-      resolvePromise(value);
-    },
-  };
+	let resolvePromise: ((value: Value) => void) | undefined;
+	const promise = new Promise<Value>((resolve) => {
+		resolvePromise = resolve;
+	});
+	return {
+		promise,
+		resolve: (value) => {
+			if (resolvePromise === undefined) throw new Error("Deferred value is unavailable");
+			resolvePromise(value);
+		},
+	};
 }

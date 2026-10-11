@@ -6,163 +6,162 @@ import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as DiscordGatewayAdapterModule from "../modules/discord/adapters/discord-gateway-adapter";
+import { startLunaApplication } from "./composition-root";
 
 const fakes = vi.hoisted(() => {
-  const listeners = new Map<string, Set<(payload: unknown) => void>>();
-  const client = {
-    application: { commands: { create: vi.fn(async () => undefined) } },
-    channels: {
-      fetch: vi.fn(async () => ({
-        isTextBased: () => true,
-        messages: { fetch: vi.fn(async () => new Map()) },
-      })),
-    },
-    destroy: vi.fn(async () => undefined),
-    login: vi.fn(async () => "token"),
-    off: vi.fn((event: string, listener: (payload: unknown) => void) => {
-      listeners.get(event)?.delete(listener);
-    }),
-    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
-      const eventListeners = listeners.get(event) ?? new Set();
-      eventListeners.add(listener);
-      listeners.set(event, eventListeners);
-    }),
-    user: { id: "999" },
-  };
-  return {
-    client,
-    emit(event: string, payload: unknown) {
-      for (const listener of listeners.get(event) ?? []) listener(payload);
-    },
-    lunaHome: "",
-    workspaceDir: "",
-  };
+	const listeners = new Map<string, Set<(payload: unknown) => void>>();
+	const client = {
+		application: { commands: { create: vi.fn(async () => undefined) } },
+		channels: {
+			fetch: vi.fn(async () => ({
+				isTextBased: () => true,
+				messages: { fetch: vi.fn(async () => new Map()) },
+			})),
+		},
+		destroy: vi.fn(async () => undefined),
+		login: vi.fn(async () => "token"),
+		off: vi.fn((event: string, listener: (payload: unknown) => void) => {
+			listeners.get(event)?.delete(listener);
+		}),
+		on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+			const eventListeners = listeners.get(event) ?? new Set();
+			eventListeners.add(listener);
+			listeners.set(event, eventListeners);
+		}),
+		user: { id: "999" },
+	};
+	return {
+		client,
+		emit(event: string, payload: unknown) {
+			for (const listener of listeners.get(event) ?? []) listener(payload);
+		},
+		lunaHome: "",
+		workspaceDir: "",
+	};
 });
 
 vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
-  initializeWorkspace: vi.fn(async () => ({
-    codexHomeDir: `${fakes.lunaHome}/codex`,
-    config: {
-      agent: {
-        restartFailureLimit: 2,
-        restartInitialDelayMs: 0,
-        restartMaxDelayMs: 1_000,
-        restartWindowMs: 10_000,
-        rpcTimeoutMs: 1_000,
-        threadCleanupIntervalMs: 86_400_000,
-        threadRetentionMs: 604_800_000,
-      },
-      discord: {
-        allowDm: true,
-        allowedChannelIds: ["200"],
-        debounceMs: 1,
-        initialHistoryLimit: 20,
-        sessionIdleMs: 1_000,
-        typingIdleMs: 1,
-      },
-      heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
-      memory: { enabled: true, maintenanceCron: "0 4 * * *" },
-    },
-    configPath: `${fakes.lunaHome}/config.toml`,
-    cronPath: `${fakes.workspaceDir}/cron.toml`,
-    lunaHomeDir: fakes.lunaHome,
-    schedule: { jobs: [] },
-    workspaceDir: fakes.workspaceDir,
-  })),
+	initializeWorkspace: vi.fn(async () => ({
+		codexHomeDir: `${fakes.lunaHome}/codex`,
+		config: {
+			agent: {
+				restartFailureLimit: 2,
+				restartInitialDelayMs: 0,
+				restartMaxDelayMs: 1_000,
+				restartWindowMs: 10_000,
+				rpcTimeoutMs: 1_000,
+				threadCleanupIntervalMs: 86_400_000,
+				threadRetentionMs: 604_800_000,
+			},
+			discord: {
+				allowDm: true,
+				allowedChannelIds: ["200"],
+				debounceMs: 1,
+				initialHistoryLimit: 20,
+				sessionIdleMs: 1_000,
+				typingIdleMs: 1,
+			},
+			heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
+			memory: { enabled: true, maintenanceCron: "0 4 * * *" },
+		},
+		configPath: `${fakes.lunaHome}/config.toml`,
+		cronPath: `${fakes.workspaceDir}/cron.toml`,
+		lunaHomeDir: fakes.lunaHome,
+		schedule: { jobs: [] },
+		workspaceDir: fakes.workspaceDir,
+	})),
 }));
 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
-  ...(await importOriginal<typeof DiscordGatewayAdapterModule>()),
-  createDiscordGatewayClient: vi.fn(() => fakes.client),
-  createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
+	...(await importOriginal<typeof DiscordGatewayAdapterModule>()),
+	createDiscordGatewayClient: vi.fn(() => fakes.client),
+	createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
 vi.mock("../modules/http/adapters/http-event-server", () => ({
-  startHttpEventServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3000 })),
+	startHttpEventServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3000 })),
 }));
 
 vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
-  ChokidarScheduleWatcher: class {
-    async start(): Promise<void> {}
-    async close(): Promise<void> {}
-  },
+	ChokidarScheduleWatcher: class {
+		async start(): Promise<void> {}
+		async close(): Promise<void> {}
+	},
 }));
 
 vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
-  CronScheduleTimer: class {
-    scheduleOneShot(): never {
-      throw new Error("Unexpected one-shot schedule");
-    }
+	CronScheduleTimer: class {
+		scheduleOneShot(): never {
+			throw new Error("Unexpected one-shot schedule");
+		}
 
-    scheduleRecurring(): { stop(): void } {
-      return { stop() {} };
-    }
-  },
+		scheduleRecurring(): { stop(): void } {
+			return { stop() {} };
+		}
+	},
 }));
-
-import { startLunaApplication } from "./composition-root";
 
 const temporaryDirectories: string[] = [];
 const originalEnvironment = { ...process.env };
 
 afterEach(async () => {
-  process.env = { ...originalEnvironment };
-  await Promise.all(
-    temporaryDirectories.splice(0).map(async (path) => await rm(path, { recursive: true })),
-  );
-  vi.clearAllMocks();
+	process.env = { ...originalEnvironment };
+	await Promise.all(
+		temporaryDirectories.splice(0).map(async (path) => await rm(path, { recursive: true })),
+	);
+	vi.clearAllMocks();
 });
 
 describe("composition root child integration", () => {
-  it("fake Gateway/APIとfake app-server childを実transportでstartupからshutdownまで通す", async () => {
-    const root = await mkdtemp(join(tmpdir(), "luna-composition-child-"));
-    temporaryDirectories.push(root);
-    fakes.lunaHome = join(root, "home");
-    fakes.workspaceDir = join(fakes.lunaHome, "workspace");
-    const rpcLogPath = join(root, "rpc.log");
-    const fakeCodexPath = join(root, "codex");
-    await mkdir(fakes.workspaceDir, { recursive: true });
-    await Promise.all([
-      writeFile(join(fakes.workspaceDir, "LUNA.md"), "Luna"),
-      writeFile(join(fakes.workspaceDir, "MEMORY.md"), "Memory"),
-      writeFile(fakeCodexPath, FAKE_CODEX_SCRIPT),
-    ]);
-    await chmod(fakeCodexPath, 0o755);
-    process.env = {
-      ...originalEnvironment,
-      DISCORD_BOT_TOKEN: "discord-token",
-      FAKE_CODEX_LOG: rpcLogPath,
-      LOG_LEVEL: "error",
-      LUNA_HOME: fakes.lunaHome,
-      PATH: [root, dirname(process.execPath), originalEnvironment["PATH"]]
-        .filter((path) => path !== undefined)
-        .join(delimiter),
-    };
+	it("fake Gateway/APIとfake app-server childを実transportでstartupからshutdownまで通す", async () => {
+		const root = await mkdtemp(join(tmpdir(), "luna-composition-child-"));
+		temporaryDirectories.push(root);
+		fakes.lunaHome = join(root, "home");
+		fakes.workspaceDir = join(fakes.lunaHome, "workspace");
+		const rpcLogPath = join(root, "rpc.log");
+		const fakeCodexPath = join(root, "codex");
+		await mkdir(fakes.workspaceDir, { recursive: true });
+		await Promise.all([
+			writeFile(join(fakes.workspaceDir, "LUNA.md"), "Luna"),
+			writeFile(join(fakes.workspaceDir, "MEMORY.md"), "Memory"),
+			writeFile(fakeCodexPath, FAKE_CODEX_SCRIPT),
+		]);
+		await chmod(fakeCodexPath, 0o755);
+		process.env = {
+			...originalEnvironment,
+			DISCORD_BOT_TOKEN: "discord-token",
+			FAKE_CODEX_LOG: rpcLogPath,
+			LOG_LEVEL: "error",
+			LUNA_HOME: fakes.lunaHome,
+			PATH: [root, dirname(process.execPath), originalEnvironment["PATH"]]
+				.filter((path) => path !== undefined)
+				.join(delimiter),
+		};
 
-    const application = await startLunaApplication();
-    fakes.emit("messageCreate", discordMessage());
-    await vi.waitFor(
-      async () => {
-        const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
-        expect(methods.filter((method) => method === "turn/start")).toHaveLength(2);
-      },
-      { timeout: 3_000 },
-    );
-    await application.shutdown();
+		const application = await startLunaApplication();
+		fakes.emit("messageCreate", discordMessage());
+		await vi.waitFor(
+			async () => {
+				const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
+				expect(methods.filter((method) => method === "turn/start")).toHaveLength(2);
+			},
+			{ timeout: 3_000 },
+		);
+		await application.shutdown();
 
-    const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
-    expect(methods).toEqual(
-      expect.arrayContaining([
-        "initialize",
-        "thread/list",
-        "thread/start",
-        "turn/start",
-        "thread/archive",
-      ]),
-    );
-    expect(fakes.client.channels.fetch).toHaveBeenCalledWith("200", { force: true });
-    expect(fakes.client.destroy).toHaveBeenCalledOnce();
-  });
+		const methods = (await readFile(rpcLogPath, "utf8")).trim().split("\n");
+		expect(methods).toEqual(
+			expect.arrayContaining([
+				"initialize",
+				"thread/list",
+				"thread/start",
+				"turn/start",
+				"thread/archive",
+			]),
+		);
+		expect(fakes.client.channels.fetch).toHaveBeenCalledWith("200", { force: true });
+		expect(fakes.client.destroy).toHaveBeenCalledOnce();
+	});
 });
 
 const FAKE_CODEX_SCRIPT = `#!/usr/bin/env node
@@ -193,26 +192,26 @@ lines.on("line", (line) => {
 `;
 
 function discordMessage() {
-  return {
-    id: "400",
-    createdAt: new Date("2026-07-23T00:00:00.000Z"),
-    system: false,
-    guild: { id: "300", name: "Luna Lab" },
-    channel: {
-      id: "200",
-      type: ChannelType.GuildText,
-      name: "general",
-      parentId: null,
-      recipient: null,
-    },
-    author: { id: "100", username: "shun", globalName: "Shun", bot: false, system: false },
-    member: { displayName: "Shun" },
-    webhookId: null,
-    content: "hello",
-    attachments: new Map(),
-    stickers: new Map(),
-    reactions: { cache: new Map() },
-    mentions: { users: new Map(), roles: new Map(), channels: new Map(), everyone: false },
-    reference: null,
-  };
+	return {
+		id: "400",
+		createdAt: new Date("2026-07-23T00:00:00.000Z"),
+		system: false,
+		guild: { id: "300", name: "Luna Lab" },
+		channel: {
+			id: "200",
+			type: ChannelType.GuildText,
+			name: "general",
+			parentId: null,
+			recipient: null,
+		},
+		author: { id: "100", username: "shun", globalName: "Shun", bot: false, system: false },
+		member: { displayName: "Shun" },
+		webhookId: null,
+		content: "hello",
+		attachments: new Map(),
+		stickers: new Map(),
+		reactions: { cache: new Map() },
+		mentions: { users: new Map(), roles: new Map(), channels: new Map(), everyone: false },
+		reference: null,
+	};
 }
