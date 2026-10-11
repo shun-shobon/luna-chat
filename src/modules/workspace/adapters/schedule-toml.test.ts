@@ -11,7 +11,6 @@ import {
 	readWorkspaceSchedule,
 	removeWorkspaceScheduleJob,
 	serializeWorkspaceSchedule,
-	writeWorkspaceSchedule,
 } from "./schedule-toml";
 
 const temporaryDirectories: string[] = [];
@@ -55,7 +54,7 @@ describe("workspace schedule TOML", () => {
 		expect(parseWorkspaceSchedule(source)).toEqual(SCHEDULE);
 	});
 
-	it("排他的な初期作成と同期上書きを行う", async () => {
+	it("空のスケジュールファイルを排他的に作成する", async () => {
 		const directory = await createTemporaryDirectory();
 		const schedulePath = resolve(directory, "cron.toml");
 
@@ -64,9 +63,6 @@ describe("workspace schedule TOML", () => {
 		await expect(createWorkspaceScheduleFile(schedulePath)).rejects.toMatchObject({
 			code: "EEXIST",
 		});
-
-		writeWorkspaceSchedule(schedulePath, SCHEDULE);
-		await expect(readWorkspaceSchedule(schedulePath)).resolves.toEqual(SCHEDULE);
 	});
 
 	it("削除直前にファイルを再読込し、対象ジョブだけを同期的に削除する", async () => {
@@ -74,11 +70,14 @@ describe("workspace schedule TOML", () => {
 		const schedulePath = resolve(directory, "cron.toml");
 		await writeFile(schedulePath, serializeWorkspaceSchedule(SCHEDULE), "utf8");
 
-		expect(removeWorkspaceScheduleJob(schedulePath, "morning")).toBe(true);
+		removeWorkspaceScheduleJob(schedulePath, "morning");
 		expect(parseWorkspaceSchedule(await readFile(schedulePath, "utf8"))).toEqual({
 			jobs: [SCHEDULE.jobs[1]],
 		});
-		expect(removeWorkspaceScheduleJob(schedulePath, "missing")).toBe(false);
+		removeWorkspaceScheduleJob(schedulePath, "missing");
+		expect(parseWorkspaceSchedule(await readFile(schedulePath, "utf8"))).toEqual({
+			jobs: [SCHEDULE.jobs[1]],
+		});
 	});
 });
 

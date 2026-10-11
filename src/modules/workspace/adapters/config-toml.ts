@@ -123,22 +123,11 @@ export function parseWorkspaceConfig(source: string): WorkspaceConfig {
 }
 
 export function serializeWorkspaceConfig(config: WorkspaceConfig): string {
-	const toml = toWorkspaceConfigToml(config);
-	const validationResult = WorkspaceConfigTomlSchema.safeParse(toml);
-	if (!validationResult.success) {
-		throw new WorkspaceConfigError(
-			`workspace config cannot be serialized: ${z.prettifyError(validationResult.error)}`,
-		);
-	}
-
-	return stringify(toml);
+	return stringify(toWorkspaceConfigToml(config));
 }
 
-export async function createWorkspaceConfigFile(
-	configPath: string,
-	config: WorkspaceConfig = DEFAULT_WORKSPACE_CONFIG,
-): Promise<void> {
-	await writeFile(configPath, serializeWorkspaceConfig(config), { flag: "wx" });
+export async function createWorkspaceConfigFile(configPath: string): Promise<void> {
+	await writeFile(configPath, serializeWorkspaceConfig(DEFAULT_WORKSPACE_CONFIG), { flag: "wx" });
 }
 
 function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
