@@ -57,18 +57,18 @@ src/
 
 ## 4. モジュールの責務 (Capability Ownership)
 
-| モジュール      | 主な責務・所有する概念                                         | 公開インターフェース（ポート）                                                | 主なアダプター                               |
-| --------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------- |
-| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理 | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読              | discord.js Gateway/REST、loopback MCP        |
-| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定 | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort` | Discordコントローラー、履歴取得              |
-| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け          | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`deleteArchived` | stdio子プロセス、JSON-RPC                    |
-| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                  | `execute`、`connectionLost`                                                   | なし（EventExecutorがagentポートを直接呼ぶ） |
-| `http`          | HTTPイベントの検証、受付、完了待ち応答                         | `submit`、`stopIntake`、`drain`                                               | Hono、`http.respond` Effect                  |
-| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行             | スキーマ生成、パース、`execute`、`release`                                    | 各種Effectプロバイダ                         |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`                    | タイマー、cronスケジューラ、ファイル監視     |
-| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視       | 初期化、プロンプト読み込み、スケジュール読み書き                              | ファイルシステム、`smol-toml`、Zod           |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング           | ロガーポート                                                                  | 標準出力（JSON Lines）                       |
-| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線       | プロセスエントリポイント                                                      | シグナルハンドラー                           |
+| モジュール      | 主な責務・所有する概念                                         | 公開インターフェース（ポート）                                                        | 主なアダプター                               |
+| --------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理 | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読                      | discord.js Gateway/REST、loopback MCP        |
+| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定 | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort`         | Discordコントローラー、履歴取得              |
+| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け          | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`listArchived`、`delete` | stdio子プロセス、JSON-RPC                    |
+| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                  | `execute`、`connectionLost`                                                           | なし（EventExecutorがagentポートを直接呼ぶ） |
+| `http`          | HTTPイベントの検証、受付、完了待ち応答                         | `submit`、`stopIntake`、`drain`                                                       | Hono、`http.respond` Effect                  |
+| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行             | スキーマ生成、パース、`execute`、`release`                                            | 各種Effectプロバイダ                         |
+| `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`                            | タイマー、cronスケジューラ、ファイル監視     |
+| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視       | 初期化、プロンプト読み込み、スケジュール読み書き                                      | ファイルシステム、`smol-toml`、Zod           |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング           | ロガーポート                                                                          | 標準出力（JSON Lines）                       |
+| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線       | プロセスエントリポイント                                                              | シグナルハンドラー                           |
 
 ## 5. 依存関係の方向
 
