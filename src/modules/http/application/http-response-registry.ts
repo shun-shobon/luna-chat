@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
 
 export type HttpEventOutcome =
 	| Readonly<{ kind: "response"; status: number; body: JsonValue }>

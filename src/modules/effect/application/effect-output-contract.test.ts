@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import type { JsonValue } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
 import type { EffectProvider } from "../ports/effect-provider";
 import { defineEffect } from "../ports/effect-provider";
 import { createEffectOutputContract } from "./effect-output-contract";

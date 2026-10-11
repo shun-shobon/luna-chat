@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
 import type { DailyMemory } from "../modules/workspace/application/workspace-instructions";
+import type { JsonObject } from "../shared/json";
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 
 export function buildBaseInstructions(input: {
@@ -20,10 +21,7 @@ export function buildBaseInstructions(input: {
 		.join("\n\n");
 }
 
-export function buildCodexThreadConfig(
-	mcpServers: Readonly<Record<string, unknown>>,
-	workspaceDir: string,
-): Record<string, unknown> {
+export function buildCodexThreadConfig(mcpServers: JsonObject, workspaceDir: string): JsonObject {
 	const resolvedWorkspaceDir = resolve(workspaceDir);
 	return {
 		mcp_servers: mcpServers,
@@ -32,7 +30,7 @@ export function buildCodexThreadConfig(
 }
 
 export function createThreadInputFactory(input: {
-	buildMcpServers: (executionOwnerId: string) => Readonly<Record<string, unknown>>;
+	buildMcpServers: (executionOwnerId: string) => JsonObject;
 	capabilityInstructions: readonly string[];
 	now: () => Date;
 	workspaceDir: string;

@@ -26,7 +26,6 @@ import {
 } from "./codex-turn-tracker";
 import type { JsonRpcConnection } from "./json-rpc-connection";
 import { JsonRpcProtocolError } from "./json-rpc-connection";
-import { parseJsonConfig, parseJsonValue } from "./json-value";
 
 const ALL_THREAD_SOURCE_KINDS: ThreadSourceKind[] = [
 	"cli",
@@ -164,7 +163,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 		const result = await this.#connection.request("thread/start", {
 			approvalPolicy: "never",
 			baseInstructions: input.baseInstructions,
-			config: parseJsonConfig(input.config),
+			config: input.config,
 			cwd: input.cwd,
 			developerInstructions: input.developerInstructions,
 			ephemeral: false,
@@ -191,7 +190,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 				...(request.model === undefined ? {} : { model: request.model }),
 				...(request.effort === undefined ? {} : { effort: request.effort }),
 				input: [createTextInput(request.input)],
-				outputSchema: parseJsonValue(request.outputSchema, "agent output schema"),
+				outputSchema: request.outputSchema,
 				threadId,
 			});
 			const turnId = parseResponse(this.#connection, () => parseTurnId(result));

@@ -1,8 +1,8 @@
 import { z } from "zod";
 
+import { jsonValueSchema } from "../../../shared/json";
 import { defineEffect } from "../../effect/ports/effect-provider";
 import type { EffectProvider } from "../../effect/ports/effect-provider";
-import { jsonValueSchema } from "../../event/domain/luna-event";
 import type { HttpResponseRegistry } from "../application/http-response-registry";
 
 const HTTP_RESPOND_EFFECT_TYPE = "http.respond";

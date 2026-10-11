@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { jsonValueSchema } from "../../event/domain/luna-event";
+import { jsonObjectSchema, jsonValueSchema } from "../../../shared/json";
+import type { JsonObject } from "../../../shared/json";
 import type { EffectOutput } from "../domain/effect";
 import type { EffectOutputContract } from "../ports/effect-output-contract";
 import type { EffectRegistry } from "./effect-registry";
@@ -55,7 +56,7 @@ export function createEffectOutputContract(registry: EffectRegistry): EffectOutp
 	});
 }
 
-function createOutputJsonSchema(registry: EffectRegistry): Record<string, unknown> {
+function createOutputJsonSchema(registry: EffectRegistry): JsonObject {
 	const schema = {
 		type: "object",
 		properties: {
@@ -77,7 +78,8 @@ function createOutputJsonSchema(registry: EffectRegistry): Record<string, unknow
 		required: ["effects"],
 		additionalProperties: false,
 	};
-	return Object.freeze(schema);
+	// z.toJSONSchema is typed with unknown members, so parse once here to hand Codex a typed JSON object.
+	return Object.freeze(jsonObjectSchema.parse(schema));
 }
 
 function withoutDialect(schema: Record<string, unknown>): Record<string, unknown> {

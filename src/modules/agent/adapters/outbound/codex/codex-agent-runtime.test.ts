@@ -219,21 +219,6 @@ describe("CodexAgentRuntime", () => {
 		await started.completion;
 	});
 
-	it("caller supplied output schema が JSON value でなければ turn/start を送信しない", async () => {
-		const transport = new FakeTransport();
-		const runtime = await initializeRuntime(transport);
-
-		await expect(
-			runtime.startTurn("thread-1", {
-				input: "hello",
-				outputSchema: { type: "object", invalid: undefined },
-			}),
-		).rejects.toThrow("agent output schema.invalid must not be undefined");
-		expect(
-			transport.writes.filter((write) => Reflect.get(write, "method") === "turn/start"),
-		).toHaveLength(0);
-	});
-
 	it("final_answer 受領後の steer を RPC 送信前に拒否し、先行outputを保持する", async () => {
 		const transport = new FakeTransport();
 		const runtime = await initializeRuntime(transport);

@@ -1,6 +1,6 @@
 import type { z } from "zod";
 
-import type { JsonValue } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
 import type { EffectRequest } from "../domain/effect";
 
 export interface EffectDefinition {

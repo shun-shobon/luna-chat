@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
+import type { JsonValue } from "../../../shared/json";
 import { createEffectOutputContract } from "../../effect/application/effect-output-contract";
 import { createEffectRegistry } from "../../effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../../effect/application/execute-effect-batch";
 import type { EffectDefinition } from "../../effect/ports/effect-provider";
-import type { JsonValue } from "../../event/domain/luna-event";
 import type { DiscordActionPort } from "../ports/discord-action-port";
 import {
 	createDiscordDelegationEffectProvider,

@@ -1,3 +1,5 @@
+import type { JsonObject } from "../../../../shared/json";
+
 export type ThreadId = string;
 export type TurnId = string;
 
@@ -5,7 +7,7 @@ export type AgentTurnRequest = Readonly<{
 	effort?: string;
 	input: string;
 	model?: string;
-	outputSchema: Record<string, unknown>;
+	outputSchema: JsonObject;
 }>;
 
 export type AgentModel = Readonly<{
@@ -36,7 +38,7 @@ export type StartedAgentTurn = {
 
 export type AgentThreadInput = Readonly<{
 	baseInstructions: string;
-	config: Record<string, unknown>;
+	config: JsonObject;
 	cwd: string;
 	developerInstructions: string;
 }>;

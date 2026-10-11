@@ -2,9 +2,9 @@ import { isAbsolute } from "node:path";
 
 import { z } from "zod";
 
+import type { JsonValue } from "../../../shared/json";
 import { defineEffect } from "../../effect/ports/effect-provider";
 import type { EffectProvider } from "../../effect/ports/effect-provider";
-import type { JsonValue } from "../../event/domain/luna-event";
 import type { DiscordAction, DiscordEmoji, SendFile } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";

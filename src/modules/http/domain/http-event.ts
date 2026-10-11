@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
+import { jsonValueSchema } from "../../../shared/json";
 import type { ConversationSession } from "../../conversation/domain/conversation-session";
-import { jsonValueSchema } from "../../event/domain/luna-event";
 import type { LunaEvent } from "../../event/domain/luna-event";
 
 export const HTTP_EVENT_SOURCE = "http";

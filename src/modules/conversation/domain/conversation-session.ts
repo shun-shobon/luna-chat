@@ -1,4 +1,5 @@
-import type { JsonValue, LunaEvent } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
+import type { LunaEvent } from "../../event/domain/luna-event";
 
 export type ConversationSession = Readonly<{
 	context: JsonValue;
