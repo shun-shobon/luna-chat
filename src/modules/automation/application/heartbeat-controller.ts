@@ -50,7 +50,7 @@ export class HeartbeatController {
 	}
 
 	start(): void {
-		if (this.#accepting || !this.#enabled) {
+		if (!this.#enabled) {
 			return;
 		}
 		this.#accepting = true;

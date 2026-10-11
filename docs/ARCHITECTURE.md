@@ -65,7 +65,7 @@ src/
 | `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                  | `execute`、`connectionLost`                                                           | なし（EventExecutorがagentポートを直接呼ぶ） |
 | `http`          | HTTPイベントの検証、受付、完了待ち応答                         | `submit`、`stopIntake`、`drain`                                                       | Hono、`http.respond` Effect                  |
 | `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行             | スキーマ生成、パース、`execute`、`release`                                            | 各種Effectプロバイダ                         |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`reloadSchedule`、`stopIntake`、`drain`                            | タイマー、cronスケジューラ、ファイル監視     |
+| `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`stopIntake`、`drain`                                              | タイマー、cronスケジューラ、ファイル監視     |
 | `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視       | 初期化、プロンプト読み込み、スケジュール読み書き                                      | ファイルシステム、`smol-toml`、Zod           |
 | `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング           | ロガーポート                                                                          | 標準出力（JSON Lines）                       |
 | `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線       | プロセスエントリポイント                                                              | シグナルハンドラー                           |

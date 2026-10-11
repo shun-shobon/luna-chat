@@ -40,7 +40,7 @@ export class MemoryMaintenanceController {
 	}
 
 	start(): void {
-		if (this.#accepting || !this.#enabled) {
+		if (!this.#enabled) {
 			return;
 		}
 		this.#accepting = true;

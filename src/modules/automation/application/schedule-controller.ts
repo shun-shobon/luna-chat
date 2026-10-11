@@ -64,9 +64,6 @@ export class ScheduleController {
 	}
 
 	async start(initialSchedule: WorkspaceSchedule): Promise<void> {
-		if (this.#accepting) {
-			return;
-		}
 		this.#accepting = true;
 		await this.#enqueueReload(() => {
 			this.#applySchedule(initialSchedule);
@@ -95,9 +92,6 @@ export class ScheduleController {
 	}
 
 	async stopIntake(): Promise<void> {
-		if (!this.#accepting) {
-			return;
-		}
 		this.#accepting = false;
 		this.#reloadTimer?.cancel();
 		this.#reloadTimer = undefined;

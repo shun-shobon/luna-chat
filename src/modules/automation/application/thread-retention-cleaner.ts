@@ -31,9 +31,6 @@ export class ThreadRetentionCleaner {
 	}
 
 	async start(): Promise<void> {
-		if (this.#accepting) {
-			return;
-		}
 		this.#accepting = true;
 		await this.#runCleanup();
 		this.#scheduleNext();
