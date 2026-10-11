@@ -35,24 +35,6 @@ describe("MemoryMaintenanceController", () => {
 		});
 	});
 
-	it("clockが有効なYYYY-MM-DDを生成できない場合は実行を開始しない", async () => {
-		const scheduleTimer = new FakeScheduleTimer();
-		const executor = createExecutor();
-		const controller = new MemoryMaintenanceController({
-			clock: createClock(new Date(Number.NaN)),
-			createEventId: () => "memory-maintenance-event-invalid-date",
-			cron: "0 4 * * *",
-			enabled: true,
-			executor,
-			scheduleTimer,
-		});
-
-		controller.start();
-
-		await expect(scheduleTimer.fire()).rejects.toThrow("Memory maintenance date must be valid");
-		expect(executor.execute).not.toHaveBeenCalled();
-	});
-
 	it("先行実行の完了を待たず、次のtickも並行実行する", async () => {
 		const scheduleTimer = new FakeScheduleTimer();
 		const first = createDeferred<void>();

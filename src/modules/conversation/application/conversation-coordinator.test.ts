@@ -15,7 +15,6 @@ import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 import { ConversationCoordinator } from "./conversation-coordinator";
-import type { ConversationSessionMemoryOptions } from "./conversation-coordinator";
 
 afterEach(() => {
 	vi.useRealTimers();
@@ -108,7 +107,7 @@ describe("ConversationCoordinator", () => {
 			.mockResolvedValue([]);
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 		coordinator.configure(session, { model: "gpt-6-astra", effort: "high" });
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -139,7 +138,7 @@ describe("ConversationCoordinator", () => {
 		const activeTurn = deferred<AgentTurnResult>();
 		const runtime = createRuntime([activeTurn.promise, Promise.resolve(completed([]))]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
 		await vi.advanceTimersByTimeAsync(100);
@@ -417,10 +416,8 @@ describe("ConversationCoordinator", () => {
 		const memoryCompletion = deferred<AgentTurnResult>();
 		const runtime = createRuntime([Promise.resolve(completed([])), memoryCompletion.promise]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: {
-				enabled: true,
-				now: () => new Date(2026, 6, 24, 3, 59, 0),
-			},
+			now: () => new Date(2026, 6, 24, 3, 59, 0),
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -450,7 +447,7 @@ describe("ConversationCoordinator", () => {
 		const conversationCompletion = deferred<AgentTurnResult>();
 		const runtime = createRuntime([conversationCompletion.promise, Promise.resolve(completed([]))]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -481,7 +478,7 @@ describe("ConversationCoordinator", () => {
 			Promise.resolve(completed([])),
 		]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -522,7 +519,7 @@ describe("ConversationCoordinator", () => {
 			.mockImplementationOnce(async () => await effectCompletion.promise);
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -594,7 +591,7 @@ describe("ConversationCoordinator", () => {
 		};
 		const coordinator = createCoordinator(runtime.port, {
 			effects,
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -640,7 +637,7 @@ describe("ConversationCoordinator", () => {
 			.mockImplementationOnce(async () => await memoryStarted.promise)
 			.mockResolvedValueOnce({ turnId: "turn-3", completion: Promise.resolve(completed([])) });
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -685,7 +682,7 @@ describe("ConversationCoordinator", () => {
 			.mockResolvedValueOnce([]);
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -710,7 +707,7 @@ describe("ConversationCoordinator", () => {
 			Promise.resolve(completed([])),
 		]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -750,7 +747,7 @@ describe("ConversationCoordinator", () => {
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
 			logger,
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -776,7 +773,7 @@ describe("ConversationCoordinator", () => {
 		const startLogger = createLogger();
 		const startFailureCoordinator = createCoordinator(startFailureRuntime.port, {
 			logger: startLogger,
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 		startFailureCoordinator.accept({
 			session,
@@ -797,7 +794,7 @@ describe("ConversationCoordinator", () => {
 		const completionLogger = createLogger();
 		const completionFailureCoordinator = createCoordinator(completionFailureRuntime.port, {
 			logger: completionLogger,
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 		completionFailureCoordinator.accept({
 			session,
@@ -817,7 +814,7 @@ describe("ConversationCoordinator", () => {
 		const completion = deferred<AgentTurnResult>();
 		const runtime = createRuntime([completion.promise]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -844,7 +841,7 @@ describe("ConversationCoordinator", () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime([Promise.resolve(completed([])), Promise.resolve(completed([]))]);
 		const coordinator = createCoordinator(runtime.port, {
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -875,7 +872,7 @@ describe("ConversationCoordinator", () => {
 		const coordinator = createCoordinator(runtime.port, {
 			effects,
 			logger,
-			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
+			sessionMemoryEnabled: true,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -1015,7 +1012,8 @@ function createCoordinator(
 		history?: ConversationHistoryPort;
 		onBatchSettled?: (eventIds: readonly string[], succeeded: boolean) => void;
 		logger?: LoggerPort;
-		sessionMemory?: ConversationSessionMemoryOptions;
+		now?: () => Date;
+		sessionMemoryEnabled?: boolean;
 	} = {},
 ): ConversationCoordinator {
 	return new ConversationCoordinator(
@@ -1043,6 +1041,7 @@ function createCoordinator(
 				executionOwnerId: "owner-1",
 			})),
 			logger: overrides.logger ?? createLogger(),
+			now: overrides.now ?? (() => new Date(2026, 6, 24)),
 			onBatchSettled: overrides.onBatchSettled ?? vi.fn(),
 		},
 		{
@@ -1050,7 +1049,7 @@ function createCoordinator(
 			typingIdleMs: 50,
 			sessionIdleMs: 1_000,
 			initialHistoryLimit: 20,
-			sessionMemory: overrides.sessionMemory ?? { enabled: false },
+			sessionMemoryEnabled: overrides.sessionMemoryEnabled ?? false,
 		},
 	);
 }

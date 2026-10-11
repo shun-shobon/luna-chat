@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { formatLocalDate } from "../../../shared/local-date";
+
 export type DailyMemory = Readonly<{ date: string; content: string }>;
 
 type WorkspaceBaseInstructions = {
@@ -45,13 +47,6 @@ export async function readHeartbeatChecklist(workspaceDir: string): Promise<stri
 	} catch (error: unknown) {
 		throw new WorkspaceInstructionError("HEARTBEAT.md must be readable.", { cause: error });
 	}
-}
-
-function formatLocalDate(date: Date): string {
-	const year = String(date.getFullYear()).padStart(4, "0");
-	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-	return `${year}-${month}-${day}`;
 }
 
 async function readOptionalInstruction(path: string): Promise<string | undefined> {

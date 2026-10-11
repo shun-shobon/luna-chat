@@ -111,7 +111,7 @@ export async function startLunaApplication(
 	});
 
 	let eventAgent: EventAgentAdapter | undefined;
-	const fatal = deferred<Error>();
+	const fatal = Promise.withResolvers<Error>();
 	const supervisor = new AgentRuntimeSupervisor(
 		{
 			initialDelayMs: workspace.config.agent.restartInitialDelayMs,
@@ -194,6 +194,7 @@ export async function startLunaApplication(
 					},
 				},
 				logger,
+				now: () => new Date(),
 				onBatchSettled: (eventIds, succeeded) => {
 					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
 				},
@@ -201,9 +202,7 @@ export async function startLunaApplication(
 			{
 				debounceMs: workspace.config.discord.debounceMs,
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
-				sessionMemory: workspace.config.memory.enabled
-					? { enabled: true, now: () => new Date() }
-					: { enabled: false },
+				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
 				typingIdleMs: workspace.config.discord.typingIdleMs,
 			},
@@ -436,18 +435,4 @@ function logCleanupFailures(
 	for (const result of results) {
 		if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
 	}
-}
-
-function deferred<Value>(): { promise: Promise<Value>; resolve(value: Value): void } {
-	let resolvePromise: ((value: Value) => void) | undefined;
-	const promise = new Promise<Value>((resolve) => {
-		resolvePromise = resolve;
-	});
-	return {
-		promise,
-		resolve: (value) => {
-			if (resolvePromise === undefined) throw new Error("Deferred value is unavailable");
-			resolvePromise(value);
-		},
-	};
 }

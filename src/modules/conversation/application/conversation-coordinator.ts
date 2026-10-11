@@ -1,3 +1,4 @@
+import { formatLocalDate } from "../../../shared/local-date";
 import type {
 	AgentRuntimePort,
 	AgentThreadInput,
@@ -16,14 +17,10 @@ import type {
 } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 
-export type ConversationSessionMemoryOptions =
-	| Readonly<{ enabled: false }>
-	| Readonly<{ enabled: true; now: () => Date }>;
-
 type ConversationCoordinatorOptions = Readonly<{
 	debounceMs: number;
 	initialHistoryLimit: number;
-	sessionMemory: ConversationSessionMemoryOptions;
+	sessionMemoryEnabled: boolean;
 	sessionIdleMs: number;
 	typingIdleMs: number;
 }>;
@@ -44,6 +41,7 @@ export class ConversationCoordinator {
 			effects: EffectBatchPort;
 			history: ConversationHistoryPort;
 			logger: LoggerPort;
+			now: () => Date;
 			onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
 		}>,
 		private readonly options: ConversationCoordinatorOptions,
@@ -195,6 +193,7 @@ class ConversationActor {
 			effects: EffectBatchPort;
 			history: ConversationHistoryPort;
 			logger: LoggerPort;
+			now: () => Date;
 			onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
 		}>,
 		private readonly options: ConversationCoordinatorOptions,
@@ -714,18 +713,11 @@ class ConversationActor {
 			else this.#close();
 			return;
 		}
-		if (!this.options.sessionMemory.enabled) {
+		if (!this.options.sessionMemoryEnabled) {
 			this.#archive();
 			return;
 		}
-		let date: string;
-		try {
-			date = formatLocalDate(this.options.sessionMemory.now());
-		} catch (error: unknown) {
-			this.#logError(error, "session_memory/input");
-			this.#archive();
-			return;
-		}
+		const date = formatLocalDate(this.dependencies.now());
 		this.#startTurn(JSON.stringify({ source: "session_memory", date }), "session_memory");
 	}
 
@@ -862,18 +854,6 @@ class ConversationActor {
 		this.#activeEventIds.clear();
 		this.dependencies.onBatchSettled(eventIds, succeeded);
 	}
-}
-
-function formatLocalDate(date: Date): string {
-	if (Number.isNaN(date.getTime())) throw new Error("Session memory date must be valid");
-	const localYear = date.getFullYear();
-	if (localYear < 0 || localYear > 9_999) {
-		throw new Error("Session memory date year must fit YYYY");
-	}
-	const year = String(localYear).padStart(4, "0");
-	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-	return `${year}-${month}-${day}`;
 }
 
 function compareEvents(left: LunaEvent, right: LunaEvent): number {

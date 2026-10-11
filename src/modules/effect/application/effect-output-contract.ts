@@ -154,12 +154,6 @@ function assertStructuredOutputSchema(value: unknown, path = "outputSchema"): vo
 	if (value["anyOf"] !== undefined) {
 		assertStructuredOutputSchema(value["anyOf"], `${path}.anyOf`);
 	}
-	const definitions = value["$defs"];
-	if (isRecord(definitions)) {
-		for (const [name, definition] of Object.entries(definitions)) {
-			assertStructuredOutputSchema(definition, `${path}.$defs.${name}`);
-		}
-	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -49,6 +49,7 @@ src/
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   └── observability/   # 構造化ログ, 秘匿情報マスク
 ├── runtime/             # コンポジションルート, エントリポイント
+├── shared/              # 機能に依存しない汎用関数
 └── generated/codex/     # Codex CLIから自動生成された型定義
 ```
 
