@@ -74,9 +74,6 @@ export class JsonRpcConnection {
 		rpcTimeoutMs: number,
 		private readonly onEvent?: RpcEventHandler,
 	) {
-		if (!Number.isSafeInteger(rpcTimeoutMs) || rpcTimeoutMs <= 0) {
-			throw new Error("RPC timeout must be a positive safe integer.");
-		}
 		this.#transport = transport;
 		this.#rpcTimeoutMs = rpcTimeoutMs;
 		transport.onLine((line) => this.#handleLine(line));

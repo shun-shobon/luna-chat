@@ -46,7 +46,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	#runtimeGeneration = 0;
 
 	public constructor(policy: AgentRestartPolicy, dependencies: AgentRuntimeSupervisorDependencies) {
-		validatePolicy(policy);
 		this.#policy = policy;
 		this.#startRuntime = dependencies.startRuntime;
 		this.#now = dependencies.now ?? Date.now;
@@ -247,24 +246,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		if (this.#closed) {
 			throw new Error("Codex runtime supervisor is closed.");
 		}
-	}
-}
-
-function validatePolicy(policy: AgentRestartPolicy): void {
-	for (const [key, value] of Object.entries({
-		limit: policy.limit,
-		maxDelayMs: policy.maxDelayMs,
-		windowMs: policy.windowMs,
-	})) {
-		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error(`${key} must be a positive safe integer.`);
-		}
-	}
-	if (!Number.isSafeInteger(policy.initialDelayMs) || policy.initialDelayMs < 0) {
-		throw new Error("initialDelayMs must be a non-negative safe integer.");
-	}
-	if (policy.initialDelayMs > policy.maxDelayMs) {
-		throw new Error("initialDelayMs must not exceed maxDelayMs.");
 	}
 }
 
