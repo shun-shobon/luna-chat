@@ -25,7 +25,6 @@ import { DiscordConversationDelegation } from "../modules/discord/adapters/disco
 import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
 import {
 	createDiscordGatewayClient,
-	createDiscordGatewayEventClient,
 	DiscordGatewayAdapter,
 } from "../modules/discord/adapters/discord-gateway-adapter";
 import { startDiscordMcpServer } from "../modules/discord/adapters/discord-mcp-server";
@@ -285,7 +284,7 @@ export async function startLunaApplication(
 		);
 		await commandAdapter.start();
 		commands = commandAdapter;
-		gateway = new DiscordGatewayAdapter(createDiscordGatewayEventClient(client), gatewayController);
+		gateway = new DiscordGatewayAdapter(client, gatewayController);
 		gateway.start();
 		httpServer = await startHttpEventServer({
 			hostname: environment.httpHost,

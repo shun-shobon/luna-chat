@@ -78,7 +78,6 @@ vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
 	...(await importOriginal()),
 	createDiscordGatewayClient: vi.fn(() => fakes.client),
-	createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
 vi.mock("../modules/discord/adapters/discord-mcp-server", () => ({

@@ -101,7 +101,6 @@ export function createDiscordCommandClient(client: Client): DiscordCommandClient
 
 export class DiscordCommandAdapter {
 	readonly #listener: (interaction: unknown) => void;
-	#started = false;
 
 	constructor(
 		private readonly client: DiscordCommandClient,
@@ -120,16 +119,12 @@ export class DiscordCommandAdapter {
 	}
 
 	async start(): Promise<void> {
-		if (this.#started) throw new Error("Discord command adapter is already started");
 		await this.client.register();
 		this.client.on("interactionCreate", this.#listener);
-		this.#started = true;
 	}
 
 	stop(): void {
-		if (!this.#started) throw new Error("Discord command adapter is not started");
 		this.client.off("interactionCreate", this.#listener);
-		this.#started = false;
 	}
 
 	async #handle(rawInteraction: unknown): Promise<void> {

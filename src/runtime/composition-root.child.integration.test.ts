@@ -75,7 +75,6 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
 	...(await importOriginal<typeof DiscordGatewayAdapterModule>()),
 	createDiscordGatewayClient: vi.fn(() => fakes.client),
-	createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
 vi.mock("../modules/http/adapters/http-event-server", () => ({

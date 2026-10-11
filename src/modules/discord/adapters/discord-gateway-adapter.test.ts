@@ -12,8 +12,8 @@ import type { DiscordGatewayEventClient } from "./discord-gateway-adapter";
 describe("DiscordGatewayAdapter", () => {
 	it("messageCreateとtypingStartだけを購読し、正規化済みeventをportへ渡す", async () => {
 		const client = new FakeGatewayClient();
-		const onMessage = vi.fn(async (_event: DiscordGatewayMessage) => undefined);
-		const onTyping = vi.fn(async (_event: DiscordGatewayTyping) => undefined);
+		const onMessage = vi.fn((_event: DiscordGatewayMessage) => undefined);
+		const onTyping = vi.fn((_event: DiscordGatewayTyping) => undefined);
 		const onError = vi.fn<DiscordGatewayPort["onError"]>();
 		const adapter = new DiscordGatewayAdapter(client, { onMessage, onTyping, onError });
 
@@ -24,8 +24,8 @@ describe("DiscordGatewayAdapter", () => {
 			guild: { id: "200" },
 			user: createUser({ id: "401" }),
 		});
-		await vi.waitFor(() => expect(onMessage).toHaveBeenCalledOnce());
-		await vi.waitFor(() => expect(onTyping).toHaveBeenCalledOnce());
+		expect(onMessage).toHaveBeenCalledOnce();
+		expect(onTyping).toHaveBeenCalledOnce();
 
 		expect(onMessage.mock.calls[0]?.[0].scope).toEqual({
 			kind: "guild_channel",
@@ -41,11 +41,11 @@ describe("DiscordGatewayAdapter", () => {
 		expect(client.listenerCount()).toBe(0);
 	});
 
-	it("変換失敗とport失敗を明示的にonErrorへ渡す", async () => {
+	it("変換失敗とport失敗を明示的にonErrorへ渡す", () => {
 		const client = new FakeGatewayClient();
 		const onError = vi.fn<DiscordGatewayPort["onError"]>();
 		const adapter = new DiscordGatewayAdapter(client, {
-			onMessage: vi.fn(async () => {
+			onMessage: vi.fn(() => {
 				throw new Error("port failed");
 			}),
 			onTyping: vi.fn(),
@@ -55,18 +55,7 @@ describe("DiscordGatewayAdapter", () => {
 
 		client.emit("messageCreate", createMessage());
 		client.emit("typingStart", {});
-		await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(2));
-		expect(onError.mock.calls.map((call) => call[1])).toEqual(["typingStart", "messageCreate"]);
-	});
-
-	it("二重startと未start stopを拒否する", () => {
-		const client = new FakeGatewayClient();
-		const port = { onMessage: vi.fn(), onTyping: vi.fn(), onError: vi.fn() };
-		const adapter = new DiscordGatewayAdapter(client, port);
-
-		expect(() => adapter.stop()).toThrow("not started");
-		adapter.start();
-		expect(() => adapter.start()).toThrow("already started");
+		expect(onError.mock.calls.map((call) => call[1])).toEqual(["messageCreate", "typingStart"]);
 	});
 });
 

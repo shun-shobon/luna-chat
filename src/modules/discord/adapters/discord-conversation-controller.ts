@@ -17,27 +17,16 @@ type ConversationInput = Readonly<{
 }>;
 
 export class DiscordConversationController implements DiscordGatewayPort {
-	readonly #allowedChannelIds: ReadonlySet<string>;
-
 	constructor(
 		private readonly conversation: ConversationInput,
 		private readonly lunaUserId: string,
-		input: Readonly<{
+		private readonly options: Readonly<{
 			allowDm: boolean;
 			allowedChannelIds: ReadonlySet<string>;
 			onAccepted(event: DiscordGatewayMessage): void;
 			onError(error: unknown, event: "messageCreate" | "typingStart"): void;
 		}>,
-	) {
-		this.#allowedChannelIds = input.allowedChannelIds;
-		this.allowDm = input.allowDm;
-		this.onAccepted = input.onAccepted;
-		this.onError = input.onError;
-	}
-
-	private readonly allowDm: boolean;
-	private readonly onAccepted: (event: DiscordGatewayMessage) => void;
-	readonly onError: (error: unknown, event: "messageCreate" | "typingStart") => void;
+	) {}
 
 	onMessage(event: DiscordGatewayMessage): void {
 		const session = createDiscordConversationSession(event.scope);
@@ -46,8 +35,8 @@ export class DiscordConversationController implements DiscordGatewayPort {
 			authorId: event.message.author.id,
 			lunaUserId: this.lunaUserId,
 			mentionsLuna: event.message.mentions.users.some((user) => user.id === this.lunaUserId),
-			allowDm: this.allowDm,
-			allowedChannelIds: this.#allowedChannelIds,
+			allowDm: this.options.allowDm,
+			allowedChannelIds: this.options.allowedChannelIds,
 			lunaIsThreadMember: event.lunaIsThreadMember,
 			sessionExists: this.conversation.hasSession(session.key),
 		});
@@ -56,7 +45,7 @@ export class DiscordConversationController implements DiscordGatewayPort {
 				session,
 				event: createDiscordMessageEvent(session, event.message),
 			});
-			this.onAccepted(event);
+			this.options.onAccepted(event);
 		}
 	}
 
@@ -64,5 +53,9 @@ export class DiscordConversationController implements DiscordGatewayPort {
 		if (event.isHuman) {
 			this.conversation.typing(createDiscordConversationSession(event.scope), event.userId);
 		}
+	}
+
+	onError(error: unknown, event: "messageCreate" | "typingStart"): void {
+		this.options.onError(error, event);
 	}
 }
