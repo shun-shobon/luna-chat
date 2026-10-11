@@ -69,7 +69,7 @@ export class ThreadRetentionCleaner {
 
 		try {
 			do {
-				const page = await this.#agent.listThreads({ archived: true, cursor });
+				const page = await this.#agent.listArchivedThreads(cursor);
 				const expiredThreadIds: string[] = [];
 
 				for (const thread of page.data) {

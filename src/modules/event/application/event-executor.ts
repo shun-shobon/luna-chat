@@ -19,7 +19,7 @@ export class EventExecutor implements EventExecutionPort {
 	public constructor(
 		private readonly dependencies: Readonly<{
 			agent: AgentRuntimePort;
-			createThreadInput: () => Promise<AgentThreadInput>;
+			createThreadInput: () => Promise<AgentThreadInput & { executionOwnerId: string }>;
 			effectOutput: EffectOutputContract;
 			effects: EffectBatchPort;
 			logger: LoggerPort;

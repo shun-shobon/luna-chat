@@ -14,7 +14,6 @@ export interface CodexLineTransport {
 export type StartCodexStdioProcessOptions = {
 	codexHomeDir: string;
 	cwd: string;
-	parentEnvironment?: NodeJS.ProcessEnv;
 };
 
 class CodexProcessError extends Error {
@@ -27,10 +26,7 @@ class CodexProcessError extends Error {
 export function startCodexStdioProcess(options: StartCodexStdioProcessOptions): CodexLineTransport {
 	const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
 		cwd: options.cwd,
-		env: createCodexChildEnvironment(
-			options.parentEnvironment ?? process.env,
-			options.codexHomeDir,
-		),
+		env: createCodexChildEnvironment(process.env, options.codexHomeDir),
 		stdio: ["pipe", "pipe", "pipe"],
 	});
 

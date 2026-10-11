@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type {
 	AgentRuntimePort,
+	AgentThreadInput,
 	AgentTurnRequest,
 	StartedAgentTurn,
 	ThreadId,
@@ -83,16 +84,10 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		await (await this.#getRuntime()).deleteThread(threadId);
 	}
 
-	public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
-		await (await this.#getRuntime()).interruptTurn(threadId, turnId);
-	}
-
-	public async listThreads(input?: {
-		archived?: boolean;
-		cursor?: string;
-		limit?: number;
-	}): ReturnType<AgentRuntimePort["listThreads"]> {
-		return await (await this.#getRuntime()).listThreads(input);
+	public async listArchivedThreads(
+		cursor?: string,
+	): ReturnType<AgentRuntimePort["listArchivedThreads"]> {
+		return await (await this.#getRuntime()).listArchivedThreads(cursor);
 	}
 
 	public async listModels(): ReturnType<AgentRuntimePort["listModels"]> {
@@ -113,12 +108,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		return () => this.#failureHandlers.delete(handler);
 	}
 
-	public async openThread(input: {
-		baseInstructions: string;
-		config: Record<string, unknown>;
-		cwd: string;
-		developerInstructions: string;
-	}): Promise<ThreadId> {
+	public async openThread(input: AgentThreadInput): Promise<ThreadId> {
 		return await (await this.#getRuntime()).openThread(input);
 	}
 

@@ -27,7 +27,7 @@ type ConversationCoordinatorOptions = Readonly<{
 
 type ConversationDependencies = Readonly<{
 	agent: AgentRuntimePort;
-	createThreadInput: () => Promise<AgentThreadInput>;
+	createThreadInput: () => Promise<AgentThreadInput & { executionOwnerId: string }>;
 	effectOutput: EffectOutputContract;
 	effects: EffectBatchPort;
 	history: ConversationHistoryPort;

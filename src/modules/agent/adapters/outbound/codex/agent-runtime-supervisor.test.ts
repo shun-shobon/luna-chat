@@ -8,8 +8,7 @@ function createPort(): AgentRuntimePort {
 	return {
 		archiveThread: async () => undefined,
 		deleteThread: async () => undefined,
-		interruptTurn: async () => undefined,
-		listThreads: async () => ({ data: [] }),
+		listArchivedThreads: async () => ({ data: [] }),
 		listModels: async () => [],
 		openThread: async () => "thread-1",
 		startTurn: async () => {

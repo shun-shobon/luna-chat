@@ -37,7 +37,7 @@ export function createThreadInputFactory(input: {
 	now: () => Date;
 	workspaceDir: string;
 	createExecutionOwnerId?: (() => string) | undefined;
-}): () => Promise<AgentThreadInput> {
+}): () => Promise<AgentThreadInput & { executionOwnerId: string }> {
 	const createExecutionOwnerId = input.createExecutionOwnerId ?? randomUUID;
 	return async () => {
 		const executionOwnerId = createExecutionOwnerId();

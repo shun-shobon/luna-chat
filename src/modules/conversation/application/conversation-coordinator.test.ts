@@ -146,7 +146,6 @@ describe("ConversationCoordinator", () => {
 
 		expect(coordinator.endSession(session.key)).toBe(true);
 		await flushPromises();
-		expect(runtime.interruptTurn).not.toHaveBeenCalled();
 		expect(runtime.archiveThread).not.toHaveBeenCalled();
 
 		activeTurn.resolve(completed([]));
@@ -1107,20 +1106,18 @@ function createRuntime(completions: Promise<AgentTurnResult>[] = [Promise.resolv
 		}),
 	);
 	const archiveThread = vi.fn<AgentRuntimePort["archiveThread"]>(async () => undefined);
-	const interruptTurn = vi.fn<AgentRuntimePort["interruptTurn"]>(async () => undefined);
 	const openThread = vi.fn<AgentRuntimePort["openThread"]>(async () => "thread-1");
 	const steerTurn = vi.fn<AgentRuntimePort["steerTurn"]>(async () => undefined);
 	const port: AgentRuntimePort = {
 		archiveThread,
 		deleteThread: vi.fn(async () => undefined),
-		listThreads: vi.fn(async () => ({ data: [] })),
+		listArchivedThreads: vi.fn(async () => ({ data: [] })),
 		listModels: vi.fn(async () => []),
 		openThread,
-		interruptTurn,
 		startTurn,
 		steerTurn,
 	};
-	return { port, archiveThread, interruptTurn, openThread, startTurn, steerTurn };
+	return { port, archiveThread, openThread, startTurn, steerTurn };
 }
 
 type AgentEffect = Pick<EffectRequest, "type" | "input">;

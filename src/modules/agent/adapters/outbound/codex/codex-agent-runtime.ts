@@ -3,6 +3,7 @@ import type { ThreadSourceKind } from "../../../../../generated/codex/v2/ThreadS
 import type { UserInput } from "../../../../../generated/codex/v2/UserInput";
 import type {
 	AgentRuntimePort,
+	AgentThreadInput,
 	AgentTurnRequest,
 	StartedAgentTurn,
 	ThreadId,
@@ -92,7 +93,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 				-32601,
 				"Interactive user input is not supported by this client.",
 			);
-			void this.interruptTurn(threadId, turnId).catch((error: unknown) => {
+			void this.#interruptTurn(threadId, turnId).catch((error: unknown) => {
 				connection.fail(
 					new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
 						cause: error,
@@ -146,34 +147,20 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 		return models;
 	}
 
-	public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
-		const result = await this.#connection.request("turn/interrupt", { threadId, turnId });
-		parseResponse(this.#connection, () => parseEmptyResponse(result));
-	}
-
-	public async listThreads(input?: {
-		archived?: boolean;
-		cursor?: string;
-		limit?: number;
-	}): ReturnType<AgentRuntimePort["listThreads"]> {
-		const archived = input?.archived ?? false;
+	public async listArchivedThreads(
+		cursor?: string,
+	): ReturnType<AgentRuntimePort["listArchivedThreads"]> {
 		const result = await this.#connection.request("thread/list", {
-			archived,
-			cursor: input?.cursor,
-			limit: input?.limit,
+			archived: true,
+			cursor,
 			sortDirection: "desc",
 			sortKey: "updated_at",
 			sourceKinds: ALL_THREAD_SOURCE_KINDS,
 		});
-		return parseResponse(this.#connection, () => parseThreadList(result, archived));
+		return parseResponse(this.#connection, () => parseThreadList(result));
 	}
 
-	public async openThread(input: {
-		baseInstructions: string;
-		config: Record<string, unknown>;
-		cwd: string;
-		developerInstructions: string;
-	}): Promise<ThreadId> {
+	public async openThread(input: AgentThreadInput): Promise<ThreadId> {
 		const result = await this.#connection.request("thread/start", {
 			approvalPolicy: "never",
 			baseInstructions: input.baseInstructions,
@@ -242,6 +229,11 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 			this.#connection.fail(error);
 			throw error;
 		}
+	}
+
+	async #interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
+		const result = await this.#connection.request("turn/interrupt", { threadId, turnId });
+		parseResponse(this.#connection, () => parseEmptyResponse(result));
 	}
 }
 

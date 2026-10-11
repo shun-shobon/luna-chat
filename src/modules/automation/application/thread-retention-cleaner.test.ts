@@ -11,18 +11,18 @@ describe("ThreadRetentionCleaner", () => {
 		const now = new Date("2026-01-01T00:00:00.000Z");
 		const nowSeconds = now.getTime() / 1_000;
 		const agent = createAgent({
-			listThreads: vi
-				.fn<AgentRuntimePort["listThreads"]>()
+			listArchivedThreads: vi
+				.fn<AgentRuntimePort["listArchivedThreads"]>()
 				.mockResolvedValueOnce({
 					data: [
-						{ archived: true, id: "expired", updatedAt: nowSeconds - 101 },
-						{ archived: true, id: "boundary", updatedAt: nowSeconds - 100 },
-						{ archived: true, id: "unknown", updatedAt: undefined },
+						{ id: "expired", updatedAt: nowSeconds - 101 },
+						{ id: "boundary", updatedAt: nowSeconds - 100 },
+						{ id: "unknown", updatedAt: undefined },
 					],
 					nextCursor: "next",
 				})
 				.mockResolvedValueOnce({
-					data: [{ archived: true, id: "current", updatedAt: nowSeconds - 99 }],
+					data: [{ id: "current", updatedAt: nowSeconds - 99 }],
 				}),
 		});
 		const clock = new FakeClock(now);
@@ -37,8 +37,8 @@ describe("ThreadRetentionCleaner", () => {
 
 		await cleaner.start();
 
-		expect(agent.listThreads).toHaveBeenNthCalledWith(1, { archived: true, cursor: undefined });
-		expect(agent.listThreads).toHaveBeenNthCalledWith(2, { archived: true, cursor: "next" });
+		expect(agent.listArchivedThreads).toHaveBeenNthCalledWith(1, undefined);
+		expect(agent.listArchivedThreads).toHaveBeenNthCalledWith(2, "next");
 		expect(agent.deleteThread).toHaveBeenCalledTimes(1);
 		expect(agent.deleteThread).toHaveBeenCalledWith("expired");
 		expect(logger.log).toHaveBeenCalledWith(
@@ -58,8 +58,8 @@ describe("ThreadRetentionCleaner", () => {
 			deleteThread: vi.fn(async () => {
 				throw new Error("delete failed");
 			}),
-			listThreads: vi.fn(async () => ({
-				data: [{ archived: true, id: "expired", updatedAt: now.getTime() / 1_000 - 101 }],
+			listArchivedThreads: vi.fn(async () => ({
+				data: [{ id: "expired", updatedAt: now.getTime() / 1_000 - 101 }],
 			})),
 		});
 		const clock = new FakeClock(now);
@@ -78,7 +78,7 @@ describe("ThreadRetentionCleaner", () => {
 			expect.any(Object),
 		);
 
-		deleteFailure.listThreads.mockRejectedValueOnce(new Error("list failed"));
+		deleteFailure.listArchivedThreads.mockRejectedValueOnce(new Error("list failed"));
 		await clock.fireNext();
 		await vi.waitFor(() => {
 			expect(logger.log).toHaveBeenCalledWith(
@@ -96,8 +96,8 @@ describe("ThreadRetentionCleaner", () => {
 	it("stop後はactive cleanupをdrainするが次回を予約しない", async () => {
 		const listing = createDeferred<{ data: [] }>();
 		const agent = createAgent({
-			listThreads: vi
-				.fn<AgentRuntimePort["listThreads"]>()
+			listArchivedThreads: vi
+				.fn<AgentRuntimePort["listArchivedThreads"]>()
 				.mockResolvedValueOnce({ data: [] })
 				.mockImplementationOnce(async () => await listing.promise),
 		});
@@ -170,8 +170,7 @@ function createAgent(overrides: Partial<AgentRuntimePort> = {}): {
 	return {
 		archiveThread: vi.fn(overrides.archiveThread ?? (async () => undefined)),
 		deleteThread: vi.fn(overrides.deleteThread ?? (async () => undefined)),
-		interruptTurn: vi.fn(overrides.interruptTurn ?? (async () => undefined)),
-		listThreads: vi.fn(overrides.listThreads ?? (async () => ({ data: [] }))),
+		listArchivedThreads: vi.fn(overrides.listArchivedThreads ?? (async () => ({ data: [] }))),
 		listModels: vi.fn(overrides.listModels ?? (async () => [])),
 		openThread: vi.fn(overrides.openThread ?? (async () => "thread-1")),
 		startTurn: vi.fn(

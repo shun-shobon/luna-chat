@@ -65,8 +65,7 @@ vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => 
 		port: {
 			archiveThread: vi.fn(async () => undefined),
 			deleteThread: vi.fn(async () => undefined),
-			interruptTurn: vi.fn(async () => undefined),
-			listThreads: vi.fn(async () => ({ data: [] })),
+			listArchivedThreads: vi.fn(async () => ({ data: [] })),
 			listModels: vi.fn(async () => []),
 			openThread: vi.fn(async () => "thread-1"),
 			startTurn: vi.fn(),

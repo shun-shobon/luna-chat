@@ -23,7 +23,7 @@ const event: LunaEvent = {
 	data: { from: 23, to: 24 },
 };
 
-const threadInput: AgentThreadInput = {
+const threadInput: AgentThreadInput & { executionOwnerId: string } = {
 	executionOwnerId: "owner-1",
 	baseInstructions: "Luna",
 	config: {},
@@ -216,10 +216,9 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 	const agent: AgentRuntimePort = {
 		archiveThread,
 		deleteThread: vi.fn(async () => {}),
-		listThreads: vi.fn(async () => ({ data: [] })),
+		listArchivedThreads: vi.fn(async () => ({ data: [] })),
 		listModels: vi.fn(async () => []),
 		openThread,
-		interruptTurn: vi.fn(async () => {}),
 		startTurn,
 		steerTurn: vi.fn(async () => {}),
 	};
