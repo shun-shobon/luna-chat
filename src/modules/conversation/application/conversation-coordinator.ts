@@ -130,6 +130,13 @@ type Phase =
 
 type TurnPurpose = "conversation" | "session_memory";
 
+type ActiveThread = {
+	readonly id: string;
+	readonly ownerId: string;
+	purpose: TurnPurpose;
+	turnId: string | undefined;
+};
+
 type Command =
 	| Readonly<{ kind: "configure"; settings: ConversationModelSettings }>
 	| Readonly<{ kind: "end" }>
@@ -163,10 +170,7 @@ class ConversationActor {
 	#queue: LunaEvent[] = [];
 	#steerQueue: LunaEvent[] = [];
 	#steerActive: LunaEvent | undefined;
-	#executionOwnerId: string | undefined;
-	#threadId: string | undefined;
-	#turnId: string | undefined;
-	#turnPurpose: TurnPurpose | undefined;
+	#thread: ActiveThread | undefined;
 	#turnCompletion: AgentTurnResult | undefined;
 	#debounceReady = false;
 	#debounceToken = 0;
@@ -211,7 +215,7 @@ class ConversationActor {
 			this.#phase === "closed" ||
 			this.#phase === "orphaned_effects" ||
 			this.#endPending ||
-			this.#turnPurpose === "session_memory"
+			this.#thread?.purpose === "session_memory"
 		)
 			return false;
 		this.#sessionStarted = true;
@@ -271,7 +275,7 @@ class ConversationActor {
 				this.#modelSettings = command.settings;
 				if (
 					this.#phase === "collecting" &&
-					this.#threadId === undefined &&
+					this.#thread === undefined &&
 					this.#queue.length === 0
 				) {
 					this.#phase = "idle";
@@ -324,14 +328,19 @@ class ConversationActor {
 			case "thread_ready":
 				if (!this.#matches(command.token, "opening")) return;
 				this.#openingBatch = [];
-				this.#threadId = command.threadId;
-				this.#executionOwnerId = command.executionOwnerId;
+				this.#thread = {
+					id: command.threadId,
+					ownerId: command.executionOwnerId,
+					purpose: "conversation",
+					turnId: undefined,
+				};
 				this.#logEvent(
 					"conversation.thread_opened",
 					{ threadId: command.threadId },
 					{ eventCount: command.batch.length, historyCount: command.history.length },
 				);
 				this.#startTurn(
+					this.#thread,
 					JSON.stringify({
 						source: "conversation",
 						session: { key: this.session.key, source: this.session.source },
@@ -346,15 +355,16 @@ class ConversationActor {
 				this.#logError(command.error, command.operation);
 				this.#archive();
 				return;
-			case "turn_started":
-				if (!this.#matches(command.token, "starting")) return;
+			case "turn_started": {
+				const thread = this.#thread;
+				if (!this.#matches(command.token, "starting") || thread === undefined) return;
 				this.#phase = "turn";
-				this.#turnId = command.turn.turnId;
+				thread.turnId = command.turn.turnId;
 				this.#logEvent("conversation.turn_started", {
-					threadId: this.#threadId,
+					threadId: thread.id,
 					turnId: command.turn.turnId,
 				});
-				if (this.#turnPurpose === "conversation" && !this.#endRequested) {
+				if (thread.purpose === "conversation" && !this.#endRequested) {
 					this.#steerQueue.push(...this.#queue);
 					this.#queue = [];
 				}
@@ -370,12 +380,13 @@ class ConversationActor {
 						}),
 				);
 				return;
+			}
 			case "turn_finished":
 				if (!this.#matches(command.token, "turn")) return;
 				this.#turnCompletion = command.result;
 				this.#logEvent(
 					"conversation.turn_completed",
-					{ threadId: this.#threadId, turnId: this.#turnId },
+					{ threadId: this.#thread?.id, turnId: this.#thread?.turnId },
 					{ status: command.result.status },
 					command.result,
 				);
@@ -400,20 +411,13 @@ class ConversationActor {
 				if (command.error !== undefined) {
 					this.#logError(command.error, "thread/archive");
 				}
-				this.#threadId = undefined;
-				this.#executionOwnerId = undefined;
-				this.#turnId = undefined;
-				this.#turnPurpose = undefined;
-				this.#modelSettings = undefined;
-				this.#endRequested = false;
-				this.#endPending = false;
+				this.#resetThread();
 				this.#logEvent(
 					"conversation.thread_archived",
 					{},
 					{ success: command.error === undefined },
 				);
-				if (this.#queue.length > 0) this.#beginCollecting(true);
-				else this.#close();
+				this.#continueOrClose();
 				return;
 			case "shutdown":
 				this.#shutdownWaiters.push(command.resolve);
@@ -433,12 +437,11 @@ class ConversationActor {
 				this.#steerQueue = [];
 				this.#steerActive = undefined;
 				this.#clearTypingTimers();
-				const ownerId = this.#executionOwnerId;
-				this.#threadId = undefined;
+				const ownerId = this.#thread?.ownerId;
+				this.#thread = undefined;
 				if (this.#phase === "effects" || this.#phase === "orphaned_effects") {
 					this.#phase = "orphaned_effects";
 				} else {
-					this.#executionOwnerId = undefined;
 					if (ownerId !== undefined) void this.#releaseEffects(ownerId);
 					this.#operationToken += 1;
 					this.#close();
@@ -453,7 +456,7 @@ class ConversationActor {
 	#handleAccept(event: LunaEvent): void {
 		if (
 			this.#endRequested ||
-			this.#turnPurpose === "session_memory" ||
+			this.#thread?.purpose === "session_memory" ||
 			this.#phase === "archiving"
 		) {
 			this.#queue.push(event);
@@ -508,8 +511,9 @@ class ConversationActor {
 		const batch = this.#queue.splice(0).toSorted(compareEvents);
 		for (const event of batch) this.#activeEventIds.add(event.id);
 		const token = ++this.#operationToken;
-		if (this.#threadId !== undefined) {
+		if (this.#thread !== undefined) {
 			this.#startTurn(
+				this.#thread,
 				JSON.stringify({
 					source: "conversation",
 					session: { key: this.session.key, source: this.session.source },
@@ -555,14 +559,12 @@ class ConversationActor {
 			);
 	}
 
-	#startTurn(input: string, purpose: TurnPurpose): void {
-		const threadId = this.#threadId;
-		if (threadId === undefined) throw new Error("Cannot start a turn without a thread");
+	#startTurn(thread: ActiveThread, input: string, purpose: TurnPurpose): void {
 		const token = ++this.#operationToken;
 		this.#phase = "starting";
-		this.#turnPurpose = purpose;
+		thread.purpose = purpose;
 		void this.dependencies.agent
-			.startTurn(threadId, {
+			.startTurn(thread.id, {
 				input,
 				outputSchema: this.dependencies.effectOutput.jsonSchema,
 				...this.#modelSettings,
@@ -575,19 +577,17 @@ class ConversationActor {
 	}
 
 	#kickSteer(): void {
-		if (this.#phase !== "turn" || this.#steerActive !== undefined) return;
+		const thread = this.#thread;
+		if (this.#phase !== "turn" || this.#steerActive !== undefined || thread?.turnId === undefined)
+			return;
 		const event = this.#steerQueue.shift();
 		if (event === undefined) return;
-		const threadId = this.#threadId;
-		const turnId = this.#turnId;
-		if (threadId === undefined || turnId === undefined)
-			throw new Error("Active turn IDs are missing");
 		const token = this.#operationToken;
 		this.#steerActive = event;
 		void this.dependencies.agent
 			.steerTurn(
-				threadId,
-				turnId,
+				thread.id,
+				thread.turnId,
 				JSON.stringify({
 					source: "conversation",
 					session: { key: this.session.key, source: this.session.source },
@@ -602,8 +602,10 @@ class ConversationActor {
 	}
 
 	#finishTurnAfterSteering(): void {
+		const thread = this.#thread;
 		if (
 			this.#phase !== "turn" ||
+			thread === undefined ||
 			this.#turnCompletion === undefined ||
 			this.#steerActive !== undefined ||
 			this.#steerQueue.length > 0
@@ -612,17 +614,13 @@ class ConversationActor {
 		}
 		const result = this.#turnCompletion;
 		this.#turnCompletion = undefined;
-		const ownerId = this.#executionOwnerId;
-		const purpose = this.#turnPurpose;
-		const turnId = this.#turnId;
-		this.#turnId = undefined;
-		if (result.status !== "completed" || ownerId === undefined || purpose === undefined) {
-			if (result.status !== "completed") {
-				this.#logError(
-					new Error(result.errorMessage ?? `Agent turn ended with status: ${result.status}`),
-					"turn/completion",
-				);
-			}
+		const { ownerId, turnId } = thread;
+		thread.turnId = undefined;
+		if (result.status !== "completed") {
+			this.#logError(
+				new Error(result.errorMessage ?? `Agent turn ended with status: ${result.status}`),
+				"turn/completion",
+			);
 			this.#archive();
 			return;
 		}
@@ -638,7 +636,7 @@ class ConversationActor {
 		this.#phase = "effects";
 		this.#logEvent(
 			"conversation.effects_started",
-			{ threadId: this.#threadId, turnId },
+			{ threadId: thread.id, turnId },
 			{ effectCount: effects.length },
 			effects,
 		);
@@ -658,13 +656,13 @@ class ConversationActor {
 		for (const result of results) {
 			this.#logEvent(
 				"conversation.effect_settled",
-				{ effectIndex: result.index, threadId: this.#threadId },
+				{ effectIndex: result.index, threadId: this.#thread?.id },
 				{ effectType: result.type, success: result.success, target: result.target },
 			);
 		}
 		this.#logEvent(
 			"conversation.effects_settled",
-			{ threadId: this.#threadId },
+			{ threadId: this.#thread?.id },
 			{
 				effectCount: results.length,
 				failureCount: results.filter((result) => !result.success).length,
@@ -673,23 +671,21 @@ class ConversationActor {
 		);
 		if (this.#phase === "orphaned_effects") {
 			this.#settleActive(false);
-			this.#threadId = undefined;
-			this.#executionOwnerId = undefined;
-			this.#turnPurpose = undefined;
-			if (this.#queue.length > 0) this.#beginCollecting(true);
-			else this.#close();
+			this.#continueOrClose();
 			return;
 		}
-		if (this.#phase !== "effects") return;
+		const thread = this.#thread;
+		if (this.#phase !== "effects" || thread === undefined) return;
 		if (requiresEffectFollowUp(results)) {
-			const purpose = this.#turnPurpose;
-			if (purpose === undefined)
-				throw new Error("Completed effect batch is missing its turn purpose");
-			this.#startTurn(JSON.stringify({ source: "effect_results", results }), purpose);
+			this.#startTurn(
+				thread,
+				JSON.stringify({ source: "effect_results", results }),
+				thread.purpose,
+			);
 			return;
 		}
 		this.#settleActive(true);
-		if (this.#turnPurpose === "session_memory") {
+		if (thread.purpose === "session_memory") {
 			this.#archive();
 			return;
 		}
@@ -705,20 +701,13 @@ class ConversationActor {
 	}
 
 	#preserveSessionMemory(): void {
-		if (this.#threadId === undefined) {
-			this.#modelSettings = undefined;
-			this.#endRequested = false;
-			this.#endPending = false;
-			if (this.#queue.length > 0) this.#beginCollecting(true);
-			else this.#close();
-			return;
-		}
-		if (!this.options.sessionMemoryEnabled) {
+		const thread = this.#thread;
+		if (thread === undefined || !this.options.sessionMemoryEnabled) {
 			this.#archive();
 			return;
 		}
 		const date = formatLocalDate(this.dependencies.now());
-		this.#startTurn(JSON.stringify({ source: "session_memory", date }), "session_memory");
+		this.#startTurn(thread, JSON.stringify({ source: "session_memory", date }), "session_memory");
 	}
 
 	#resetIdleTimer(): void {
@@ -740,21 +729,17 @@ class ConversationActor {
 
 	#archive(): void {
 		this.#settleActive(false);
-		const threadId = this.#threadId;
-		if (threadId === undefined) {
-			this.#modelSettings = undefined;
-			this.#endRequested = false;
-			this.#endPending = false;
-			if (this.#queue.length > 0) this.#beginCollecting(true);
-			else this.#close();
+		const thread = this.#thread;
+		if (thread === undefined) {
+			this.#resetThread();
+			this.#continueOrClose();
 			return;
 		}
 		const token = ++this.#operationToken;
 		this.#phase = "archiving";
-		const ownerId = this.#executionOwnerId;
 		void (async () => {
-			if (ownerId !== undefined) await this.#releaseEffects(ownerId);
-			await this.dependencies.agent.archiveThread(threadId);
+			await this.#releaseEffects(thread.ownerId);
+			await this.dependencies.agent.archiveThread(thread.id);
 		})().then(
 			() => this.#post({ kind: "archive_finished", token }),
 			(error: unknown) => this.#post({ kind: "archive_finished", token, error }),
@@ -767,7 +752,7 @@ class ConversationActor {
 		this.#logError(error, "agent/connection");
 		if (this.#phase === "effects") {
 			this.#phase = "orphaned_effects";
-			this.#threadId = undefined;
+			this.#thread = undefined;
 			return;
 		}
 		if (this.#phase === "opening") this.#queue.push(...this.#openingBatch);
@@ -775,16 +760,21 @@ class ConversationActor {
 		this.#queue.push(...this.#steerQueue);
 		this.#steerActive = undefined;
 		this.#steerQueue = [];
-		const ownerId = this.#executionOwnerId;
-		this.#threadId = undefined;
-		this.#executionOwnerId = undefined;
-		this.#turnId = undefined;
-		this.#turnPurpose = undefined;
+		const ownerId = this.#thread?.ownerId;
+		this.#resetThread();
+		this.#operationToken += 1;
+		if (ownerId !== undefined) void this.#releaseEffects(ownerId);
+		this.#continueOrClose();
+	}
+
+	#resetThread(): void {
+		this.#thread = undefined;
 		this.#modelSettings = undefined;
 		this.#endRequested = false;
 		this.#endPending = false;
-		this.#operationToken += 1;
-		if (ownerId !== undefined) void this.#releaseEffects(ownerId);
+	}
+
+	#continueOrClose(): void {
 		if (this.#queue.length > 0) this.#beginCollecting(true);
 		else this.#close();
 	}
