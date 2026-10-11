@@ -4,18 +4,18 @@ import { z } from "zod";
 
 import { discordIdSchema } from "./discord-id";
 
-export const discordTargetSchema = z.discriminatedUnion("kind", [
+const discordTargetSchema = z.discriminatedUnion("kind", [
 	z.strictObject({ kind: z.literal("channel"), channelId: discordIdSchema }),
 	z.strictObject({ kind: z.literal("dm_user"), userId: discordIdSchema }),
 ]);
 
-export const sendFileSchema = z.strictObject({
+const sendFileSchema = z.strictObject({
 	path: z.string().min(1).refine(isAbsolute, "File path must be absolute"),
 	fileName: z.string().min(1).optional(),
 	description: z.string().min(1).optional(),
 });
 
-export const discordEmojiSchema = z.discriminatedUnion("kind", [
+const discordEmojiSchema = z.discriminatedUnion("kind", [
 	z.strictObject({ kind: z.literal("unicode"), value: z.string().min(1) }),
 	z.strictObject({
 		kind: z.literal("custom"),
@@ -29,59 +29,39 @@ const messageLocationShape = {
 	messageId: discordIdSchema,
 };
 
-const sendMessageSchema = z.strictObject({
-	kind: z.literal("send_message"),
-	target: discordTargetSchema,
+const messageBodyShape = {
 	content: z.string().min(1).max(2_000).optional(),
 	files: z.array(sendFileSchema).min(1).optional(),
-});
+};
 
-const replyMessageSchema = z.strictObject({
-	kind: z.literal("reply_message"),
-	...messageLocationShape,
-	content: z.string().min(1).max(2_000).optional(),
-	files: z.array(sendFileSchema).min(1).optional(),
-});
+function requireMessageBody(
+	input: Readonly<{ content?: string | undefined; files?: readonly unknown[] | undefined }>,
+	context: z.RefinementCtx,
+): void {
+	if (input.content === undefined && input.files === undefined) {
+		context.addIssue({ code: "custom", message: "A message requires content or files" });
+	}
+}
 
-const addReactionSchema = z.strictObject({
-	kind: z.literal("add_reaction"),
+export const sendMessageInputSchema = z
+	.strictObject({ target: discordTargetSchema, ...messageBodyShape })
+	.superRefine(requireMessageBody);
+export const replyMessageInputSchema = z
+	.strictObject({ ...messageLocationShape, ...messageBodyShape })
+	.superRefine(requireMessageBody);
+export const reactionInputSchema = z.strictObject({
 	...messageLocationShape,
 	emoji: discordEmojiSchema,
 });
-const removeReactionSchema = z.strictObject({
-	kind: z.literal("remove_reaction"),
-	...messageLocationShape,
-	emoji: discordEmojiSchema,
-});
-const startTypingSchema = z.strictObject({
-	kind: z.literal("start_typing"),
-	target: discordTargetSchema,
-});
-const stopTypingSchema = z.strictObject({
-	kind: z.literal("stop_typing"),
-	target: discordTargetSchema,
-});
-
-export const discordActionSchema = z
-	.discriminatedUnion("kind", [
-		sendMessageSchema,
-		replyMessageSchema,
-		addReactionSchema,
-		removeReactionSchema,
-		startTypingSchema,
-		stopTypingSchema,
-	])
-	.superRefine((action, context) => {
-		if (
-			(action.kind === "send_message" || action.kind === "reply_message") &&
-			action.content === undefined &&
-			action.files === undefined
-		) {
-			context.addIssue({ code: "custom", message: "A message requires content or files" });
-		}
-	});
+export const typingInputSchema = z.strictObject({ target: discordTargetSchema });
 
 export type DiscordTarget = z.infer<typeof discordTargetSchema>;
 export type SendFile = z.infer<typeof sendFileSchema>;
 export type DiscordEmoji = z.infer<typeof discordEmojiSchema>;
-export type DiscordAction = z.infer<typeof discordActionSchema>;
+export type DiscordAction =
+	| ({ kind: "send_message" } & z.infer<typeof sendMessageInputSchema>)
+	| ({ kind: "reply_message" } & z.infer<typeof replyMessageInputSchema>)
+	| ({ kind: "add_reaction" } & z.infer<typeof reactionInputSchema>)
+	| ({ kind: "remove_reaction" } & z.infer<typeof reactionInputSchema>)
+	| ({ kind: "start_typing" } & z.infer<typeof typingInputSchema>)
+	| ({ kind: "stop_typing" } & z.infer<typeof typingInputSchema>);

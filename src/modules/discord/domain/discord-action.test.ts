@@ -1,40 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { discordActionSchema } from "./discord-action";
+import { reactionInputSchema, sendMessageInputSchema, typingInputSchema } from "./discord-action";
 
-describe("discordActionSchema", () => {
-	it("対応済みactionだけを検証する", () => {
+describe("Discord action input schemas", () => {
+	it("対応済みactionの入力を検証する", () => {
 		expect(
-			discordActionSchema.parse({
-				kind: "send_message",
-				target: { kind: "dm_user", userId: "123" },
-				content: "hi",
-			}),
-		).toMatchObject({ kind: "send_message" });
+			sendMessageInputSchema.parse({ target: { kind: "dm_user", userId: "123" }, content: "hi" }),
+		).toMatchObject({ content: "hi" });
 		expect(
-			discordActionSchema.parse({
-				kind: "add_reaction",
+			reactionInputSchema.parse({
 				channelId: "456",
 				messageId: "789",
 				emoji: { kind: "unicode", value: "🌙" },
 			}),
-		).toMatchObject({ kind: "add_reaction" });
+		).toMatchObject({ messageId: "789" });
 	});
 
 	it("本文もfileもないmessageを拒否する", () => {
 		expect(
-			discordActionSchema.safeParse({
-				kind: "send_message",
-				target: { kind: "channel", channelId: "123" },
-			}).success,
+			sendMessageInputSchema.safeParse({ target: { kind: "channel", channelId: "123" } }).success,
 		).toBe(false);
 	});
 
-	it("未知actionと未知fieldを拒否する", () => {
-		expect(discordActionSchema.safeParse({ kind: "delete_message" }).success).toBe(false);
+	it("未知fieldを拒否する", () => {
 		expect(
-			discordActionSchema.safeParse({
-				kind: "start_typing",
+			typingInputSchema.safeParse({
 				target: { kind: "channel", channelId: "123" },
 				fallback: true,
 			}).success,
@@ -43,8 +33,7 @@ describe("discordActionSchema", () => {
 
 	it("Discordの本文上限を超えるmessageを拒否する", () => {
 		expect(
-			discordActionSchema.safeParse({
-				kind: "send_message",
+			sendMessageInputSchema.safeParse({
 				target: { kind: "channel", channelId: "123" },
 				content: "a".repeat(2_001),
 			}).success,

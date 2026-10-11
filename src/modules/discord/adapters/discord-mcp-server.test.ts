@@ -160,7 +160,13 @@ describe("Discord MCP server", () => {
 			arguments: { target: { kind: "channel", channelId: "300" }, unexpected: true },
 		});
 
+		const emptyMessage = await resource.client.callTool({
+			name: "send_message",
+			arguments: { target: { kind: "channel", channelId: "300" } },
+		});
+
 		expect(response.isError).toBe(true);
+		expect(emptyMessage.isError).toBe(true);
 		expect(actions.execute).not.toHaveBeenCalled();
 	});
 

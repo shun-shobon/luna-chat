@@ -8,14 +8,14 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import {
-	discordActionSchema,
-	discordEmojiSchema,
-	discordTargetSchema,
-	sendFileSchema,
+	reactionInputSchema,
+	replyMessageInputSchema,
+	sendMessageInputSchema,
+	typingInputSchema,
 } from "../domain/discord-action";
 import type { DiscordAction } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
-import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
+import type { DiscordActionPort } from "../ports/discord-action-port";
 import type { DiscordReadPort } from "../ports/discord-read-port";
 
 const HOSTNAME = "127.0.0.1";
@@ -23,6 +23,14 @@ const MCP_PATH = "/mcp";
 export const DISCORD_MCP_TYPING_OWNER_HEADER = "X-Luna-Typing-Owner";
 
 const typingOwnerStorage = new AsyncLocalStorage<string | undefined>();
+const typingOwnerSchema = z.string().min(1);
+
+type McpToolEventHandler = (
+	event: string,
+	context: Readonly<{ actionIndex?: number; toolCallId: string }>,
+	details: Readonly<Record<string, unknown>>,
+	payload?: unknown,
+) => void;
 
 const historyInputSchema = z
 	.strictObject({
@@ -49,23 +57,6 @@ const getGuildEmojiInputSchema = z.strictObject({
 	guildId: discordIdSchema,
 	emojiId: discordIdSchema,
 });
-const sendMessageInputSchema = z.strictObject({
-	target: discordTargetSchema,
-	content: z.string().min(1).max(2_000).optional(),
-	files: z.array(sendFileSchema).min(1).optional(),
-});
-const replyMessageInputSchema = z.strictObject({
-	channelId: discordIdSchema,
-	messageId: discordIdSchema,
-	content: z.string().min(1).max(2_000).optional(),
-	files: z.array(sendFileSchema).min(1).optional(),
-});
-const reactionInputSchema = z.strictObject({
-	channelId: discordIdSchema,
-	messageId: discordIdSchema,
-	emoji: discordEmojiSchema,
-});
-const typingInputSchema = z.strictObject({ target: discordTargetSchema });
 
 export type DiscordMcpServerHandle = Readonly<{
 	url: string;
@@ -76,110 +67,111 @@ export async function startDiscordMcpServer(
 	input: Readonly<{
 		actions: DiscordActionPort;
 		onError: (error: Error) => void;
-		onEvent: (
-			event: string,
-			context: Readonly<{ actionIndex?: number; toolCallId: string }>,
-			details: Readonly<Record<string, unknown>>,
-			payload?: unknown,
-		) => void;
+		onEvent: McpToolEventHandler;
 		read: DiscordReadPort;
 	}>,
 ): Promise<DiscordMcpServerHandle> {
 	const mcp = new McpServer({ name: "luna-discord", version: "1.0.0" });
 
-	mcp.registerTool(
-		"read_message_history",
-		{ description: "Discord message historyを読む", inputSchema: historyInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "read_message_history", arguments_, extra.requestId, false, async () =>
-				result(await input.read.readMessageHistory(arguments_)),
-			),
-	);
-	mcp.registerTool(
-		"list_channels",
-		{ description: "到達可能なDiscord channelとthreadを列挙する", inputSchema: emptyInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "list_channels", arguments_, extra.requestId, false, async () =>
-				result(await input.read.listChannels()),
-			),
-	);
-	mcp.registerTool(
-		"get_user_detail",
-		{ description: "Discord userと任意のGuild member詳細を読む", inputSchema: getUserInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "get_user_detail", arguments_, extra.requestId, false, async () =>
-				result(await input.read.getUserDetail(arguments_)),
-			),
-	);
-	mcp.registerTool(
-		"list_guild_emojis",
-		{ description: "Guild emojiを列挙する", inputSchema: listGuildEmojisInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "list_guild_emojis", arguments_, extra.requestId, false, async () =>
-				result(await input.read.listGuildEmojis(arguments_.guildId)),
-			),
-	);
-	mcp.registerTool(
-		"get_guild_emoji",
-		{ description: "Guild emojiの詳細を読む", inputSchema: getGuildEmojiInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "get_guild_emoji", arguments_, extra.requestId, false, async () =>
-				result(await input.read.getGuildEmoji(arguments_)),
-			),
-	);
-
-	mcp.registerTool(
-		"send_message",
-		{ description: "Discord messageを送信する", inputSchema: sendMessageInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "send_message", arguments_, extra.requestId, true, async () =>
-				actionResult(await executeAction(input.actions, { kind: "send_message", ...arguments_ })),
-			),
-	);
-	mcp.registerTool(
-		"reply_message",
-		{ description: "Discord messageへ返信する", inputSchema: replyMessageInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "reply_message", arguments_, extra.requestId, true, async () =>
-				actionResult(await executeAction(input.actions, { kind: "reply_message", ...arguments_ })),
-			),
-	);
-	mcp.registerTool(
-		"add_reaction",
-		{ description: "Discord messageへreactionを追加する", inputSchema: reactionInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "add_reaction", arguments_, extra.requestId, true, async () =>
-				actionResult(await executeAction(input.actions, { kind: "add_reaction", ...arguments_ })),
-			),
-	);
-	mcp.registerTool(
-		"remove_reaction",
-		{
-			description: "Discord messageからLunaのreactionを削除する",
-			inputSchema: reactionInputSchema,
-		},
-		async (arguments_, extra) =>
-			await runTool(input, "remove_reaction", arguments_, extra.requestId, true, async () =>
-				actionResult(
-					await executeAction(input.actions, { kind: "remove_reaction", ...arguments_ }),
+	const register = <Input>(
+		name: string,
+		description: string,
+		inputSchema: z.ZodType<Input>,
+		isAction: boolean,
+		operation: (arguments_: Input) => Promise<unknown>,
+	): void => {
+		mcp.registerTool(name, { description, inputSchema }, async (arguments_, extra) =>
+			result(
+				await runTool(
+					input.onEvent,
+					name,
+					arguments_,
+					extra.requestId,
+					isAction,
+					async () => await operation(arguments_),
 				),
 			),
+		);
+	};
+	const executeAction = async (action: DiscordAction) =>
+		await input.actions.execute(action, typingOwnerSchema.parse(typingOwnerStorage.getStore()));
+
+	register(
+		"read_message_history",
+		"Discord message historyを読む",
+		historyInputSchema,
+		false,
+		async (arguments_) => await input.read.readMessageHistory(arguments_),
 	);
-	mcp.registerTool(
+	register(
+		"list_channels",
+		"到達可能なDiscord channelとthreadを列挙する",
+		emptyInputSchema,
+		false,
+		async () => await input.read.listChannels(),
+	);
+	register(
+		"get_user_detail",
+		"Discord userと任意のGuild member詳細を読む",
+		getUserInputSchema,
+		false,
+		async (arguments_) => await input.read.getUserDetail(arguments_),
+	);
+	register(
+		"list_guild_emojis",
+		"Guild emojiを列挙する",
+		listGuildEmojisInputSchema,
+		false,
+		async (arguments_) => await input.read.listGuildEmojis(arguments_.guildId),
+	);
+	register(
+		"get_guild_emoji",
+		"Guild emojiの詳細を読む",
+		getGuildEmojiInputSchema,
+		false,
+		async (arguments_) => await input.read.getGuildEmoji(arguments_),
+	);
+	register(
+		"send_message",
+		"Discord messageを送信する",
+		sendMessageInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "send_message", ...arguments_ }),
+	);
+	register(
+		"reply_message",
+		"Discord messageへ返信する",
+		replyMessageInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "reply_message", ...arguments_ }),
+	);
+	register(
+		"add_reaction",
+		"Discord messageへreactionを追加する",
+		reactionInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "add_reaction", ...arguments_ }),
+	);
+	register(
+		"remove_reaction",
+		"Discord messageからLunaのreactionを削除する",
+		reactionInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "remove_reaction", ...arguments_ }),
+	);
+	register(
 		"start_typing",
-		{ description: "Discord typing表示を開始する", inputSchema: typingInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "start_typing", arguments_, extra.requestId, true, async () =>
-				actionResult(await executeAction(input.actions, { kind: "start_typing", ...arguments_ })),
-			),
+		"Discord typing表示を開始する",
+		typingInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "start_typing", ...arguments_ }),
 	);
-	mcp.registerTool(
+	register(
 		"stop_typing",
-		{ description: "Discord typing表示を停止する", inputSchema: typingInputSchema },
-		async (arguments_, extra) =>
-			await runTool(input, "stop_typing", arguments_, extra.requestId, true, async () =>
-				actionResult(await executeAction(input.actions, { kind: "stop_typing", ...arguments_ })),
-			),
+		"Discord typing表示を停止する",
+		typingInputSchema,
+		true,
+		async (arguments_) => await executeAction({ kind: "stop_typing", ...arguments_ }),
 	);
 
 	const transport = new StreamableHTTPTransport();
@@ -205,14 +197,7 @@ export async function startDiscordMcpServer(
 }
 
 async function runTool<Result>(
-	input: Readonly<{
-		onEvent: (
-			event: string,
-			context: Readonly<{ actionIndex?: number; toolCallId: string }>,
-			details: Readonly<Record<string, unknown>>,
-			payload?: unknown,
-		) => void;
-	}>,
+	onEvent: McpToolEventHandler,
 	toolName: string,
 	arguments_: unknown,
 	requestId: string | number,
@@ -220,38 +205,19 @@ async function runTool<Result>(
 	operation: () => Promise<Result>,
 ): Promise<Result> {
 	const context = { ...(isAction ? { actionIndex: 0 } : {}), toolCallId: String(requestId) };
-	input.onEvent("discord.mcp_tool_started", context, { toolName }, arguments_);
+	onEvent("discord.mcp_tool_started", context, { toolName }, arguments_);
 	try {
 		const toolResult = await operation();
-		input.onEvent("discord.mcp_tool_completed", context, { toolName }, toolResult);
+		onEvent("discord.mcp_tool_completed", context, { toolName }, toolResult);
 		return toolResult;
 	} catch (error: unknown) {
-		input.onEvent("discord.mcp_tool_failed", context, { error, toolName });
+		onEvent("discord.mcp_tool_failed", context, { error, toolName });
 		throw error;
 	}
 }
 
-async function executeAction(
-	actions: DiscordActionPort,
-	actionInput: unknown,
-): Promise<DiscordActionSuccess> {
-	const action: DiscordAction = discordActionSchema.parse(actionInput);
-	const ownerId = z
-		.string()
-		.min(1)
-		.refine((value) => value.trim() === value, "Typing owner must not contain outer whitespace")
-		.parse(typingOwnerStorage.getStore());
-	return await actions.execute(action, ownerId);
-}
-
 function result(value: unknown) {
-	return { content: [{ type: "text", text: JSON.stringify(value) }] } satisfies {
-		content: Array<{ type: "text"; text: string }>;
-	};
-}
-
-function actionResult(value: DiscordActionSuccess) {
-	return result(value);
+	return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
 }
 
 async function startHttpServer(

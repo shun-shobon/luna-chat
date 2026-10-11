@@ -4,7 +4,6 @@ import { AttachmentBuilder } from "discord.js";
 import type { MessageCreateOptions } from "discord.js";
 
 import type { TypingLeaseRegistry } from "../application/typing-lease-registry";
-import { discordActionSchema } from "../domain/discord-action";
 import type {
 	DiscordAction,
 	DiscordEmoji,
@@ -48,8 +47,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 		private readonly typing: TypingLeaseRegistry,
 	) {}
 
-	async execute(actionInput: DiscordAction, ownerId: string): Promise<DiscordActionSuccess> {
-		const action = discordActionSchema.parse(actionInput);
+	async execute(action: DiscordAction, ownerId: string): Promise<DiscordActionSuccess> {
 		switch (action.kind) {
 			case "send_message": {
 				const channel = await this.resolveTarget(action.target);
