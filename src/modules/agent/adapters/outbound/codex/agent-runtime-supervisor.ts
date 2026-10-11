@@ -44,7 +44,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	#fatalError: Error | undefined;
 	#managed: ManagedAgentRuntime | undefined;
 	#runtimeClosePromise: Promise<void> | undefined;
-	#runtimeGeneration = 0;
 
 	public constructor(policy: AgentRestartPolicy, dependencies: AgentRuntimeSupervisorDependencies) {
 		this.#policy = policy;
@@ -62,7 +61,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 			return;
 		}
 		this.#closed = true;
-		this.#runtimeGeneration += 1;
 		this.#closeController.abort();
 		const managed = this.#managed;
 		this.#managed = undefined;
@@ -126,12 +124,11 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 
 	async #boot(): Promise<AgentRuntimePort> {
 		while (!this.#closed && this.#fatalError === undefined) {
-			const generation = ++this.#runtimeGeneration;
 			try {
 				const managed = await this.#startRuntime(this.#closeController.signal);
-				if (this.#isSuperseded(generation)) {
+				if (this.#closeController.signal.aborted) {
 					await managed.close();
-					throw new Error("Codex runtime startup was superseded.");
+					break;
 				}
 				let accepted = false;
 				let startupFailure: Error | undefined;
@@ -140,7 +137,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 						startupFailure = error;
 						return;
 					}
-					this.#handleRuntimeFailure(generation, managed, error);
+					this.#handleRuntimeFailure(managed, error);
 				});
 				if (startupFailure !== undefined) {
 					await managed.close();
@@ -150,7 +147,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 				accepted = true;
 				return managed.port;
 			} catch (error: unknown) {
-				if (this.#isSuperseded(generation)) {
+				if (this.#closeController.signal.aborted) {
 					break;
 				}
 				const restartDelay = this.#registerRestart(toError(error));
@@ -175,19 +172,18 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		return await this.#bootPromise;
 	}
 
-	#handleRuntimeFailure(generation: number, managed: ManagedAgentRuntime, error: Error): void {
-		if (this.#isSuperseded(generation) || this.#managed !== managed) {
+	#handleRuntimeFailure(managed: ManagedAgentRuntime, error: Error): void {
+		if (this.#managed !== managed) {
 			return;
 		}
 		this.#managed = undefined;
-		this.#runtimeGeneration += 1;
 		const closePromise = managed.close();
-		let trackedClosePromise: Promise<void>;
-		trackedClosePromise = closePromise.finally(() => {
-			if (this.#runtimeClosePromise === trackedClosePromise) this.#runtimeClosePromise = undefined;
-		});
-		this.#runtimeClosePromise = trackedClosePromise;
-		void this.#runtimeClosePromise.catch(() => undefined);
+		this.#runtimeClosePromise = closePromise;
+		void closePromise
+			.catch(() => undefined)
+			.finally(() => {
+				if (this.#runtimeClosePromise === closePromise) this.#runtimeClosePromise = undefined;
+			});
 		const restartDelay = this.#registerRestart(error);
 		if (restartDelay === undefined) {
 			return;
@@ -223,10 +219,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		this.#restartTimestamps.push(now);
 		const exponent = this.#restartTimestamps.length - 1;
 		return Math.min(this.#policy.initialDelayMs * 2 ** exponent, this.#policy.maxDelayMs);
-	}
-
-	#isSuperseded(generation: number): boolean {
-		return this.#closed || generation !== this.#runtimeGeneration;
 	}
 
 	#assertAvailable(): void {

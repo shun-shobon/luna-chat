@@ -190,6 +190,31 @@ describe("AgentRuntimeSupervisor", () => {
 		await expect(startup).rejects.toThrow("closed");
 		expect(startRuntime.mock.calls[0]?.[0].aborted).toBe(true);
 	});
+
+	it("close後に起動完了したruntimeを採用せずに閉じる", async () => {
+		const started = deferred<void>();
+		const release = deferred<void>();
+		const managedClose = vi.fn(async () => undefined);
+		const startRuntime = vi.fn(async (): Promise<ManagedAgentRuntime> => {
+			started.resolve(undefined);
+			await release.promise;
+			return { ...createManagedRuntime(), close: managedClose };
+		});
+		const supervisor = new AgentRuntimeSupervisor(
+			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
+			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+		);
+		const startup = supervisor.start();
+		await started.promise;
+
+		const closing = supervisor.close();
+		release.resolve(undefined);
+		await closing;
+
+		await expect(startup).rejects.toThrow("closed");
+		expect(managedClose).toHaveBeenCalledOnce();
+		expect(startRuntime).toHaveBeenCalledOnce();
+	});
 });
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
