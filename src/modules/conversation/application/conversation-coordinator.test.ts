@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { z } from "zod";
 
 import type {
@@ -10,6 +11,7 @@ import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import { lunaEventSchema } from "../../event/domain/luna-event";
 import type { LunaEvent } from "../../event/domain/luna-event";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 import { ConversationCoordinator } from "./conversation-coordinator";
@@ -159,23 +161,19 @@ describe("ConversationCoordinator", () => {
 	it("コマンド処理の例外をその場で記録し、sessionを閉じる", async () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime();
-		const onError = vi.fn();
 		const failure = new Error("handler failed");
-		const coordinator = createCoordinator(runtime.port, {
-			onError,
-			onEvent: (name) => {
+		const logger = {
+			log: vi.fn<LoggerPort["log"]>((_level, name) => {
 				if (name === "conversation.thread_opened") throw failure;
-			},
-		});
+			}),
+		};
+		const coordinator = createCoordinator(runtime.port, { logger });
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
 		await vi.advanceTimersByTimeAsync(100);
 		await flushPromises();
 
-		expect(onError).toHaveBeenCalledExactlyOnceWith(failure, {
-			session,
-			operation: "actor/mailbox",
-		});
+		expect(logger.log).toHaveBeenCalledWith(...operationFailed("actor/mailbox", failure));
 		expect(coordinator.hasSession(session.key)).toBe(false);
 	});
 
@@ -383,10 +381,10 @@ describe("ConversationCoordinator", () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime([Promise.resolve({ status: "completed", outputText: "{" })]);
 		const execute = vi.fn<EffectBatchPort["execute"]>(async () => []);
-		const onError = vi.fn();
+		const logger = createLogger();
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
-			onError,
+			logger,
 		});
 
 		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
@@ -394,10 +392,7 @@ describe("ConversationCoordinator", () => {
 		await flushPromises();
 
 		expect(execute).not.toHaveBeenCalled();
-		expect(onError).toHaveBeenCalledWith(expect.any(Error), {
-			session,
-			operation: "effects/parse",
-		});
+		expect(logger.log).toHaveBeenCalledWith(...operationFailed("effects/parse"));
 		expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
 	});
 
@@ -751,10 +746,10 @@ describe("ConversationCoordinator", () => {
 			Promise.resolve(completed([memoryEffect])),
 			Promise.resolve(completed([])),
 		]);
-		const onError = vi.fn();
+		const logger = createLogger();
 		const coordinator = createCoordinator(runtime.port, {
 			effects: { execute, release: vi.fn(async () => undefined) },
-			onError,
+			logger,
 			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
 		});
 
@@ -767,10 +762,7 @@ describe("ConversationCoordinator", () => {
 		effectFailure.resolve();
 		await flushPromises();
 
-		expect(onError).toHaveBeenCalledWith(expect.any(Error), {
-			session,
-			operation: "effects/execute",
-		});
+		expect(logger.log).toHaveBeenCalledWith(...operationFailed("effects/execute"));
 		expect(runtime.openThread).toHaveBeenCalledTimes(2);
 		expect(parseStartInput(runtime.startTurn.mock.calls[2]?.[1]).events[0]?.id).toBe("101");
 	});
@@ -781,9 +773,9 @@ describe("ConversationCoordinator", () => {
 		startFailureRuntime.startTurn
 			.mockResolvedValueOnce({ turnId: "turn-1", completion: Promise.resolve(completed([])) })
 			.mockRejectedValueOnce(new Error("memory start failed"));
-		const startError = vi.fn();
+		const startLogger = createLogger();
 		const startFailureCoordinator = createCoordinator(startFailureRuntime.port, {
-			onError: startError,
+			logger: startLogger,
 			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
 		});
 		startFailureCoordinator.accept({
@@ -795,19 +787,16 @@ describe("ConversationCoordinator", () => {
 		await vi.advanceTimersByTimeAsync(1_000);
 		await flushPromises();
 
-		expect(startError).toHaveBeenCalledWith(expect.any(Error), {
-			session,
-			operation: "turn/start",
-		});
+		expect(startLogger.log).toHaveBeenCalledWith(...operationFailed("turn/start"));
 		expect(startFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
 
 		const completionFailureRuntime = createRuntime([
 			Promise.resolve(completed([])),
 			Promise.resolve({ status: "failed", errorMessage: "memory failed" }),
 		]);
-		const completionError = vi.fn();
+		const completionLogger = createLogger();
 		const completionFailureCoordinator = createCoordinator(completionFailureRuntime.port, {
-			onError: completionError,
+			logger: completionLogger,
 			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
 		});
 		completionFailureCoordinator.accept({
@@ -819,10 +808,7 @@ describe("ConversationCoordinator", () => {
 		await vi.advanceTimersByTimeAsync(1_000);
 		await flushPromises();
 
-		expect(completionError).toHaveBeenCalledWith(expect.any(Error), {
-			session,
-			operation: "turn/completion",
-		});
+		expect(completionLogger.log).toHaveBeenCalledWith(...operationFailed("turn/completion"));
 		expect(completionFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
 	});
 
@@ -885,10 +871,10 @@ describe("ConversationCoordinator", () => {
 			execute: vi.fn(async () => []),
 			release,
 		};
-		const onError = vi.fn();
+		const logger = createLogger();
 		const coordinator = createCoordinator(runtime.port, {
 			effects,
-			onError,
+			logger,
 			sessionMemory: { enabled: true, now: () => new Date(2026, 6, 24) },
 		});
 
@@ -896,10 +882,7 @@ describe("ConversationCoordinator", () => {
 		await vi.advanceTimersByTimeAsync(100);
 		await flushPromises();
 
-		expect(onError).toHaveBeenCalledWith(expect.any(Error), {
-			session,
-			operation: "turn/completion",
-		});
+		expect(logger.log).toHaveBeenCalledWith(...operationFailed("turn/completion"));
 		expect(release).toHaveBeenCalledWith("owner-1");
 		expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
 		expect(runtime.startTurn).toHaveBeenCalledOnce();
@@ -1031,11 +1014,7 @@ function createCoordinator(
 		effects?: EffectBatchPort;
 		history?: ConversationHistoryPort;
 		onBatchSettled?: (eventIds: readonly string[], succeeded: boolean) => void;
-		onError?: (
-			error: unknown,
-			context: { session: ConversationSession; operation: string },
-		) => void;
-		onEvent?: (event: string) => void;
+		logger?: LoggerPort;
 		sessionMemory?: ConversationSessionMemoryOptions;
 	} = {},
 ): ConversationCoordinator {
@@ -1063,9 +1042,8 @@ function createCoordinator(
 				developerInstructions: "protocol",
 				executionOwnerId: "owner-1",
 			})),
-			onError: overrides.onError ?? vi.fn(),
+			logger: overrides.logger ?? createLogger(),
 			onBatchSettled: overrides.onBatchSettled ?? vi.fn(),
-			onEvent: overrides.onEvent ?? vi.fn(),
 		},
 		{
 			debounceMs: 100,
@@ -1075,6 +1053,19 @@ function createCoordinator(
 			sessionMemory: overrides.sessionMemory ?? { enabled: false },
 		},
 	);
+}
+
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
+}
+
+function operationFailed(operation: string, error: unknown = expect.any(Error)) {
+	return [
+		"error",
+		"conversation.operation_failed",
+		{ conversationSession: session.key },
+		{ error, operation },
+	] as const;
 }
 
 function createRuntime(completions: Promise<AgentTurnResult>[] = [Promise.resolve(completed([]))]) {

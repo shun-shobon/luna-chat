@@ -14,7 +14,6 @@ import { HeartbeatController } from "../modules/automation/application/heartbeat
 import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
 import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
-import type { AutomationLogPort } from "../modules/automation/ports/automation-log-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
 import {
@@ -194,30 +193,9 @@ export async function startLunaApplication(
 						return await discordHistory.fetchBefore(session, beforeEvent, limit);
 					},
 				},
+				logger,
 				onBatchSettled: (eventIds, succeeded) => {
 					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
-				},
-				onError: (error, context) => {
-					logger.log(
-						"error",
-						"conversation.operation_failed",
-						{ conversationSession: context.session.key },
-						{ error, operation: context.operation },
-					);
-				},
-				onEvent: (event, context, details, payload) => {
-					logger.log(
-						"info",
-						event,
-						{
-							...(context.effectIndex === undefined ? {} : { effectIndex: context.effectIndex }),
-							conversationSession: context.session.key,
-							...(context.threadId === undefined ? {} : { threadId: context.threadId }),
-							...(context.turnId === undefined ? {} : { turnId: context.turnId }),
-						},
-						details,
-						payload,
-					);
 				},
 			},
 			{
@@ -231,7 +209,6 @@ export async function startLunaApplication(
 			},
 		);
 
-		const automationLogger = createAutomationLogger(logger);
 		const clock = new SystemAutomationClock();
 		eventAgent = new EventAgentAdapter({
 			agent: supervisor,
@@ -258,7 +235,7 @@ export async function startLunaApplication(
 				clock,
 				enabled: workspace.config.heartbeat.enabled,
 				executor,
-				logger: automationLogger,
+				logger,
 				maximumIntervalMs: workspace.config.heartbeat.maxIntervalMs,
 				minimumIntervalMs: workspace.config.heartbeat.minIntervalMs,
 				random: new SystemAutomationRandom(),
@@ -275,13 +252,13 @@ export async function startLunaApplication(
 				agent: supervisor,
 				cleanupIntervalMs: workspace.config.agent.threadCleanupIntervalMs,
 				clock,
-				logger: automationLogger,
+				logger,
 				retentionMs: workspace.config.agent.threadRetentionMs,
 			}),
 			schedule: new ScheduleController({
 				clock,
 				executor,
-				logger: automationLogger,
+				logger,
 				reloadDebounceMs: SCHEDULE_RELOAD_DEBOUNCE_MS,
 				scheduleTimer,
 				watcher: new ChokidarScheduleWatcher(workspace.cronPath),
@@ -459,23 +436,6 @@ function logCleanupFailures(
 	for (const result of results) {
 		if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
 	}
-}
-
-function createAutomationLogger(logger: JsonLinesLogger): AutomationLogPort {
-	const log = (
-		level: "debug" | "error" | "info" | "warn",
-		event: string,
-		details?: Readonly<Record<string, unknown>>,
-	) => {
-		const jobId = details?.["jobId"];
-		logger.log(level, event, typeof jobId === "string" ? { jobId } : {}, details, details);
-	};
-	return {
-		debug: (event, details) => log("debug", event, details),
-		error: (event, details) => log("error", event, details),
-		info: (event, details) => log("info", event, details),
-		warn: (event, details) => log("warn", event, details),
-	};
 }
 
 function deferred<Value>(): { promise: Promise<Value>; resolve(value: Value): void } {

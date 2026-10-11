@@ -1,6 +1,6 @@
 import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import { ActiveExecutionSet } from "./active-execution-set";
 
 export class ThreadRetentionCleaner {
@@ -8,7 +8,7 @@ export class ThreadRetentionCleaner {
 	readonly #clock: AutomationClockPort;
 	readonly #cleanupIntervalMs: number;
 	readonly #executions: ActiveExecutionSet;
-	readonly #logger: AutomationLogPort;
+	readonly #logger: LoggerPort;
 	readonly #retentionMs: number;
 
 	#accepting = false;
@@ -19,7 +19,7 @@ export class ThreadRetentionCleaner {
 		cleanupIntervalMs: number;
 		clock: AutomationClockPort;
 		executions?: ActiveExecutionSet;
-		logger: AutomationLogPort;
+		logger: LoggerPort;
 		retentionMs: number;
 	}) {
 		this.#agent = input.agent;
@@ -74,7 +74,7 @@ export class ThreadRetentionCleaner {
 
 				for (const thread of page.data) {
 					if (thread.updatedAt === undefined) {
-						this.#logger.warn("automation.thread_retention.updated_at_missing", {
+						this.#logger.log("warn", "automation.thread_retention.updated_at_missing", {
 							threadId: thread.id,
 						});
 						continue;
@@ -87,17 +87,19 @@ export class ThreadRetentionCleaner {
 				await Promise.all(
 					expiredThreadIds.map(async (threadId) => {
 						await this.#agent.deleteThread(threadId).catch((error: unknown) => {
-							this.#logger.error("automation.thread_retention.delete_failed", {
-								error,
-								threadId,
-							});
+							this.#logger.log(
+								"error",
+								"automation.thread_retention.delete_failed",
+								{ threadId },
+								{ error },
+							);
 						});
 					}),
 				);
 				cursor = page.nextCursor;
 			} while (cursor !== undefined);
 		} catch (error: unknown) {
-			this.#logger.error("automation.thread_retention.list_failed", { error });
+			this.#logger.log("error", "automation.thread_retention.list_failed", {}, { error });
 		}
 	}
 }

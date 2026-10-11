@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type {
 	AutomationClockPort,
 	AutomationRandomPort,
 	AutomationTimerHandle,
 } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { ActiveExecutionSet } from "./active-execution-set";
 
@@ -16,7 +16,7 @@ export class HeartbeatController {
 	readonly #executions: ActiveExecutionSet;
 	readonly #createEventId: () => string;
 	readonly #executor: EventExecutionPort;
-	readonly #logger: AutomationLogPort;
+	readonly #logger: LoggerPort;
 	readonly #maximumIntervalMs: number;
 	readonly #minimumIntervalMs: number;
 	readonly #random: AutomationRandomPort;
@@ -31,7 +31,7 @@ export class HeartbeatController {
 		enabled: boolean;
 		executions?: ActiveExecutionSet;
 		executor: EventExecutionPort;
-		logger: AutomationLogPort;
+		logger: LoggerPort;
 		maximumIntervalMs: number;
 		minimumIntervalMs: number;
 		random: AutomationRandomPort;
@@ -87,7 +87,7 @@ export class HeartbeatController {
 		try {
 			checklist = await this.#workspace.readHeartbeatChecklist();
 		} catch (error: unknown) {
-			this.#logger.error("automation.heartbeat.checklist_read_failed", { error });
+			this.#logger.log("error", "automation.heartbeat.checklist_read_failed", {}, { error });
 			return;
 		}
 

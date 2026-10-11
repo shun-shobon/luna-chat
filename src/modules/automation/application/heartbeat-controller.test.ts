@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { HeartbeatController } from "./heartbeat-controller";
 
@@ -77,8 +77,10 @@ describe("HeartbeatController", () => {
 			expect(clock.delays).toEqual([10]);
 		});
 		expect(executor.execute).not.toHaveBeenCalled();
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.heartbeat.checklist_read_failed",
+			{},
 			expect.any(Object),
 		);
 	});
@@ -165,12 +167,8 @@ function createExecutor(
 	return { execute: vi.fn(implementation) };
 }
 
-type LoggerStub = {
-	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
-};
-
-function createLogger(): LoggerStub {
-	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
 }
 
 function createWorkspace(

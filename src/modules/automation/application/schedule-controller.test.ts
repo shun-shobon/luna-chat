@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedule";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import type {
 	AutomationScheduleTimerPort,
 	AutomationScheduleWatcherPort,
@@ -152,9 +152,11 @@ describe("ScheduleController", () => {
 		await scheduleTimer.oneShots[0]?.onTick();
 
 		expect(executor.execute).toHaveBeenCalledTimes(1);
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.schedule.one_shot_delete_failed",
-			expect.objectContaining({ jobId: "once" }),
+			{ jobId: "once" },
+			expect.any(Object),
 		);
 	});
 
@@ -201,8 +203,10 @@ describe("ScheduleController", () => {
 		await controller.reloadSchedule();
 		expect(scheduleTimer.recurring).toHaveLength(1);
 		expect(scheduleTimer.recurring[0]?.stop).not.toHaveBeenCalled();
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.schedule.reload_failed",
+			{},
 			expect.any(Object),
 		);
 
@@ -319,7 +323,7 @@ function createController(
 	input: {
 		clock?: AutomationClockPort;
 		executor?: EventExecutionPort;
-		logger?: AutomationLogPort;
+		logger?: LoggerPort;
 		scheduleTimer?: AutomationScheduleTimerPort;
 		watcher?: AutomationScheduleWatcherPort;
 		workspace?: AutomationWorkspacePort;
@@ -344,12 +348,8 @@ function createExecutor(
 	return { execute: vi.fn(implementation) };
 }
 
-type LoggerStub = {
-	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
-};
-
-function createLogger(): LoggerStub {
-	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
 }
 
 function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {

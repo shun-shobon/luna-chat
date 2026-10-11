@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import { ThreadRetentionCleaner } from "./thread-retention-cleaner";
 
 describe("ThreadRetentionCleaner", () => {
@@ -41,9 +41,13 @@ describe("ThreadRetentionCleaner", () => {
 		expect(agent.listThreads).toHaveBeenNthCalledWith(2, { archived: true, cursor: "next" });
 		expect(agent.deleteThread).toHaveBeenCalledTimes(1);
 		expect(agent.deleteThread).toHaveBeenCalledWith("expired");
-		expect(logger.warn).toHaveBeenCalledWith("automation.thread_retention.updated_at_missing", {
-			threadId: "unknown",
-		});
+		expect(logger.log).toHaveBeenCalledWith(
+			"warn",
+			"automation.thread_retention.updated_at_missing",
+			{
+				threadId: "unknown",
+			},
+		);
 		expect(clock.delays).toEqual([1_000]);
 	});
 
@@ -67,16 +71,20 @@ describe("ThreadRetentionCleaner", () => {
 			retentionMs: 100_000,
 		});
 		await cleaner.start();
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.thread_retention.delete_failed",
-			expect.objectContaining({ threadId: "expired" }),
+			{ threadId: "expired" },
+			expect.any(Object),
 		);
 
 		deleteFailure.listThreads.mockRejectedValueOnce(new Error("list failed"));
 		await clock.fireNext();
 		await vi.waitFor(() => {
-			expect(logger.error).toHaveBeenCalledWith(
+			expect(logger.log).toHaveBeenCalledWith(
+				"error",
 				"automation.thread_retention.list_failed",
+				{},
 				expect.any(Object),
 			);
 		});
@@ -177,12 +185,8 @@ function createAgent(overrides: Partial<AgentRuntimePort> = {}): {
 	};
 }
 
-type LoggerStub = {
-	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
-};
-
-function createLogger(): LoggerStub {
-	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
 }
 
 function createDeferred<Value>(): {
