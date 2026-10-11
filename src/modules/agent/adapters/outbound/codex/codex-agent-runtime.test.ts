@@ -378,6 +378,49 @@ describe("CodexAgentRuntime", () => {
 		);
 	});
 
+	it("active turnのuser input要求を拒否してturnを中断し、failedで完了させる", async () => {
+		const transport = new FakeTransport();
+		const runtime = await initializeRuntime(transport);
+		const starting = runtime.startTurn("thread-1", turnRequest("hello"));
+		transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+		const started = await starting;
+
+		transport.emit({
+			id: "server-1",
+			method: "item/tool/requestUserInput",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+
+		expect(transport.writes).toContainEqual({
+			error: { code: -32601, message: "Interactive user input is not supported by this client." },
+			id: "server-1",
+		});
+		expect(transport.writes).toContainEqual({
+			id: 3,
+			method: "turn/interrupt",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+		transport.emit({ id: 3, result: {} });
+		transport.emit({
+			method: "turn/completed",
+			params: { threadId: "thread-1", turn: { error: null, id: "turn-1", status: "interrupted" } },
+		});
+		await expect(started.completion).resolves.toMatchObject({ status: "failed" });
+	});
+
+	it("active turnがないthreadのuser input要求をprotocol fatalにする", async () => {
+		const transport = new FakeTransport();
+		const runtime = await initializeRuntime(transport);
+
+		transport.emit({
+			id: "server-1",
+			method: "item/tool/requestUserInput",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+
+		await expect(runtime.listModels()).rejects.toBeInstanceOf(JsonRpcProtocolError);
+	});
+
 	it("turn/start response と先行通知の turn id 不一致を protocol fatal にする", async () => {
 		const transport = new FakeTransport();
 		const runtime = await initializeRuntime(transport);

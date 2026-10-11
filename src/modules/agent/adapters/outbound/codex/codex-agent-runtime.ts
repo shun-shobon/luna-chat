@@ -20,7 +20,8 @@ import {
 import {
 	CodexTurnTracker,
 	isTurnScopedNotificationMethod,
-	parseTurnScopedNotificationThreadId,
+	parseThreadReference,
+	parseTurnReference,
 } from "./codex-turn-tracker";
 import type { JsonRpcConnection } from "./json-rpc-connection";
 import { JsonRpcProtocolError } from "./json-rpc-connection";
@@ -56,58 +57,48 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 	private constructor(connection: JsonRpcConnection) {
 		this.#connection = connection;
 		connection.onNotification((notification) => {
-			const notificationThreadId = parseTurnScopedNotificationThreadId(notification);
-			if (notificationThreadId !== undefined && !this.#managedThreadIds.has(notificationThreadId)) {
+			if (!isTurnScopedNotificationMethod(notification.method)) {
 				return;
 			}
-			for (const tracker of this.#trackers.values()) {
-				if (tracker.handleNotification(notification)) {
-					return;
-				}
+			const threadId = parseThreadReference(notification.params);
+			if (!this.#managedThreadIds.has(threadId)) {
+				return;
 			}
-			if (isTurnScopedNotificationMethod(notification.method)) {
+			const tracker = this.#trackers.get(threadId);
+			if (tracker === undefined) {
 				throw new JsonRpcProtocolError(
 					`Codex emitted ${notification.method} for an unknown active turn.`,
 				);
 			}
+			tracker.handleNotification(notification);
 		});
 		connection.onServerRequest((request) => {
-			for (const tracker of this.#trackers.values()) {
-				if (tracker.handleServerRequest(request)) {
-					connection.respondWithError(
-						request.id,
-						-32601,
-						"Interactive user input is not supported by this client.",
-					);
-					const params = request.params;
-					if (
-						typeof params !== "object" ||
-						params == null ||
-						!("threadId" in params) ||
-						!("turnId" in params) ||
-						typeof params.threadId !== "string" ||
-						typeof params.turnId !== "string"
-					) {
-						throw new JsonRpcProtocolError("Codex user-input request omitted its turn reference.");
-					}
-					void this.interruptTurn(params.threadId, params.turnId).catch((error: unknown) => {
-						connection.fail(
-							new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
-								cause: error,
-							}),
-						);
-					});
-					return;
-				}
+			if (request.method !== "item/tool/requestUserInput") {
+				connection.respondWithError(
+					request.id,
+					-32601,
+					`Unsupported client-side method: ${request.method}`,
+				);
+				return;
 			}
-			if (request.method === "item/tool/requestUserInput") {
+			const { threadId, turnId } = parseTurnReference(request.params);
+			const tracker = this.#trackers.get(threadId);
+			if (tracker === undefined) {
 				throw new JsonRpcProtocolError("Codex requested user input for an unknown active turn.");
 			}
+			tracker.markUserInputRequested(turnId);
 			connection.respondWithError(
 				request.id,
 				-32601,
-				`Unsupported client-side method: ${request.method}`,
+				"Interactive user input is not supported by this client.",
 			);
+			void this.interruptTurn(threadId, turnId).catch((error: unknown) => {
+				connection.fail(
+					new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
+						cause: error,
+					}),
+				);
+			});
 		});
 		connection.onFatal((error) => {
 			for (const tracker of this.#trackers.values()) {
