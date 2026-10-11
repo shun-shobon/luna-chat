@@ -27,22 +27,6 @@ describe("DiscordReadAdapter", () => {
 		});
 	});
 
-	it("複数cursorとDiscord上限外limitをAPI call前に拒否する", async () => {
-		const fetchMessages = vi.fn<DiscordReadClient["fetchMessages"]>(async () => []);
-		const client = createClient({ fetchMessages });
-		const adapter = new DiscordReadAdapter(client);
-
-		await expect(
-			adapter.readMessageHistory({
-				channelId: "300",
-				limit: 101,
-				beforeMessageId: "100",
-				afterMessageId: "101",
-			}),
-		).rejects.toThrow(ZodError);
-		expect(fetchMessages).not.toHaveBeenCalled();
-	});
-
 	it("channel、user、Guild emojiのSDK responseをstrictに検証する", async () => {
 		const adapter = new DiscordReadAdapter(createClient());
 

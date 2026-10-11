@@ -170,6 +170,24 @@ describe("Discord MCP server", () => {
 		expect(actions.execute).not.toHaveBeenCalled();
 	});
 
+	it("複数cursorとDiscord上限外limitのhistory要求をport実行前に拒否する", async () => {
+		const read = createReadPort();
+		const resource = await connect({ actions: createActionPort(), read });
+
+		const multipleCursors = await resource.client.callTool({
+			name: "read_message_history",
+			arguments: { channelId: "300", limit: 10, beforeMessageId: "100", afterMessageId: "101" },
+		});
+		const overLimit = await resource.client.callTool({
+			name: "read_message_history",
+			arguments: { channelId: "300", limit: 101 },
+		});
+
+		expect(multipleCursors.isError).toBe(true);
+		expect(overLimit.isError).toBe(true);
+		expect(read.readMessageHistory).not.toHaveBeenCalled();
+	});
+
 	it("typing owner header欠落時はwrite toolだけを失敗させる", async () => {
 		const actions = createActionPort();
 		const resource = await connect({ actions, read: createReadPort() }, null);

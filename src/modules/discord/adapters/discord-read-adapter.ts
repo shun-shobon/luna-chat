@@ -17,27 +17,6 @@ import type {
 } from "../ports/discord-read-port";
 import { toDiscordMessage } from "./discord-message-adapter";
 
-const readHistoryInputSchema = z
-	.strictObject({
-		channelId: discordIdSchema,
-		limit: z.number().int().min(1).max(100),
-		beforeMessageId: discordIdSchema.optional(),
-		afterMessageId: discordIdSchema.optional(),
-		aroundMessageId: discordIdSchema.optional(),
-	})
-	.refine(
-		(input) =>
-			[input.beforeMessageId, input.afterMessageId, input.aroundMessageId].filter(
-				(value) => value !== undefined,
-			).length <= 1,
-		{ message: "Only one Discord history cursor may be specified" },
-	);
-
-const getUserInputSchema = z.strictObject({
-	userId: discordIdSchema,
-	guildId: discordIdSchema.optional(),
-});
-
 export interface DiscordReadClient {
 	fetchMessages(input: ReadMessageHistoryInput): Promise<readonly unknown[]>;
 	listChannels(): Promise<unknown>;
@@ -50,8 +29,7 @@ export class DiscordReadAdapter implements DiscordReadPort {
 	constructor(private readonly client: DiscordReadClient) {}
 
 	async readMessageHistory(input: ReadMessageHistoryInput) {
-		const validated = readHistoryInputSchema.parse(input);
-		const messages = await this.client.fetchMessages(validated);
+		const messages = await this.client.fetchMessages(input);
 		return messages
 			.map((message) => toDiscordMessage(message))
 			.toSorted((left, right) =>
@@ -71,25 +49,20 @@ export class DiscordReadAdapter implements DiscordReadPort {
 	async getUserDetail(
 		input: Readonly<{ userId: string; guildId?: string | undefined }>,
 	): Promise<DiscordUserDetail> {
-		const validated = getUserInputSchema.parse(input);
-		return discordUserDetailSchema.parse(await this.client.fetchUser(validated));
+		return discordUserDetailSchema.parse(await this.client.fetchUser(input));
 	}
 
 	async listGuildEmojis(guildId: string): Promise<readonly DiscordGuildEmoji[]> {
-		const validatedGuildId = discordIdSchema.parse(guildId);
 		const emojis = z
 			.array(discordGuildEmojiSchema)
-			.parse(await this.client.fetchGuildEmojis(validatedGuildId));
+			.parse(await this.client.fetchGuildEmojis(guildId));
 		return emojis.toSorted((left, right) => left.name.localeCompare(right.name));
 	}
 
 	async getGuildEmoji(
 		input: Readonly<{ guildId: string; emojiId: string }>,
 	): Promise<DiscordGuildEmoji> {
-		const validated = z
-			.strictObject({ guildId: discordIdSchema, emojiId: discordIdSchema })
-			.parse(input);
-		return discordGuildEmojiSchema.parse(await this.client.fetchGuildEmoji(validated));
+		return discordGuildEmojiSchema.parse(await this.client.fetchGuildEmoji(input));
 	}
 }
 
