@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
 
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
@@ -22,10 +21,9 @@ export function buildBaseInstructions(input: {
 }
 
 export function buildCodexThreadConfig(mcpServers: JsonObject, workspaceDir: string): JsonObject {
-	const resolvedWorkspaceDir = resolve(workspaceDir);
 	return {
 		mcp_servers: mcpServers,
-		projects: { [resolvedWorkspaceDir]: { trust_level: "trusted" } },
+		projects: { [workspaceDir]: { trust_level: "trusted" } },
 	};
 }
 

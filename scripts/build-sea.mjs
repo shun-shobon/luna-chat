@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { copyFile, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { inject } from "postject";
@@ -9,12 +9,19 @@ const execFileAsync = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
 const distDir = join(root, "dist");
 const outputPath = join(distDir, "luna-chat");
+const templatesDir = join(root, "templates");
 const temporaryDir = await mkdtemp(join(distDir, ".sea-build-"));
 
 try {
 	const configPath = join(temporaryDir, "sea-config.json");
 	const blobPath = join(temporaryDir, "sea-prep.blob");
 	const binaryPath = join(temporaryDir, "luna-chat");
+	const assets = {};
+	for (const entry of await readdir(templatesDir, { recursive: true, withFileTypes: true })) {
+		if (entry.isFile() !== true) continue;
+		const path = join(entry.parentPath, entry.name);
+		assets[`templates/${relative(templatesDir, path)}`] = path;
+	}
 
 	await writeFile(
 		configPath,
@@ -23,27 +30,7 @@ try {
 			output: blobPath,
 			useCodeCache: false,
 			useSnapshot: false,
-			assets: {
-				"templates/LUNA.md": join(root, "templates", "LUNA.md"),
-				"templates/MEMORY.md": join(root, "templates", "MEMORY.md"),
-				"templates/HEARTBEAT.md": join(root, "templates", "HEARTBEAT.md"),
-				"templates/.agents/skills/cron/SKILL.md": join(
-					root,
-					"templates",
-					".agents",
-					"skills",
-					"cron",
-					"SKILL.md",
-				),
-				"templates/.agents/skills/heartbeat/SKILL.md": join(
-					root,
-					"templates",
-					".agents",
-					"skills",
-					"heartbeat",
-					"SKILL.md",
-				),
-			},
+			assets,
 		}),
 	);
 	await execFileAsync(process.execPath, ["--experimental-sea-config", configPath]);
