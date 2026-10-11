@@ -916,6 +916,28 @@ describe("ConversationCoordinator", () => {
 		expect(onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], true);
 	});
 
+	it("opening中のconnection loss後に開けたthreadをarchiveする", async () => {
+		vi.useFakeTimers();
+		const opened = deferred<string>();
+		const runtime = createRuntime();
+		runtime.openThread
+			.mockImplementationOnce(async () => await opened.promise)
+			.mockResolvedValue("thread-2");
+		const coordinator = createCoordinator(runtime.port);
+
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+		coordinator.connectionLost(new Error("connection lost"));
+		await flushPromises();
+		opened.resolve("thread-1");
+		await flushPromises();
+
+		expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
+		expect(runtime.startTurn).toHaveBeenCalledOnce();
+		expect(runtime.startTurn.mock.calls[0]?.[0]).toBe("thread-2");
+	});
+
 	it("orphaned effectsをsettle後、受理済みqueueを新threadで処理する", async () => {
 		vi.useFakeTimers();
 		const execution = deferred<readonly EffectResult[]>();

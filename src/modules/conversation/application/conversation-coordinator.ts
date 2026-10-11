@@ -246,6 +246,10 @@ class ConversationActor {
 	}
 
 	#handle(command: Command): void {
+		if (command.kind === "thread_ready" && !this.#matches(command.token, "opening")) {
+			this.#archiveStaleThread(command.threadId);
+			return;
+		}
 		if (this.#phase === "closed") {
 			if (command.kind === "shutdown" || command.kind === "abort") command.resolve();
 			return;
@@ -306,7 +310,6 @@ class ConversationActor {
 				if (this.#phase === "idle") this.#preserveSessionMemory();
 				return;
 			case "thread_ready":
-				if (!this.#matches(command.token, "opening")) return;
 				this.#openingBatch = [];
 				this.#thread = {
 					id: command.threadId,
@@ -701,6 +704,12 @@ class ConversationActor {
 			() => this.#post({ kind: "archive_finished", token }),
 			(error: unknown) => this.#post({ kind: "archive_finished", token, error }),
 		);
+	}
+
+	#archiveStaleThread(threadId: string): void {
+		void this.dependencies.agent.archiveThread(threadId).catch((error: unknown) => {
+			this.#logError(error, "thread/archive");
+		});
 	}
 
 	#handleConnectionLost(error: unknown): void {
