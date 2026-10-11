@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
 
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
 import type { DailyMemory } from "../modules/workspace/application/workspace-instructions";
+import type { JsonObject } from "../shared/json";
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 
 export function buildBaseInstructions(input: {
@@ -20,24 +20,20 @@ export function buildBaseInstructions(input: {
 		.join("\n\n");
 }
 
-export function buildCodexThreadConfig(
-	mcpServers: Readonly<Record<string, unknown>>,
-	workspaceDir: string,
-): Record<string, unknown> {
-	const resolvedWorkspaceDir = resolve(workspaceDir);
+export function buildCodexThreadConfig(mcpServers: JsonObject, workspaceDir: string): JsonObject {
 	return {
 		mcp_servers: mcpServers,
-		projects: { [resolvedWorkspaceDir]: { trust_level: "trusted" } },
+		projects: { [workspaceDir]: { trust_level: "trusted" } },
 	};
 }
 
 export function createThreadInputFactory(input: {
-	buildMcpServers: (executionOwnerId: string) => Readonly<Record<string, unknown>>;
+	buildMcpServers: (executionOwnerId: string) => JsonObject;
 	capabilityInstructions: readonly string[];
 	now: () => Date;
 	workspaceDir: string;
 	createExecutionOwnerId?: (() => string) | undefined;
-}): () => Promise<AgentThreadInput> {
+}): () => Promise<AgentThreadInput & { executionOwnerId: string }> {
 	const createExecutionOwnerId = input.createExecutionOwnerId ?? randomUUID;
 	return async () => {
 		const executionOwnerId = createExecutionOwnerId();

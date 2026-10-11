@@ -4,87 +4,85 @@ import { AttachmentBuilder } from "discord.js";
 import type { MessageCreateOptions } from "discord.js";
 
 import type { TypingLeaseRegistry } from "../application/typing-lease-registry";
-import { discordActionSchema } from "../domain/discord-action";
 import type {
 	DiscordAction,
 	DiscordEmoji,
 	DiscordTarget,
 	SendFile,
 } from "../domain/discord-action";
-import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
-import type { ResolvedSendFile, SendFileResolverPort } from "../ports/send-file-resolver-port";
 
-export type DiscordActionClient = Readonly<{
-	channels: Readonly<{ fetch(channelId: string): Promise<unknown> }>;
-	users: Readonly<{ createDM(userId: string): Promise<unknown> }>;
-}>;
+type SentMessage = Readonly<{ id: string }>;
 
-type SendableChannel = Readonly<{
+export type SendableChannel = Readonly<{
 	id: string;
-	send(options: MessageCreateOptions): Promise<unknown>;
+	send(options: MessageCreateOptions): Promise<SentMessage>;
 	sendTyping(): Promise<void>;
 }>;
 
-type MessageChannel = SendableChannel &
-	Readonly<{
-		messages: Readonly<{ fetch(messageId: string): Promise<unknown> }>;
-	}>;
-
-type DiscordMessageHandle = Readonly<{
-	reply(options: MessageCreateOptions): Promise<unknown>;
+type MessageHandle = Readonly<{
+	reply(options: MessageCreateOptions): Promise<SentMessage>;
 	react(emoji: string): Promise<unknown>;
-	reactions: Readonly<{ resolve(emoji: string): unknown }>;
+	reactions: Readonly<{
+		resolve(emoji: string): Readonly<{ users: Readonly<{ remove(): Promise<unknown> }> }> | null;
+	}>;
 }>;
 
-type DiscordReactionHandle = Readonly<{
-	users: Readonly<{ remove(): Promise<unknown> }>;
+export type MessageChannel = Readonly<{
+	id: string;
+	messages: Readonly<{ fetch(messageId: string): Promise<MessageHandle> }>;
+}>;
+
+type FetchedChannel = Readonly<{
+	isSendable(): this is SendableChannel;
+	isTextBased(): this is MessageChannel;
+}>;
+
+export type DiscordActionClient = Readonly<{
+	channels: Readonly<{ fetch(channelId: string): Promise<FetchedChannel | null> }>;
+	users: Readonly<{ createDM(userId: string): Promise<SendableChannel> }>;
 }>;
 
 export class DiscordActionAdapter implements DiscordActionPort {
 	constructor(
 		private readonly client: DiscordActionClient,
-		private readonly files: SendFileResolverPort,
+		private readonly resolveFile: (file: SendFile) => Promise<SendFile>,
 		private readonly typing: TypingLeaseRegistry,
 	) {}
 
-	async execute(actionInput: DiscordAction, ownerId: string): Promise<DiscordActionSuccess> {
-		const action = discordActionSchema.parse(actionInput);
+	async execute(action: DiscordAction, ownerId: string): Promise<DiscordActionSuccess> {
 		switch (action.kind) {
 			case "send_message": {
-				const channel = await this.resolveTarget(action.target);
-				const sent = await channel.send(await this.messageOptions(action.content, action.files));
-				return success(action.kind, { channelId: channel.id, messageId: messageId(sent) });
+				const channel = await this.#resolveTarget(action.target);
+				const sent = await channel.send(await this.#messageOptions(action.content, action.files));
+				return success(action.kind, { channelId: channel.id, messageId: sent.id });
 			}
 			case "reply_message": {
-				const channel = await this.fetchMessageChannel(action.channelId);
-				const message = await this.fetchMessage(channel, action.messageId);
-				const sent = await message.reply(await this.messageOptions(action.content, action.files));
-				return success(action.kind, { channelId: channel.id, messageId: messageId(sent) });
+				const message = await this.#fetchMessage(action.channelId, action.messageId);
+				const sent = await message.reply(await this.#messageOptions(action.content, action.files));
+				return success(action.kind, { channelId: action.channelId, messageId: sent.id });
 			}
 			case "add_reaction": {
-				const channel = await this.fetchMessageChannel(action.channelId);
-				const message = await this.fetchMessage(channel, action.messageId);
+				const message = await this.#fetchMessage(action.channelId, action.messageId);
 				await message.react(emojiIdentifier(action.emoji));
-				return success(action.kind, { channelId: channel.id, messageId: action.messageId });
+				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
 			}
 			case "remove_reaction": {
-				const channel = await this.fetchMessageChannel(action.channelId);
-				const message = await this.fetchMessage(channel, action.messageId);
+				const message = await this.#fetchMessage(action.channelId, action.messageId);
 				const reaction = message.reactions.resolve(emojiIdentifier(action.emoji));
-				if (!isReactionHandle(reaction)) throw new Error("Luna reaction was not found");
+				if (reaction == null) throw new Error("Luna reaction was not found");
 				await reaction.users.remove();
-				return success(action.kind, { channelId: channel.id, messageId: action.messageId });
+				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
 			}
 			case "start_typing": {
-				const channel = await this.resolveTarget(action.target);
+				const channel = await this.#resolveTarget(action.target);
 				await this.typing.start({ ownerId, channelId: channel.id }, async () => {
 					await channel.sendTyping();
 				});
 				return success(action.kind, { channelId: channel.id });
 			}
 			case "stop_typing": {
-				const channel = await this.resolveTarget(action.target);
+				const channel = await this.#resolveTarget(action.target);
 				this.typing.stop({ ownerId, channelId: channel.id });
 				return success(action.kind, { channelId: channel.id });
 			}
@@ -100,46 +98,31 @@ export class DiscordActionAdapter implements DiscordActionPort {
 		return Promise.resolve();
 	}
 
-	async #resolveChannelId(target: DiscordTarget): Promise<string> {
-		if (target.kind === "channel") return target.channelId;
-		const channel = await this.client.users.createDM(target.userId);
-		return discordIdSchema.parse(readProperty(channel, "id"));
-	}
-
-	async resolveTarget(target: DiscordTarget): Promise<SendableChannel> {
-		const channelId = await this.#resolveChannelId(target);
-		const channel = await this.client.channels.fetch(channelId);
-		if (!isSendableChannel(channel))
-			throw new Error(`Discord channel is not sendable: ${channelId}`);
-		return channel;
-	}
-
-	async fetchMessageChannel(channelId: string): Promise<MessageChannel> {
-		const channel = await this.client.channels.fetch(channelId);
-		if (!isMessageChannel(channel)) {
-			throw new Error(`Discord channel does not contain messages: ${channelId}`);
+	async #resolveTarget(target: DiscordTarget): Promise<SendableChannel> {
+		if (target.kind === "dm_user") return await this.client.users.createDM(target.userId);
+		const channel = await this.client.channels.fetch(target.channelId);
+		if (channel == null || !channel.isSendable()) {
+			throw new Error(`Discord channel is not sendable: ${target.channelId}`);
 		}
 		return channel;
 	}
 
-	async fetchMessage(
-		channel: MessageChannel,
-		messageIdValue: string,
-	): Promise<DiscordMessageHandle> {
-		const message = await channel.messages.fetch(messageIdValue);
-		if (!isMessageHandle(message))
-			throw new Error(`Discord message is unavailable: ${messageIdValue}`);
-		return message;
+	async #fetchMessage(channelId: string, messageId: string): Promise<MessageHandle> {
+		const channel = await this.client.channels.fetch(channelId);
+		if (channel == null || !channel.isTextBased()) {
+			throw new Error(`Discord channel does not contain messages: ${channelId}`);
+		}
+		return await channel.messages.fetch(messageId);
 	}
 
-	async messageOptions(
+	async #messageOptions(
 		content: string | undefined,
 		files: readonly SendFile[] | undefined,
 	): Promise<MessageCreateOptions> {
 		const resolvedFiles =
 			files === undefined
 				? undefined
-				: await Promise.all(files.map(async (file) => await this.files.resolve(file)));
+				: await Promise.all(files.map(async (file) => await this.resolveFile(file)));
 		return {
 			...(content === undefined ? {} : { content }),
 			...(resolvedFiles === undefined ? {} : { files: resolvedFiles.map(toAttachmentBuilder) }),
@@ -147,7 +130,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 	}
 }
 
-function toAttachmentBuilder(file: ResolvedSendFile): AttachmentBuilder {
+function toAttachmentBuilder(file: SendFile): AttachmentBuilder {
 	return new AttachmentBuilder(file.path, {
 		name: file.fileName ?? basename(file.path),
 		...(file.description === undefined ? {} : { description: file.description }),
@@ -163,47 +146,4 @@ function success(
 	detail: Readonly<Record<string, string>>,
 ): DiscordActionSuccess {
 	return { actionKind, detail };
-}
-
-function messageId(message: unknown): string {
-	return discordIdSchema.parse(readProperty(message, "id"));
-}
-
-function readProperty(value: unknown, property: string): unknown {
-	return typeof value === "object" && value != null ? Reflect.get(value, property) : undefined;
-}
-
-function hasMethod(value: unknown, method: string): boolean {
-	return (
-		typeof value === "object" && value != null && typeof Reflect.get(value, method) === "function"
-	);
-}
-
-function isSendableChannel(value: unknown): value is SendableChannel {
-	return (
-		discordIdSchema.safeParse(readProperty(value, "id")).success &&
-		hasMethod(value, "send") &&
-		hasMethod(value, "sendTyping")
-	);
-}
-
-function isMessageChannel(value: unknown): value is MessageChannel {
-	const messages = readProperty(value, "messages");
-	return isSendableChannel(value) && hasMethod(messages, "fetch");
-}
-
-function isMessageHandle(value: unknown): value is DiscordMessageHandle {
-	return (
-		hasMethod(value, "reply") &&
-		hasMethod(value, "react") &&
-		typeof readProperty(value, "reactions") === "object" &&
-		hasMethod(readProperty(value, "reactions"), "resolve")
-	);
-}
-
-function isReactionHandle(value: unknown): value is DiscordReactionHandle {
-	return (
-		typeof readProperty(value, "users") === "object" &&
-		hasMethod(readProperty(value, "users"), "remove")
-	);
 }

@@ -1,41 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CodexLineTransport } from "./codex-stdio-process";
+import type { CodexLineHandlers, CodexLineTransport } from "./codex-stdio-process";
 import { JsonRpcConnection, JsonRpcProtocolError, RpcTimeoutError } from "./json-rpc-connection";
 
 class FakeTransport implements CodexLineTransport {
 	readonly writes: object[] = [];
-	readonly #failureHandlers = new Set<(error: Error) => void>();
-	readonly #lineHandlers = new Set<(line: string) => void>();
+	#handlers: CodexLineHandlers | undefined;
 
 	public constructor(
 		private readonly closeOperation: () => Promise<void> = async () => undefined,
 	) {}
 
+	public readonly open = (handlers: CodexLineHandlers): CodexLineTransport => {
+		this.#handlers = handlers;
+		return this;
+	};
+
 	public async close(): Promise<void> {
 		await this.closeOperation();
 	}
 
-	public emitFailure(error: Error): void {
-		for (const handler of this.#failureHandlers) {
-			handler(error);
-		}
-	}
-
 	public emitLine(line: string): void {
-		for (const handler of this.#lineHandlers) {
-			handler(line);
-		}
-	}
-
-	public onFailure(handler: (error: Error) => void): () => void {
-		this.#failureHandlers.add(handler);
-		return () => this.#failureHandlers.delete(handler);
-	}
-
-	public onLine(handler: (line: string) => void): () => void {
-		this.#lineHandlers.add(handler);
-		return () => this.#lineHandlers.delete(handler);
+		this.#handlers?.onLine(line);
 	}
 
 	public writeLine(value: object): void {
@@ -43,13 +29,23 @@ class FakeTransport implements CodexLineTransport {
 	}
 }
 
+function createConnection(
+	transport: FakeTransport,
+	onFatal: (error: Error) => void = () => undefined,
+): JsonRpcConnection {
+	return new JsonRpcConnection(transport.open, 1_000, {
+		onFatal,
+		onNotification: () => undefined,
+		onServerRequest: () => undefined,
+	});
+}
+
 describe("JsonRpcConnection", () => {
 	it("RPC timeout を接続全体の fatal とし、全 pending request を失敗させる", async () => {
 		vi.useFakeTimers();
 		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 1_000);
 		const fatalErrors: Error[] = [];
-		connection.onFatal((error) => fatalErrors.push(error));
+		const connection = createConnection(transport, (error) => fatalErrors.push(error));
 
 		const first = connection.request("thread/archive", { threadId: "thread-1" });
 		const second = connection.request("thread/delete", { threadId: "thread-2" });
@@ -65,7 +61,7 @@ describe("JsonRpcConnection", () => {
 
 	it("不正 JSON を protocol fatal として扱う", async () => {
 		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 1_000);
+		const connection = createConnection(transport);
 		const request = connection.request("thread/archive", { threadId: "thread-1" });
 
 		transport.emitLine("not-json");
@@ -75,9 +71,8 @@ describe("JsonRpcConnection", () => {
 
 	it("未知の response id を protocol fatal として扱う", () => {
 		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 1_000);
 		const errors: Error[] = [];
-		connection.onFatal((error) => errors.push(error));
+		createConnection(transport, (error) => errors.push(error));
 
 		transport.emitLine('{"id":999,"result":{}}');
 
@@ -86,7 +81,7 @@ describe("JsonRpcConnection", () => {
 
 	it("不正な error response でも対応 request を必ず失敗させる", async () => {
 		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 1_000);
+		const connection = createConnection(transport);
 		const request = connection.request("thread/archive", { threadId: "thread-1" });
 
 		transport.emitLine('{"id":1,"error":{"code":"invalid","message":"failed"}}');
@@ -96,7 +91,7 @@ describe("JsonRpcConnection", () => {
 
 	it("response の result を対応する request だけに返す", async () => {
 		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 1_000);
+		const connection = createConnection(transport);
 		const request = connection.request("thread/archive", { threadId: "thread-1" });
 
 		transport.emitLine('{"id":1,"result":{}}');
@@ -107,23 +102,10 @@ describe("JsonRpcConnection", () => {
 		]);
 	});
 
-	it("Node上限を超えるRPC timeoutを1msへ短縮しない", async () => {
-		vi.useFakeTimers();
-		const transport = new FakeTransport();
-		const connection = new JsonRpcConnection(transport, 2_147_483_648);
-		const request = connection.request("thread/archive", { threadId: "thread-1" });
-
-		await vi.advanceTimersByTimeAsync(1);
-		transport.emitLine('{"id":1,"result":{}}');
-
-		await expect(request).resolves.toEqual({});
-		vi.useRealTimers();
-	});
-
 	it("並行closeが同じtransport cleanup完了を待つ", async () => {
 		const closing = deferred<void>();
 		const closeOperation = vi.fn(async () => await closing.promise);
-		const connection = new JsonRpcConnection(new FakeTransport(closeOperation), 1_000);
+		const connection = createConnection(new FakeTransport(closeOperation));
 
 		const first = connection.close();
 		const second = connection.close();

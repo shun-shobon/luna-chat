@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { parseModelList, parseThreadList } from "./codex-response";
 
 describe("Codex response parser", () => {
-	it("model/listの表示可能モデルと対応強度を検証する", () => {
+	it("model/listのモデルと対応強度を検証する", () => {
 		expect(
 			parseModelList({
 				data: [
@@ -13,12 +13,6 @@ describe("Codex response parser", () => {
 						displayName: "GPT-6 Sol",
 						hidden: false,
 						supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
-					},
-					{
-						model: "hidden",
-						displayName: "Hidden",
-						hidden: true,
-						supportedReasoningEfforts: [],
 					},
 				],
 				nextCursor: null,
@@ -34,14 +28,11 @@ describe("Codex response parser", () => {
 
 	it("updatedAtがないthread summaryを受理する", () => {
 		expect(
-			parseThreadList(
-				{
-					backwardsCursor: null,
-					data: [{ id: "thread-1" }],
-					nextCursor: null,
-				},
-				true,
-			),
-		).toEqual({ data: [{ archived: true, id: "thread-1" }] });
+			parseThreadList({
+				backwardsCursor: null,
+				data: [{ id: "thread-1" }],
+				nextCursor: null,
+			}),
+		).toEqual({ data: [{ id: "thread-1" }] });
 	});
 });

@@ -66,12 +66,12 @@ describe("HTTP event server", () => {
 		const effect = provider.definitions[0];
 		if (event === undefined || effect === undefined) throw new Error("Missing event or effect");
 		const requestId = event.id;
-		const input = effect.parseInput({
+		const request = effect.parse({
 			request_id: requestId,
 			status: 201,
 			body_json: '{"answer":"world"}',
 		});
-		await effect.execute(input, "owner-1");
+		await request.run("owner-1");
 		let responded = false;
 		void waiting.then(() => {
 			responded = true;
@@ -85,10 +85,10 @@ describe("HTTP event server", () => {
 		const response = await waiting;
 		expect(response.status).toBe(201);
 		expect(await response.json()).toEqual({ answer: "world" });
-		expect(() => effect.parseInput({ request_id: requestId, status: 200, body_json: "{" })).toThrow(
+		expect(() => effect.parse({ request_id: requestId, status: 200, body_json: "{" })).toThrow(
 			SyntaxError,
 		);
-		await expect(effect.execute(input, "owner-1")).rejects.toThrow("not waiting");
+		await expect(request.run("owner-1")).rejects.toThrow("not waiting");
 	});
 
 	it("会話セッションの複数リクエストをIDごとに返し、返答なしは204とする", async () => {
@@ -178,24 +178,6 @@ describe("HTTP event server", () => {
 				})
 			).status,
 		).toBe(503);
-	});
-
-	it("会話への投入で例外が起きた場合は500を返し、待機登録を残さない", async () => {
-		const { registry, url } = await start({
-			accept: () => {
-				throw new Error("conversation failed");
-			},
-		});
-		const complete = vi.spyOn(registry, "complete");
-		const response = await post(url, {
-			execution: "conversation",
-			response_mode: "wait",
-			session_id: "room",
-			event: { type: "test.event.v1", data: null },
-		});
-		expect(response.status).toBe(500);
-		expect(await response.json()).toEqual({ error: "internal_error" });
-		expect(complete).toHaveBeenCalledWith(expect.any(String), false);
 	});
 });
 

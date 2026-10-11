@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { formatLocalDate } from "../../../shared/local-date";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { AutomationClockPort } from "../ports/automation-clock-port";
 import type {
@@ -39,23 +40,22 @@ export class MemoryMaintenanceController {
 	}
 
 	start(): void {
-		if (this.#accepting || !this.#enabled) {
+		if (!this.#enabled) {
 			return;
 		}
 		this.#accepting = true;
-		this.#timer = this.#scheduleTimer.scheduleRecurring(this.#cron, async () => {
+		this.#timer = this.#scheduleTimer.schedule(this.#cron, async () => {
 			if (!this.#accepting) {
 				return;
 			}
 			const now = this.#clock.now();
-			const date = formatLocalDate(now);
 			const execution = this.#executor
 				.execute({
 					id: this.#createEventId(),
 					type: "system.memory_maintenance.fired.v1",
 					source: "system/memory-maintenance",
 					occurredAt: now.toISOString(),
-					data: { date },
+					data: { date: formatLocalDate(now) },
 				})
 				.then(() => undefined);
 			this.#executions.track(execution);
@@ -72,16 +72,4 @@ export class MemoryMaintenanceController {
 	async drain(): Promise<void> {
 		await this.#executions.drain();
 	}
-}
-
-function formatLocalDate(date: Date): string {
-	if (Number.isNaN(date.getTime())) throw new Error("Memory maintenance date must be valid");
-	const localYear = date.getFullYear();
-	if (localYear < 0 || localYear > 9_999) {
-		throw new Error("Memory maintenance date year must fit YYYY");
-	}
-	const year = localYear.toString().padStart(4, "0");
-	const month = (date.getMonth() + 1).toString().padStart(2, "0");
-	const day = date.getDate().toString().padStart(2, "0");
-	return `${year}-${month}-${day}`;
 }

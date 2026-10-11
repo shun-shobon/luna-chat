@@ -3,8 +3,7 @@ export interface ScheduledAutomationJob {
 }
 
 export interface AutomationScheduleTimerPort {
-	scheduleOneShot(at: Date, onTick: () => Promise<void>): ScheduledAutomationJob;
-	scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob;
+	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob;
 }
 
 export interface AutomationScheduleWatcherPort {

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { HeartbeatController } from "./heartbeat-controller";
 
@@ -15,16 +15,13 @@ describe("HeartbeatController", () => {
 			await completion.promise;
 			return { status: "completed" };
 		});
-		const random = { integerInclusive: vi.fn(() => 15) };
 		const controller = new HeartbeatController({
 			clock,
 			createEventId: () => "heartbeat-event-1",
 			enabled: true,
 			executor,
 			logger: createLogger(),
-			maximumIntervalMs: 30,
-			minimumIntervalMs: 10,
-			random,
+			nextDelayMs: () => 15,
 			workspace: createWorkspace(),
 		});
 
@@ -47,7 +44,6 @@ describe("HeartbeatController", () => {
 		await vi.waitFor(() => {
 			expect(clock.delays).toEqual([15]);
 		});
-		expect(random.integerInclusive).toHaveBeenCalledWith(10, 30);
 	});
 
 	it("checklist読込失敗を記録し、次回を予約する", async () => {
@@ -65,9 +61,7 @@ describe("HeartbeatController", () => {
 			enabled: true,
 			executor,
 			logger,
-			maximumIntervalMs: 10,
-			minimumIntervalMs: 10,
-			random: { integerInclusive: () => 10 },
+			nextDelayMs: () => 10,
 			workspace,
 		});
 
@@ -77,8 +71,10 @@ describe("HeartbeatController", () => {
 			expect(clock.delays).toEqual([10]);
 		});
 		expect(executor.execute).not.toHaveBeenCalled();
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.heartbeat.checklist_read_failed",
+			{},
 			expect.any(Object),
 		);
 	});
@@ -91,9 +87,7 @@ describe("HeartbeatController", () => {
 			enabled: false,
 			executor: createExecutor(),
 			logger: createLogger(),
-			maximumIntervalMs: 10,
-			minimumIntervalMs: 10,
-			random: { integerInclusive: () => 10 },
+			nextDelayMs: () => 10,
 			workspace: createWorkspace(),
 		}).start();
 		expect(disabledClock.delays).toEqual([]);
@@ -109,9 +103,7 @@ describe("HeartbeatController", () => {
 				return { status: "completed" };
 			}),
 			logger: createLogger(),
-			maximumIntervalMs: 10,
-			minimumIntervalMs: 10,
-			random: { integerInclusive: () => 10 },
+			nextDelayMs: () => 10,
 			workspace: createWorkspace(),
 		});
 		controller.start();
@@ -165,12 +157,8 @@ function createExecutor(
 	return { execute: vi.fn(implementation) };
 }
 
-type LoggerStub = {
-	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
-};
-
-function createLogger(): LoggerStub {
-	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
 }
 
 function createWorkspace(
@@ -179,7 +167,7 @@ function createWorkspace(
 	return {
 		readHeartbeatChecklist: vi.fn(async () => "checklist"),
 		readSchedule: vi.fn(async () => ({ jobs: [] })),
-		removeScheduleJob: vi.fn(() => true),
+		removeScheduleJob: vi.fn(),
 		...overrides,
 	};
 }

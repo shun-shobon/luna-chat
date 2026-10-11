@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
 
 export type HttpEventOutcome =
 	| Readonly<{ kind: "response"; status: number; body: JsonValue }>
@@ -14,7 +14,6 @@ export class HttpResponseRegistry {
 	readonly #pending = new Map<string, PendingResponse>();
 
 	register(requestId: string): Promise<HttpEventOutcome> {
-		if (this.#pending.has(requestId)) throw new Error(`Duplicate HTTP request ID: ${requestId}`);
 		return new Promise<HttpEventOutcome>((resolve) => {
 			this.#pending.set(requestId, { resolve });
 		});

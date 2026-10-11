@@ -54,7 +54,6 @@ export async function initializeWorkspace(
 
 	try {
 		await Promise.all([
-			mkdir(lunaHomeDir, { recursive: true }),
 			mkdir(workspaceDir, { recursive: true }),
 			mkdir(codexHomeDir, { recursive: true }),
 		]);
@@ -97,7 +96,7 @@ function resolveLunaHome(rawLunaHome: string | undefined): string {
 		return resolve(homedir(), ".luna");
 	}
 
-	if (rawLunaHome.length === 0 || !isAbsolute(rawLunaHome)) {
+	if (!isAbsolute(rawLunaHome)) {
 		throw new WorkspaceInitializationError("LUNA_HOME must be an absolute path.");
 	}
 

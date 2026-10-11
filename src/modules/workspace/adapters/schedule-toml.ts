@@ -83,35 +83,24 @@ export function parseWorkspaceSchedule(source: string): WorkspaceSchedule {
 }
 
 export function serializeWorkspaceSchedule(schedule: WorkspaceSchedule): string {
-	const result = WorkspaceScheduleSchema.safeParse(schedule);
-	if (!result.success) {
-		throw new WorkspaceScheduleError(
-			`workspace schedule cannot be serialized: ${z.prettifyError(result.error)}`,
-		);
-	}
-
-	return stringify({ jobs: result.data.jobs });
+	return stringify({ jobs: schedule.jobs });
 }
 
-export async function createWorkspaceScheduleFile(
-	schedulePath: string,
-	schedule: WorkspaceSchedule = EMPTY_WORKSPACE_SCHEDULE,
-): Promise<void> {
-	await writeFileAsync(schedulePath, serializeWorkspaceSchedule(schedule), { flag: "wx" });
+export async function createWorkspaceScheduleFile(schedulePath: string): Promise<void> {
+	await writeFileAsync(schedulePath, serializeWorkspaceSchedule(EMPTY_WORKSPACE_SCHEDULE), {
+		flag: "wx",
+	});
 }
 
-export function writeWorkspaceSchedule(schedulePath: string, schedule: WorkspaceSchedule): void {
+function writeWorkspaceSchedule(schedulePath: string, schedule: WorkspaceSchedule): void {
 	try {
 		writeFileSync(schedulePath, serializeWorkspaceSchedule(schedule), "utf8");
 	} catch (error: unknown) {
-		if (error instanceof WorkspaceScheduleError) {
-			throw error;
-		}
 		throw new WorkspaceScheduleError("cron.toml could not be written.", { cause: error });
 	}
 }
 
-export function removeWorkspaceScheduleJob(schedulePath: string, jobId: string): boolean {
+export function removeWorkspaceScheduleJob(schedulePath: string, jobId: string): void {
 	let source: string;
 	try {
 		source = readFileSync(schedulePath, "utf8");
@@ -122,9 +111,8 @@ export function removeWorkspaceScheduleJob(schedulePath: string, jobId: string):
 	const schedule = parseWorkspaceSchedule(source);
 	const jobs = schedule.jobs.filter((job) => job.id !== jobId);
 	if (jobs.length === schedule.jobs.length) {
-		return false;
+		return;
 	}
 
 	writeWorkspaceSchedule(schedulePath, { jobs });
-	return true;
 }

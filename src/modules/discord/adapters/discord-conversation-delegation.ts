@@ -5,7 +5,6 @@ import {
 	createDiscordConversationSession,
 	createDiscordDelegatedEvent,
 } from "../domain/discord-event";
-import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordConversationDelegationPort } from "../ports/discord-conversation-delegation-port";
 import type { DiscordActionClient } from "./discord-action-adapter";
 import { toConversationScope } from "./discord-message-adapter";
@@ -42,17 +41,10 @@ export class DiscordConversationDelegation implements DiscordConversationDelegat
 	async #resolveScope(target: DiscordTarget): Promise<ConversationScope> {
 		if (target.kind === "dm_user") {
 			const channel = await this.client.users.createDM(target.userId);
-			const channelId = discordIdSchema.parse(
-				typeof channel === "object" && channel != null ? Reflect.get(channel, "id") : undefined,
-			);
-			return { kind: "dm", channelId, userId: target.userId };
+			return { kind: "dm", channelId: channel.id, userId: target.userId };
 		}
 		const channel = await this.client.channels.fetch(target.channelId);
-		if (
-			typeof channel !== "object" ||
-			channel == null ||
-			typeof Reflect.get(channel, "send") !== "function"
-		) {
+		if (channel == null || !channel.isSendable()) {
 			throw new Error(`Discord channel cannot hold a conversation: ${target.channelId}`);
 		}
 		return toConversationScope(channel);

@@ -21,7 +21,6 @@ const modelListResponseSchema = z.looseObject({
 	data: z.array(
 		z.looseObject({
 			displayName: nonEmptyStringSchema,
-			hidden: z.boolean(),
 			model: nonEmptyStringSchema,
 			supportedReasoningEfforts: z.array(z.looseObject({ reasoningEffort: nonEmptyStringSchema })),
 		}),
@@ -65,27 +64,24 @@ export function parseModelList(value: unknown): {
 } {
 	const response = modelListResponseSchema.parse(value);
 	return {
-		data: response.data
-			.filter((model) => !model.hidden)
-			.map((model) => ({
-				displayName: model.displayName,
-				model: model.model,
-				supportedReasoningEfforts: model.supportedReasoningEfforts.map(
-					(option) => option.reasoningEffort,
-				),
-			})),
+		data: response.data.map((model) => ({
+			displayName: model.displayName,
+			model: model.model,
+			supportedReasoningEfforts: model.supportedReasoningEfforts.map(
+				(option) => option.reasoningEffort,
+			),
+		})),
 		nextCursor: response.nextCursor,
 	};
 }
 
-export function parseThreadList(
-	value: unknown,
-	archived: boolean,
-): { data: AgentThreadSummary[]; nextCursor?: string } {
+export function parseThreadList(value: unknown): {
+	data: AgentThreadSummary[];
+	nextCursor?: string;
+} {
 	const response = threadListResponseSchema.parse(value);
 	return {
 		data: response.data.map((thread) => ({
-			archived,
 			id: thread.id,
 			...(thread.updatedAt === undefined ? {} : { updatedAt: thread.updatedAt }),
 		})),

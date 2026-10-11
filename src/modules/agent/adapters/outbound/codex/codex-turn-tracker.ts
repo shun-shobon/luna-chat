@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { ServerNotification } from "../../../../../generated/codex/ServerNotification";
 import type { AgentTurnResult, ThreadId, TurnId } from "../../../ports/outbound/agent-runtime-port";
-import type { JsonRpcNotification, JsonRpcServerRequest } from "./json-rpc-connection";
+import type { JsonRpcNotification } from "./json-rpc-connection";
 
 const threadReferenceSchema = z.looseObject({
 	threadId: z.string().min(1),
@@ -79,13 +79,12 @@ export function isTurnScopedNotificationMethod(method: string): boolean {
 	);
 }
 
-export function parseTurnScopedNotificationThreadId(
-	notification: JsonRpcNotification,
-): ThreadId | undefined {
-	if (!isTurnScopedNotificationMethod(notification.method)) {
-		return undefined;
-	}
-	return threadReferenceSchema.parse(notification.params).threadId;
+export function parseThreadReference(params: unknown): ThreadId {
+	return threadReferenceSchema.parse(params).threadId;
+}
+
+export function parseTurnReference(params: unknown): { threadId: ThreadId; turnId: TurnId } {
+	return turnReferenceSchema.parse(params);
 }
 
 export class TurnCorrelationError extends Error {
@@ -102,34 +101,24 @@ export class TurnNotSteerableError extends Error {
 	}
 }
 
-class UnexpectedUserInputRequestError extends Error {
-	public constructor() {
-		super("Codex requested interactive user input during an unattended turn.");
-		this.name = "UnexpectedUserInputRequestError";
-	}
-}
+const USER_INPUT_REQUESTED_MESSAGE =
+	"Codex requested interactive user input during an unattended turn.";
 
 export class CodexTurnTracker {
-	readonly #completion: Promise<AgentTurnResult>;
+	readonly #completion = Promise.withResolvers<AgentTurnResult>();
 	readonly #threadId: ThreadId;
 	#finalMessage: string | undefined;
 	#forcedFailureMessage: string | undefined;
 	#lastErrorMessage: string | undefined;
-	#rejectCompletion: (error: Error) => void = () => undefined;
-	#resolveCompletion: (result: AgentTurnResult) => void = () => undefined;
 	#settled = false;
 	#turnId: TurnId | undefined;
 
 	public constructor(threadId: ThreadId) {
 		this.#threadId = threadId;
-		this.#completion = new Promise((resolve, reject) => {
-			this.#resolveCompletion = resolve;
-			this.#rejectCompletion = reject;
-		});
 	}
 
 	public get completion(): Promise<AgentTurnResult> {
-		return this.#completion;
+		return this.#completion.promise;
 	}
 
 	public assertSteerable(turnId: TurnId): void {
@@ -140,9 +129,6 @@ export class CodexTurnTracker {
 	}
 
 	public bindTurnId(turnId: TurnId): void {
-		if (turnId.length === 0) {
-			throw new TurnCorrelationError("turn/start returned an empty turn id.");
-		}
 		if (this.#turnId !== undefined && this.#turnId !== turnId) {
 			throw new TurnCorrelationError("turn/start response and notification turn ids differ.");
 		}
@@ -154,24 +140,18 @@ export class CodexTurnTracker {
 			return;
 		}
 		this.#settled = true;
-		this.#rejectCompletion(error);
+		this.#completion.reject(error);
 	}
 
-	public handleNotification(notification: JsonRpcNotification): boolean {
+	/** Handles a turn-scoped notification already routed to this tracker's thread. */
+	public handleNotification(notification: JsonRpcNotification): void {
 		switch (notification.method) {
 			case "turn/started": {
-				const params = turnStartedSchema.parse(notification.params);
-				if (params.threadId !== this.#threadId) {
-					return false;
-				}
-				this.#correlateTurn(params.turn.id);
-				return true;
+				this.#correlateTurn(turnStartedSchema.parse(notification.params).turn.id);
+				return;
 			}
 			case "item/completed": {
 				const params = itemCompletedSchema.parse(notification.params);
-				if (params.threadId !== this.#threadId) {
-					return false;
-				}
 				this.#correlateTurn(params.turnId);
 				if (params.item.type === "agentMessage") {
 					const item = agentMessageSchema.parse(params.item);
@@ -179,52 +159,29 @@ export class CodexTurnTracker {
 						this.#finalMessage = item.text;
 					}
 				}
-				return true;
+				return;
 			}
 			case "error": {
 				const params = errorNotificationSchema.parse(notification.params);
-				if (params.threadId !== this.#threadId) {
-					return false;
-				}
 				this.#correlateTurn(params.turnId);
 				this.#lastErrorMessage = params.error.message;
-				return true;
+				return;
 			}
 			case "turn/completed": {
 				const params = turnCompletedSchema.parse(notification.params);
-				if (params.threadId !== this.#threadId) {
-					return false;
-				}
 				this.#correlateTurn(params.turn.id);
 				this.#complete(params.turn.status, params.turn.error?.message);
-				return true;
+				return;
 			}
 			default: {
-				if (TURN_REFERENCE_NOTIFICATION_METHODS.has(notification.method)) {
-					const params = turnReferenceSchema.parse(notification.params);
-					if (params.threadId !== this.#threadId) {
-						return false;
-					}
-					this.#correlateTurn(params.turnId);
-					return true;
-				}
-				return false;
+				this.#correlateTurn(turnReferenceSchema.parse(notification.params).turnId);
 			}
 		}
 	}
 
-	public handleServerRequest(request: JsonRpcServerRequest): boolean {
-		if (request.method !== "item/tool/requestUserInput") {
-			return false;
-		}
-		const params = turnReferenceSchema.parse(request.params);
-		if (params.threadId !== this.#threadId) {
-			return false;
-		}
-		this.#correlateTurn(params.turnId);
-		const error = new UnexpectedUserInputRequestError();
-		this.#forcedFailureMessage = error.message;
-		return true;
+	public markUserInputRequested(turnId: TurnId): void {
+		this.#correlateTurn(turnId);
+		this.#forcedFailureMessage = USER_INPUT_REQUESTED_MESSAGE;
 	}
 
 	#complete(status: "completed" | "failed" | "inProgress" | "interrupted", error?: string): void {
@@ -236,7 +193,7 @@ export class CodexTurnTracker {
 		}
 		this.#settled = true;
 		if (this.#forcedFailureMessage !== undefined) {
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				errorMessage: this.#forcedFailureMessage,
 				status: "failed",
 			});
@@ -244,20 +201,20 @@ export class CodexTurnTracker {
 		}
 		if (status !== "completed") {
 			const errorMessage = error ?? this.#lastErrorMessage;
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				...(errorMessage === undefined ? {} : { errorMessage }),
 				status,
 			});
 			return;
 		}
 		if (this.#finalMessage === undefined) {
-			this.#resolveCompletion({
+			this.#completion.resolve({
 				errorMessage: "Completed turn did not emit a final agent message.",
 				status: "failed",
 			});
 			return;
 		}
-		this.#resolveCompletion({ outputText: this.#finalMessage, status: "completed" });
+		this.#completion.resolve({ outputText: this.#finalMessage, status: "completed" });
 	}
 
 	#correlateTurn(turnId: string): void {

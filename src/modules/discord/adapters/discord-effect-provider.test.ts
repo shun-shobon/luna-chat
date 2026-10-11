@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
+import type { JsonValue } from "../../../shared/json";
 import { createEffectOutputContract } from "../../effect/application/effect-output-contract";
 import { createEffectRegistry } from "../../effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../../effect/application/execute-effect-batch";
 import type { EffectDefinition } from "../../effect/ports/effect-provider";
-import type { JsonValue } from "../../event/domain/luna-event";
 import type { DiscordActionPort } from "../ports/discord-action-port";
 import {
 	createDiscordDelegationEffectProvider,
@@ -101,9 +101,9 @@ describe("Discord Effect Provider", () => {
 		);
 		for (const testCase of cases) {
 			const definition = findDefinition(provider.definitions, testCase.type);
-			const parsed = definition.parseInput(testCase.input);
-			expect(definition.describeTarget(parsed)).toEqual(testCase.target);
-			await expect(definition.execute(parsed, "owner-1")).resolves.toMatchObject({
+			const request = definition.parse(testCase.input);
+			expect(request.target).toEqual(testCase.target);
+			await expect(request.run("owner-1")).resolves.toMatchObject({
 				actionKind: expect.any(String),
 			});
 		}
@@ -119,21 +119,21 @@ describe("Discord Effect Provider", () => {
 		const reaction = findDefinition(provider.definitions, "discord.add_reaction");
 
 		expect(() =>
-			send.parseInput({
+			send.parse({
 				target: { kind: "channel", channelId: "200" },
 				content: null,
 				files: null,
 			}),
 		).toThrow("A message requires content or files");
 		expect(() =>
-			send.parseInput({
+			send.parse({
 				target: { kind: "channel", channelId: "200" },
 				content: null,
 				files: [{ path: "relative.txt", fileName: null, description: null }],
 			}),
 		).toThrow("File path must be absolute");
 		expect(() =>
-			reaction.parseInput({
+			reaction.parse({
 				channelId: "200",
 				messageId: "300",
 				emoji: { kind: "custom", id: "400", name: null },
@@ -149,12 +149,6 @@ describe("Discord Effect Provider", () => {
 		await provider.release("owner-1");
 
 		expect(actions.releaseTyping).toHaveBeenCalledWith("owner-1");
-	});
-
-	it("Codex Structured Outputsで使用可能なSchemaを提供する", () => {
-		const provider = createDiscordEffectProvider(createActionPort());
-
-		expect(() => createEffectOutputContract(createEffectRegistry([provider]))).not.toThrow();
 	});
 
 	it("Agent outputを正規化してBatchからDiscord Actionまで実行する", async () => {
@@ -183,7 +177,7 @@ describe("Discord Effect Provider", () => {
 				type: "discord.send_message",
 				target: { kind: "channel", channelId: "200" },
 				success: true,
-				value: { actionKind: "send_message" },
+				value: { actionKind: "send_message", detail: {} },
 			},
 		]);
 		expect(actions.execute).toHaveBeenCalledWith(
@@ -209,17 +203,17 @@ describe("Discord delegation Effect Provider", () => {
 		const delegate = vi.fn(async () => scope);
 		const registry = createEffectRegistry([createDiscordDelegationEffectProvider({ delegate })]);
 		const definition = registry.getDefinition("discord.open_conversation");
-		const input = definition.parseInput({
+		const request = definition.parse({
 			target: { kind: "dm_user", userId: "100" },
 			brief: "帰宅したので夕飯の相談をしたい",
 		});
 
-		await expect(definition.execute(input, "owner-1")).resolves.toEqual({ scope });
+		await expect(request.run("owner-1")).resolves.toEqual({ scope });
 		expect(delegate).toHaveBeenCalledWith(
 			{ kind: "dm_user", userId: "100" },
 			"帰宅したので夕飯の相談をしたい",
 		);
-		expect(definition.describeTarget(input)).toEqual({ kind: "dm_user", userId: "100" });
+		expect(request.target).toEqual({ kind: "dm_user", userId: "100" });
 	});
 
 	it("空のbriefと未知fieldを拒否する", () => {
@@ -228,10 +222,10 @@ describe("Discord delegation Effect Provider", () => {
 		]).getDefinition("discord.open_conversation");
 
 		expect(() =>
-			definition.parseInput({ target: { kind: "channel", channelId: "200" }, brief: "" }),
+			definition.parse({ target: { kind: "channel", channelId: "200" }, brief: "" }),
 		).toThrow(ZodError);
 		expect(() =>
-			definition.parseInput({
+			definition.parse({
 				target: { kind: "channel", channelId: "200" },
 				brief: "brief",
 				content: "hello",
@@ -242,7 +236,10 @@ describe("Discord delegation Effect Provider", () => {
 
 function createActionPort() {
 	return {
-		execute: vi.fn<DiscordActionPort["execute"]>(async (action) => ({ actionKind: action.kind })),
+		execute: vi.fn<DiscordActionPort["execute"]>(async (action) => ({
+			actionKind: action.kind,
+			detail: {},
+		})),
 		releaseTyping: vi.fn<DiscordActionPort["releaseTyping"]>(async () => undefined),
 	};
 }

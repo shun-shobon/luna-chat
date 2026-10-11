@@ -14,7 +14,7 @@ export type DiscordGatewayTyping = Readonly<{
 }>;
 
 export interface DiscordGatewayPort {
-	onMessage(event: DiscordGatewayMessage): Promise<void> | void;
-	onTyping(event: DiscordGatewayTyping): Promise<void> | void;
+	onMessage(event: DiscordGatewayMessage): void;
+	onTyping(event: DiscordGatewayTyping): void;
 	onError(error: unknown, event: "messageCreate" | "typingStart"): void;
 }

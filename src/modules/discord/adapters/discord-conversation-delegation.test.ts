@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AcceptedConversationEvent } from "../../conversation/domain/conversation-session";
 import { createDiscordDelegatedEvent } from "../domain/discord-event";
-import type { DiscordActionClient } from "./discord-action-adapter";
+import type {
+	DiscordActionClient,
+	MessageChannel,
+	SendableChannel,
+} from "./discord-action-adapter";
 import { DiscordConversationDelegation } from "./discord-conversation-delegation";
 
 const occurredAt = new Date("2026-07-23T00:00:00.000Z");
@@ -12,7 +16,7 @@ describe("DiscordConversationDelegation", () => {
 	it("Guild channelを解決し、そのsessionへ委譲Eventを渡す", async () => {
 		const accept = vi.fn((_input: AcceptedConversationEvent) => true);
 		const delegation = createDelegation(
-			client({ id: "200", type: ChannelType.GuildText, guildId: "300", send: vi.fn() }),
+			client({ id: "200", type: ChannelType.GuildText, guildId: "300" }),
 			{ accept },
 		);
 
@@ -42,7 +46,6 @@ describe("DiscordConversationDelegation", () => {
 				type: ChannelType.PublicThread,
 				guildId: "300",
 				parentId: "200",
-				send: vi.fn(),
 			}),
 		);
 
@@ -57,7 +60,7 @@ describe("DiscordConversationDelegation", () => {
 	});
 
 	it("DM userはDM channelを開いてDM scopeへ解決する", async () => {
-		const createDM = vi.fn(async () => ({ id: "500" }));
+		const createDM = vi.fn(async (_userId: string) => dmChannel("500"));
 		const delegation = createDelegation({
 			channels: { fetch: vi.fn() },
 			users: { createDM },
@@ -72,7 +75,7 @@ describe("DiscordConversationDelegation", () => {
 	it("allow_dm無効時のDM委譲を受理前に拒否する", async () => {
 		const accept = vi.fn(() => true);
 		const delegation = createDelegation(
-			{ channels: { fetch: vi.fn() }, users: { createDM: vi.fn(async () => ({ id: "500" })) } },
+			{ channels: { fetch: vi.fn() }, users: { createDM: vi.fn(async () => dmChannel("500")) } },
 			{ accept, allowDm: false },
 		);
 
@@ -84,7 +87,7 @@ describe("DiscordConversationDelegation", () => {
 
 	it("送信できないchannelを拒否する", async () => {
 		const delegation = createDelegation(
-			client({ id: "200", type: ChannelType.GuildCategory, guildId: "300" }),
+			client({ id: "200", type: ChannelType.GuildCategory, guildId: "300" }, false),
 		);
 
 		await expect(
@@ -94,7 +97,7 @@ describe("DiscordConversationDelegation", () => {
 
 	it("会話intake停止中の委譲を失敗にする", async () => {
 		const delegation = createDelegation(
-			client({ id: "200", type: ChannelType.GuildText, guildId: "300", send: vi.fn() }),
+			client({ id: "200", type: ChannelType.GuildText, guildId: "300" }),
 			{ accept: () => false },
 		);
 
@@ -119,8 +122,25 @@ describe("DiscordConversationDelegation", () => {
 	});
 });
 
-function client(channel: Record<string, unknown>): DiscordActionClient {
-	return { channels: { fetch: vi.fn(async () => channel) }, users: { createDM: vi.fn() } };
+function client(channel: Record<string, unknown>, sendable = true): DiscordActionClient {
+	return {
+		channels: {
+			fetch: vi.fn(async () => ({
+				...channel,
+				isSendable(): this is SendableChannel {
+					return sendable;
+				},
+				isTextBased(): this is MessageChannel {
+					return sendable;
+				},
+			})),
+		},
+		users: { createDM: vi.fn() },
+	};
+}
+
+function dmChannel(id: string): SendableChannel {
+	return { id, send: vi.fn(), sendTyping: vi.fn() };
 }
 
 function createDelegation(

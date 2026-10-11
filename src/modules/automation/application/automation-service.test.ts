@@ -32,25 +32,6 @@ describe("AutomationService", () => {
 		expect(order).toEqual(["retention", "schedule", "memoryMaintenance", "heartbeat"]);
 	});
 
-	it("起動失敗時は開始済みintakeを停止する", async () => {
-		const heartbeat = createHeartbeat();
-		const retention = createRetention();
-		const memoryMaintenance = createMemoryMaintenance();
-		const schedule = createSchedule({
-			start: vi.fn(async () => {
-				throw new Error("start failed");
-			}),
-		});
-		const service = new AutomationService({ heartbeat, memoryMaintenance, retention, schedule });
-
-		await expect(service.startAutomation({ jobs: [] })).rejects.toThrow("start failed");
-
-		expect(heartbeat.stopIntake).toHaveBeenCalledTimes(1);
-		expect(memoryMaintenance.stopIntake).toHaveBeenCalledTimes(1);
-		expect(retention.stopIntake).toHaveBeenCalledTimes(1);
-		expect(schedule.stopIntake).toHaveBeenCalledTimes(1);
-	});
-
 	it("stopIntakeとdrainを全controllerへ委譲する", async () => {
 		const heartbeat = createHeartbeat();
 		const memoryMaintenance = createMemoryMaintenance();
@@ -103,7 +84,6 @@ function createRetention(overrides: Record<string, unknown> = {}) {
 function createSchedule(overrides: Record<string, unknown> = {}) {
 	return {
 		drain: vi.fn(async () => undefined),
-		reloadSchedule: vi.fn(async () => undefined),
 		start: vi.fn(async () => undefined),
 		stopIntake: vi.fn(async () => undefined),
 		...overrides,

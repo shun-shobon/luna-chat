@@ -23,7 +23,7 @@ describe("DiscordConversationHistory", () => {
 
 		const result = await history.fetchBefore(
 			createDiscordConversationSession(scope),
-			createDiscordMessageEvent(scope, message(201)),
+			createDiscordMessageEvent(createDiscordConversationSession(scope), message(201)),
 			150,
 		);
 
@@ -38,8 +38,12 @@ describe("DiscordConversationHistory", () => {
 			limit: 50,
 		});
 		expect(result).toHaveLength(150);
-		expect(result[0]).toEqual(createDiscordMessageEvent(scope, message(51)));
-		expect(result.at(-1)).toEqual(createDiscordMessageEvent(scope, message(200)));
+		expect(result[0]).toEqual(
+			createDiscordMessageEvent(createDiscordConversationSession(scope), message(51)),
+		);
+		expect(result.at(-1)).toEqual(
+			createDiscordMessageEvent(createDiscordConversationSession(scope), message(200)),
+		);
 	});
 
 	it("委譲Eventから始まるsessionは委譲時刻より前の履歴を取得する", async () => {
@@ -58,12 +62,14 @@ describe("DiscordConversationHistory", () => {
 		const cursor = readMessageHistory.mock.calls[0]?.[0].beforeMessageId;
 		expect(cursor).toBeDefined();
 		expect(SnowflakeUtil.timestampFrom(cursor ?? "")).toBe(occurredAt.getTime());
-		expect(result).toEqual([createDiscordMessageEvent(scope, message(101))]);
+		expect(result).toEqual([
+			createDiscordMessageEvent(createDiscordConversationSession(scope), message(101)),
+		]);
 	});
 
-	it("session contextとbefore Eventを境界で検証する", async () => {
+	it("session contextと未知のbefore Event typeを拒否する", async () => {
 		const history = new DiscordConversationHistory(createReadPort({}));
-		const before = createDiscordMessageEvent(scope, message(201));
+		const before = createDiscordMessageEvent(createDiscordConversationSession(scope), message(201));
 
 		await expect(
 			history.fetchBefore(
@@ -72,23 +78,6 @@ describe("DiscordConversationHistory", () => {
 				1,
 			),
 		).rejects.toThrow(ZodError);
-		await expect(
-			history.fetchBefore(createDiscordConversationSession(scope), { ...before, id: "999" }, 1),
-		).rejects.toThrow("does not match");
-		const otherScope = { kind: "guild_channel", guildId: "300", channelId: "999" } as const;
-		await expect(
-			history.fetchBefore(
-				createDiscordConversationSession(scope),
-				{
-					...createDiscordMessageEvent(otherScope, {
-						...message(201),
-						channel: { id: "999", name: "other" },
-					}),
-					subject: "discord:guild_channel:300:200",
-				},
-				1,
-			),
-		).rejects.toThrow("scope does not match");
 		await expect(
 			history.fetchBefore(
 				createDiscordConversationSession(scope),

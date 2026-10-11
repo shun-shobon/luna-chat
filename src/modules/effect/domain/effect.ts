@@ -1,8 +1,10 @@
-import type { JsonValue } from "../../event/domain/luna-event";
+import type { JsonValue } from "../../../shared/json";
 
 export type EffectRequest = Readonly<{
 	type: string;
 	input: JsonValue;
+	target: JsonValue;
+	run(ownerId: string): Promise<JsonValue>;
 }>;
 
 export type EffectOutput = Readonly<{

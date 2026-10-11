@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import * as effectOutputModule from "../modules/effect/application/effect-output-contract";
 import * as effectRegistryModule from "../modules/effect/application/effect-registry";
-import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
+import { EventExecutor } from "../modules/event/application/event-executor";
 import { startLunaApplication } from "./composition-root";
 import * as threadInputModule from "./thread-input-factory";
 
@@ -16,11 +16,11 @@ const fakes = vi.hoisted(() => {
 		on: vi.fn(),
 		user: { id: "100" },
 	};
-	const managedClose = vi.fn(async () => undefined);
+	const runtimeClose = vi.fn(async () => undefined);
 	const mcpClose = vi.fn(async () => undefined);
 	const recurringCrons: string[] = [];
 	const runtime = { failure: undefined as ((error: Error) => void) | undefined };
-	return { client, managedClose, mcpClose, recurringCrons, runtime };
+	return { client, runtimeClose, mcpClose, recurringCrons, runtime };
 });
 
 vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
@@ -55,33 +55,31 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 	})),
 }));
 
-vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => ({
-	startManagedCodexRuntime: vi.fn(async () => ({
-		close: fakes.managedClose,
-		onFailure: vi.fn((handler: (error: Error) => void) => {
-			fakes.runtime.failure = handler;
-			return () => undefined;
+vi.mock("../modules/agent/adapters/outbound/codex/codex-agent-runtime", () => ({
+	CodexAgentRuntime: {
+		start: vi.fn(async (options: { onFailure: (error: Error) => void }) => {
+			fakes.runtime.failure = options.onFailure;
+			return {
+				archiveThread: vi.fn(async () => undefined),
+				close: fakes.runtimeClose,
+				deleteThread: vi.fn(async () => undefined),
+				listArchivedThreads: vi.fn(async () => ({ data: [] })),
+				listModels: vi.fn(async () => []),
+				openThread: vi.fn(async () => "thread-1"),
+				startTurn: vi.fn(),
+				steerTurn: vi.fn(async () => undefined),
+			};
 		}),
-		port: {
-			archiveThread: vi.fn(async () => undefined),
-			deleteThread: vi.fn(async () => undefined),
-			interruptTurn: vi.fn(async () => undefined),
-			listThreads: vi.fn(async () => ({ data: [] })),
-			listModels: vi.fn(async () => []),
-			openThread: vi.fn(async () => "thread-1"),
-			startTurn: vi.fn(),
-			steerTurn: vi.fn(async () => undefined),
-		},
-	})),
+	},
 }));
 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
 	...(await importOriginal()),
 	createDiscordGatewayClient: vi.fn(() => fakes.client),
-	createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
-vi.mock("../modules/discord/adapters/discord-mcp-server", () => ({
+vi.mock("../modules/discord/adapters/discord-mcp-server", async (importOriginal) => ({
+	...(await importOriginal()),
 	startDiscordMcpServer: vi.fn(async () => ({
 		close: fakes.mcpClose,
 		url: "http://127.0.0.1:12345/mcp",
@@ -101,12 +99,9 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
 
 vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	CronScheduleTimer: class {
-		scheduleOneShot(): never {
-			throw new Error("Unexpected one-shot schedule");
-		}
-
-		scheduleRecurring(cron: string): { stop(): void } {
-			fakes.recurringCrons.push(cron);
+		schedule(cronTime: Date | string): { stop(): void } {
+			if (typeof cronTime !== "string") throw new Error("Unexpected one-shot schedule");
+			fakes.recurringCrons.push(cronTime);
 			return { stop() {} };
 		}
 	},
@@ -156,7 +151,7 @@ describe("composition root integration", () => {
 		expect(fakes.client.off).toHaveBeenCalledTimes(3);
 		expect(fakes.mcpClose).toHaveBeenCalledOnce();
 		expect(fakes.client.destroy).toHaveBeenCalledOnce();
-		expect(fakes.managedClose).toHaveBeenCalledOnce();
+		expect(fakes.runtimeClose).toHaveBeenCalledOnce();
 	});
 
 	it("startup中のabortでDiscord接続とchild runtimeを閉じる", async () => {
@@ -179,7 +174,7 @@ describe("composition root integration", () => {
 
 		await expect(starting).rejects.toThrow("Discord login aborted");
 		expect(fakes.client.destroy).toHaveBeenCalled();
-		expect(fakes.managedClose).toHaveBeenCalled();
+		expect(fakes.runtimeClose).toHaveBeenCalled();
 		expect(fakes.mcpClose).toHaveBeenCalled();
 	});
 
@@ -191,7 +186,7 @@ describe("composition root integration", () => {
 			LUNA_HOME: "/tmp/luna-test",
 		};
 		const conversationLost = vi.spyOn(ConversationCoordinator.prototype, "connectionLost");
-		const eventLost = vi.spyOn(EventAgentAdapter.prototype, "connectionLost");
+		const eventLost = vi.spyOn(EventExecutor.prototype, "connectionLost");
 		const abort = vi.spyOn(ConversationCoordinator.prototype, "abort");
 		const drain = vi.spyOn(ConversationCoordinator.prototype, "drain");
 		const application = await startLunaApplication();

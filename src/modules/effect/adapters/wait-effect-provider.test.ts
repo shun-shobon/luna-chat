@@ -38,31 +38,12 @@ describe("system.wait", () => {
 
 	it("不正な秒数を実行前に拒否する", () => {
 		const contract = createEffectOutputContract(createEffectRegistry([createWaitEffectProvider()]));
-		for (const duration_seconds of [0, -1, 1.5, "60"]) {
+		for (const duration_seconds of [0, -1, 1.5, "60", 2_147_484]) {
 			expect(() =>
 				contract.parse(
 					JSON.stringify({ effects: [{ type: "system.wait", input: { duration_seconds } }] }),
 				),
 			).toThrow("Invalid effect system.wait:");
 		}
-	});
-
-	it("Node.jsの単一timer上限を超える待機を分割する", async () => {
-		vi.useFakeTimers();
-		const registry = createEffectRegistry([createWaitEffectProvider()]);
-		const executor = createEffectBatchExecutor(registry, { log: vi.fn() });
-		const execution = executor.execute(
-			[{ type: "system.wait", input: { duration_seconds: 2_147_484 } }],
-			"owner-1",
-		);
-		let settled = false;
-		void execution.then(() => {
-			settled = true;
-		});
-
-		await vi.advanceTimersByTimeAsync(2_147_483_000);
-		expect(settled).toBe(false);
-		await vi.advanceTimersByTimeAsync(1_000);
-		await expect(execution).resolves.toMatchObject([{ success: true }]);
 	});
 });

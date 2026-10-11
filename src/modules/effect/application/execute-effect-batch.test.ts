@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { ZodError, z } from "zod";
+import { z } from "zod";
 
 import type { LoggerPort } from "../../observability/ports/logger-port";
+import type { EffectRequest } from "../domain/effect";
 import type { EffectProvider } from "../ports/effect-provider";
 import { defineEffect } from "../ports/effect-provider";
 import { createEffectRegistry } from "./effect-registry";
+import type { EffectRegistry } from "./effect-registry";
 import { createEffectBatchExecutor } from "./execute-effect-batch";
 
 const inputSchema = z.strictObject({ target: z.string(), value: z.string() });
@@ -22,7 +24,6 @@ describe("createEffectBatchExecutor", () => {
 				defineEffect({
 					type: "fake.record",
 					agentInputSchema: inputSchema,
-					inputSchema,
 					parseInput: (input) => input,
 					execute: async (input) => {
 						started.push(input.value);
@@ -36,12 +37,13 @@ describe("createEffectBatchExecutor", () => {
 			],
 			release: async () => {},
 		};
-		const executor = createEffectBatchExecutor(createEffectRegistry([provider]), createLogger());
+		const registry = createEffectRegistry([provider]);
+		const executor = createEffectBatchExecutor(registry, createLogger());
 
 		const execution = executor.execute(
 			[
-				{ type: "fake.record", input: { target: "first-target", value: "first" } },
-				{ type: "fake.record", input: { target: "second-target", value: "second" } },
+				parseRecord(registry, { target: "first-target", value: "first" }),
+				parseRecord(registry, { target: "second-target", value: "second" }),
 			],
 			"owner-1",
 		);
@@ -73,7 +75,6 @@ describe("createEffectBatchExecutor", () => {
 				defineEffect({
 					type: "fake.record",
 					agentInputSchema: inputSchema,
-					inputSchema,
 					parseInput: (input) => input,
 					execute: async (input) => {
 						if (input.value === "failure") throw new Error("record failed");
@@ -84,13 +85,14 @@ describe("createEffectBatchExecutor", () => {
 			],
 			release: async () => {},
 		};
-		const executor = createEffectBatchExecutor(createEffectRegistry([provider]), createLogger());
+		const registry = createEffectRegistry([provider]);
+		const executor = createEffectBatchExecutor(registry, createLogger());
 
 		await expect(
 			executor.execute(
 				[
-					{ type: "fake.record", input: { target: "bad", value: "failure" } },
-					{ type: "fake.record", input: { target: "good", value: "success" } },
+					parseRecord(registry, { target: "bad", value: "failure" }),
+					parseRecord(registry, { target: "good", value: "success" }),
 				],
 				"owner-1",
 			),
@@ -110,32 +112,6 @@ describe("createEffectBatchExecutor", () => {
 				value: { recorded: "success" },
 			},
 		]);
-	});
-
-	it("unknown typeやinvalid inputを実行前に拒否する", async () => {
-		const execute = vi.fn(async () => null);
-		const provider: EffectProvider = {
-			definitions: [
-				defineEffect({
-					type: "fake.record",
-					agentInputSchema: inputSchema,
-					inputSchema,
-					parseInput: (input) => input,
-					execute,
-					describeTarget: (input) => input.target,
-				}),
-			],
-			release: async () => {},
-		};
-		const executor = createEffectBatchExecutor(createEffectRegistry([provider]), createLogger());
-
-		await expect(
-			executor.execute([{ type: "fake.unknown", input: null }], "owner-1"),
-		).rejects.toThrow("Unknown effect type: fake.unknown");
-		await expect(
-			executor.execute([{ type: "fake.record", input: { target: 123 } }], "owner-1"),
-		).rejects.toThrow(ZodError);
-		expect(execute).not.toHaveBeenCalled();
 	});
 
 	it("releaseを全Providerへ渡し、失敗をlogする", async () => {
@@ -172,7 +148,6 @@ function createProvider(type: string, release: (ownerId: string) => Promise<void
 			defineEffect({
 				type,
 				agentInputSchema: inputSchema,
-				inputSchema,
 				parseInput: (input) => input,
 				execute: async (input) => input,
 				describeTarget: (input) => input.target,
@@ -180,4 +155,8 @@ function createProvider(type: string, release: (ownerId: string) => Promise<void
 		],
 		release,
 	};
+}
+
+function parseRecord(registry: EffectRegistry, input: z.infer<typeof inputSchema>): EffectRequest {
+	return registry.getDefinition("fake.record").parse(input);
 }

@@ -5,60 +5,46 @@ type TypingLeaseContext = Readonly<{
 	channelId: string;
 }>;
 
-type TypingLease = TypingLeaseContext &
-	Readonly<{
-		timer: ReturnType<typeof setInterval>;
-	}>;
+type TypingLease = TypingLeaseContext & {
+	readonly started: Promise<void>;
+	timer?: ReturnType<typeof setInterval>;
+};
 
 export class TypingLeaseRegistry {
 	readonly #leases = new Map<string, TypingLease>();
-	readonly #pendingStarts = new Map<string, Promise<void>>();
-	readonly #startTokens = new Map<string, symbol>();
 
 	constructor(
 		private readonly refreshIntervalMs: number,
 		private readonly onError: TypingLeaseErrorHandler,
-	) {
-		if (!Number.isSafeInteger(refreshIntervalMs) || refreshIntervalMs <= 0) {
-			throw new Error("Typing refresh interval must be a positive safe integer");
-		}
-	}
+	) {}
 
 	async start(context: TypingLeaseContext, refresh: () => Promise<void>): Promise<void> {
 		const key = leaseKey(context);
-		if (this.#leases.has(key)) return;
-		const pending = this.#pendingStarts.get(key);
-		if (pending !== undefined) {
-			await pending;
+		const existing = this.#leases.get(key);
+		if (existing !== undefined) {
+			await existing.started;
 			return;
 		}
 
-		const startToken = Symbol(key);
-		this.#startTokens.set(key, startToken);
-		const starting = (async () => {
-			await refresh();
-			if (this.#startTokens.get(key) !== startToken) return;
-			const timer = setInterval(() => {
-				void refresh().catch((error: unknown) => {
-					this.onError(error, context);
-				});
-			}, this.refreshIntervalMs);
-			this.#leases.set(key, { ...context, timer });
-		})();
-		this.#pendingStarts.set(key, starting);
+		const lease: TypingLease = { ...context, started: refresh() };
+		this.#leases.set(key, lease);
 		try {
-			await starting;
-		} finally {
-			if (this.#pendingStarts.get(key) === starting) {
-				this.#pendingStarts.delete(key);
-				this.#startTokens.delete(key);
-			}
+			await lease.started;
+		} catch (error: unknown) {
+			if (this.#leases.get(key) === lease) this.#leases.delete(key);
+			throw error;
 		}
+		// 初回送信中にstop・releaseされたleaseへintervalを張らない。
+		if (this.#leases.get(key) !== lease) return;
+		lease.timer = setInterval(() => {
+			void refresh().catch((error: unknown) => {
+				this.onError(error, context);
+			});
+		}, this.refreshIntervalMs);
 	}
 
 	stop(context: TypingLeaseContext): void {
 		const key = leaseKey(context);
-		this.#startTokens.delete(key);
 		const lease = this.#leases.get(key);
 		if (lease === undefined) return;
 		clearInterval(lease.timer);
@@ -66,21 +52,13 @@ export class TypingLeaseRegistry {
 	}
 
 	releaseOwner(ownerId: string): void {
-		for (const key of this.#pendingStarts.keys()) {
-			if (key.startsWith(`${ownerId}:`)) this.#startTokens.delete(key);
-		}
 		for (const lease of this.#leases.values()) {
 			if (lease.ownerId === ownerId) this.stop(lease);
 		}
 	}
 
 	releaseAll(): void {
-		this.#startTokens.clear();
 		for (const lease of this.#leases.values()) this.stop(lease);
-	}
-
-	get size(): number {
-		return this.#leases.size;
 	}
 }
 

@@ -2,31 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentTurnRequest } from "../../../ports/outbound/agent-runtime-port";
 import { CodexAgentRuntime } from "./codex-agent-runtime";
-import type { CodexLineTransport } from "./codex-stdio-process";
+import type { CodexLineHandlers, CodexLineTransport } from "./codex-stdio-process";
 import { TurnNotSteerableError } from "./codex-turn-tracker";
-import { JsonRpcConnection, JsonRpcProtocolError } from "./json-rpc-connection";
+import { JsonRpcProtocolError } from "./json-rpc-connection";
 
 class FakeTransport implements CodexLineTransport {
+	readonly close = vi.fn(async () => undefined);
 	readonly writes: object[] = [];
-	readonly #failureHandlers = new Set<(error: Error) => void>();
-	readonly #lineHandlers = new Set<(line: string) => void>();
+	#handlers: CodexLineHandlers | undefined;
 
-	public async close(): Promise<void> {}
+	public readonly open = (handlers: CodexLineHandlers): CodexLineTransport => {
+		this.#handlers = handlers;
+		return this;
+	};
 
 	public emit(value: object): void {
-		for (const handler of this.#lineHandlers) {
-			handler(JSON.stringify(value));
-		}
+		this.emitLine(JSON.stringify(value));
 	}
 
-	public onFailure(handler: (error: Error) => void): () => void {
-		this.#failureHandlers.add(handler);
-		return () => this.#failureHandlers.delete(handler);
-	}
-
-	public onLine(handler: (line: string) => void): () => void {
-		this.#lineHandlers.add(handler);
-		return () => this.#lineHandlers.delete(handler);
+	public emitLine(line: string): void {
+		this.#handlers?.onLine(line);
 	}
 
 	public writeLine(value: object): void {
@@ -34,19 +29,32 @@ class FakeTransport implements CodexLineTransport {
 	}
 }
 
-async function initializeRuntime(transport: FakeTransport): Promise<CodexAgentRuntime> {
-	const connection = new JsonRpcConnection(transport, 1_000);
-	const initializing = CodexAgentRuntime.initialize(connection);
-	transport.emit({
-		id: 1,
-		result: {
-			codexHome: "/codex-home",
-			platformFamily: "unix",
-			platformOs: "macos",
-			userAgent: "codex-test",
-		},
+const INITIALIZE_RESPONSE = {
+	id: 1,
+	result: {
+		codexHome: "/codex-home",
+		platformFamily: "unix",
+		platformOs: "macos",
+		userAgent: "codex-test",
+	},
+};
+
+function startRuntime(
+	transport: FakeTransport,
+	options: { onFailure?: (error: Error) => void; signal?: AbortSignal } = {},
+): Promise<CodexAgentRuntime> {
+	return CodexAgentRuntime.start({
+		onFailure: options.onFailure ?? (() => undefined),
+		openTransport: transport.open,
+		rpcTimeoutMs: 1_000,
+		signal: options.signal ?? new AbortController().signal,
 	});
-	return await initializing;
+}
+
+async function initializeRuntime(transport: FakeTransport): Promise<CodexAgentRuntime> {
+	const starting = startRuntime(transport);
+	transport.emit(INITIALIZE_RESPONSE);
+	return await starting;
 }
 
 function turnRequest(input: string): AgentTurnRequest {
@@ -62,6 +70,45 @@ function turnRequest(input: string): AgentTurnRequest {
 }
 
 describe("CodexAgentRuntime", () => {
+	it("起動中にabortされたらinitializeを待たずにtransportを閉じて失敗する", async () => {
+		const transport = new FakeTransport();
+		const controller = new AbortController();
+		const starting = startRuntime(transport, { signal: controller.signal });
+
+		controller.abort();
+
+		await expect(starting).rejects.toThrow("closed");
+		expect(transport.close).toHaveBeenCalledOnce();
+	});
+
+	it("initialize応答直後に接続が壊れたruntimeを返さずtransportを閉じる", async () => {
+		const transport = new FakeTransport();
+		const starting = startRuntime(transport);
+
+		transport.emit(INITIALIZE_RESPONSE);
+		transport.emitLine("not-json");
+
+		await expect(starting).rejects.toBeInstanceOf(JsonRpcProtocolError);
+		expect(transport.close).toHaveBeenCalledOnce();
+	});
+
+	it("起動後の接続障害をonFailureへ通知し、active turnを失敗させる", async () => {
+		const transport = new FakeTransport();
+		const failures: Error[] = [];
+		const starting = startRuntime(transport, { onFailure: (error) => failures.push(error) });
+		transport.emit(INITIALIZE_RESPONSE);
+		const runtime = await starting;
+		const turnStarting = runtime.startTurn("thread-1", turnRequest("hello"));
+		transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+		const started = await turnStarting;
+
+		transport.emitLine("not-json");
+
+		await expect(started.completion).rejects.toBeInstanceOf(JsonRpcProtocolError);
+		expect(failures).toHaveLength(1);
+		expect(failures[0]).toBeInstanceOf(JsonRpcProtocolError);
+	});
+
 	it("model/listを全ページ取得する", async () => {
 		const transport = new FakeTransport();
 		const runtime = await initializeRuntime(transport);
@@ -219,21 +266,6 @@ describe("CodexAgentRuntime", () => {
 		await started.completion;
 	});
 
-	it("caller supplied output schema が JSON value でなければ turn/start を送信しない", async () => {
-		const transport = new FakeTransport();
-		const runtime = await initializeRuntime(transport);
-
-		await expect(
-			runtime.startTurn("thread-1", {
-				input: "hello",
-				outputSchema: { type: "object", invalid: undefined },
-			}),
-		).rejects.toThrow("agent output schema.invalid must not be undefined");
-		expect(
-			transport.writes.filter((write) => Reflect.get(write, "method") === "turn/start"),
-		).toHaveLength(0);
-	});
-
 	it("final_answer 受領後の steer を RPC 送信前に拒否し、先行outputを保持する", async () => {
 		const transport = new FakeTransport();
 		const runtime = await initializeRuntime(transport);
@@ -376,6 +408,49 @@ describe("CodexAgentRuntime", () => {
 		await expect(runtime.startTurn("thread-1", turnRequest("next"))).rejects.toBeInstanceOf(
 			JsonRpcProtocolError,
 		);
+	});
+
+	it("active turnのuser input要求を拒否してturnを中断し、failedで完了させる", async () => {
+		const transport = new FakeTransport();
+		const runtime = await initializeRuntime(transport);
+		const starting = runtime.startTurn("thread-1", turnRequest("hello"));
+		transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+		const started = await starting;
+
+		transport.emit({
+			id: "server-1",
+			method: "item/tool/requestUserInput",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+
+		expect(transport.writes).toContainEqual({
+			error: { code: -32601, message: "Interactive user input is not supported by this client." },
+			id: "server-1",
+		});
+		expect(transport.writes).toContainEqual({
+			id: 3,
+			method: "turn/interrupt",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+		transport.emit({ id: 3, result: {} });
+		transport.emit({
+			method: "turn/completed",
+			params: { threadId: "thread-1", turn: { error: null, id: "turn-1", status: "interrupted" } },
+		});
+		await expect(started.completion).resolves.toMatchObject({ status: "failed" });
+	});
+
+	it("active turnがないthreadのuser input要求をprotocol fatalにする", async () => {
+		const transport = new FakeTransport();
+		const runtime = await initializeRuntime(transport);
+
+		transport.emit({
+			id: "server-1",
+			method: "item/tool/requestUserInput",
+			params: { threadId: "thread-1", turnId: "turn-1" },
+		});
+
+		await expect(runtime.listModels()).rejects.toBeInstanceOf(JsonRpcProtocolError);
 	});
 
 	it("turn/start response と先行通知の turn id 不一致を protocol fatal にする", async () => {

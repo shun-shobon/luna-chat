@@ -93,13 +93,7 @@ describe("CodexTurnTracker", () => {
 		const tracker = new CodexTurnTracker("thread-1");
 		tracker.bindTurnId("turn-1");
 
-		expect(
-			tracker.handleServerRequest({
-				id: 7,
-				method: "item/tool/requestUserInput",
-				params: { threadId: "thread-1", turnId: "turn-1" },
-			}),
-		).toBe(true);
+		tracker.markUserInputRequested("turn-1");
 		tracker.handleNotification({
 			method: "turn/completed",
 			params: {

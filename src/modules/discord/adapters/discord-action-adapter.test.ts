@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TypingLeaseRegistry } from "../application/typing-lease-registry";
-import type { SendFileResolverPort } from "../ports/send-file-resolver-port";
 import { DiscordActionAdapter } from "./discord-action-adapter";
-import type { DiscordActionClient } from "./discord-action-adapter";
+import type {
+	DiscordActionClient,
+	MessageChannel,
+	SendableChannel,
+} from "./discord-action-adapter";
 
 describe("DiscordActionAdapter", () => {
-	it("DMを解決してmessageを送信する", async () => {
-		const send = vi.fn(async () => ({ id: "300" }));
-		const client = createClient({ ...createChannel(), send });
+	it("DM channelを開いてmessageを送信する", async () => {
+		const dm = createChannel();
+		const client = createClient(createChannel(), dm);
 		const adapter = createAdapter(client);
 
 		await expect(
@@ -21,8 +24,8 @@ describe("DiscordActionAdapter", () => {
 			detail: { channelId: "200", messageId: "300" },
 		});
 		expect(client.users.createDM).toHaveBeenCalledWith("100");
-		expect(client.channels.fetch).toHaveBeenCalledWith("200");
-		expect(send).toHaveBeenCalledWith({ content: "hello" });
+		expect(client.channels.fetch).not.toHaveBeenCalled();
+		expect(dm.send).toHaveBeenCalledWith({ content: "hello" });
 	});
 
 	it("reply失敗を通常投稿へ変換しない", async () => {
@@ -42,9 +45,9 @@ describe("DiscordActionAdapter", () => {
 	});
 
 	it("ownerが開始したtypingだけを停止する", async () => {
+		vi.useFakeTimers();
 		const channel = createChannel();
-		const registry = new TypingLeaseRegistry(60_000, vi.fn());
-		const adapter = createAdapter(createClient(channel), registry);
+		const adapter = createAdapter(createClient(channel), new TypingLeaseRegistry(1_000, vi.fn()));
 
 		await adapter.execute(
 			{ kind: "start_typing", target: { kind: "channel", channelId: "200" } },
@@ -54,15 +57,18 @@ describe("DiscordActionAdapter", () => {
 			{ kind: "stop_typing", target: { kind: "channel", channelId: "200" } },
 			"turn-2",
 		);
-		expect(registry.size).toBe(1);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(channel.sendTyping).toHaveBeenCalledTimes(2);
 
 		await adapter.releaseTyping("turn-1");
-		expect(registry.size).toBe(0);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(channel.sendTyping).toHaveBeenCalledTimes(2);
+		vi.useRealTimers();
 	});
 
 	it("Luna自身のreactionを削除する", async () => {
 		const remove = vi.fn(async () => undefined);
-		const resolve = vi.fn(() => ({ users: { remove } }));
+		const resolve = vi.fn((_emoji: string) => ({ users: { remove } }));
 		const adapter = createAdapter(createClient(createChannel({ resolve })));
 
 		await adapter.execute(
@@ -84,34 +90,40 @@ function createAdapter(
 	client: DiscordActionClient,
 	typing = new TypingLeaseRegistry(60_000, vi.fn()),
 ): DiscordActionAdapter {
-	const files: SendFileResolverPort = {
-		resolve: vi.fn<SendFileResolverPort["resolve"]>(async (file) => ({ path: file.path })),
-	};
-	return new DiscordActionAdapter(client, files, typing);
+	return new DiscordActionAdapter(client, async (file) => file, typing);
 }
 
-function createClient(channel: ReturnType<typeof createChannel>): DiscordActionClient {
+function createClient(
+	channel: ReturnType<typeof createChannel>,
+	dm: ReturnType<typeof createChannel> = createChannel(),
+) {
 	return {
-		channels: { fetch: vi.fn(async () => channel) },
-		users: { createDM: vi.fn(async () => ({ id: "200" })) },
-	};
+		channels: { fetch: vi.fn(async (_channelId: string) => channel) },
+		users: { createDM: vi.fn(async (_userId: string) => dm) },
+	} satisfies DiscordActionClient;
 }
 
 function createChannel(
 	overrides: {
-		reply?: (options: unknown) => Promise<unknown>;
-		resolve?: (emoji: string) => unknown;
+		reply?: (options: unknown) => Promise<{ id: string }>;
+		resolve?: (emoji: string) => { users: { remove(): Promise<unknown> } } | null;
 	} = {},
 ) {
 	const message = {
 		reply: overrides.reply ?? vi.fn(async () => ({ id: "301" })),
 		react: vi.fn(async () => undefined),
-		reactions: { resolve: overrides.resolve ?? vi.fn(() => undefined) },
+		reactions: { resolve: overrides.resolve ?? vi.fn(() => null) },
 	};
 	return {
 		id: "200",
 		send: vi.fn(async () => ({ id: "300" })),
 		sendTyping: vi.fn(async () => undefined),
 		messages: { fetch: vi.fn(async () => message) },
+		isSendable(): this is SendableChannel {
+			return true;
+		},
+		isTextBased(): this is MessageChannel {
+			return true;
+		},
 	};
 }

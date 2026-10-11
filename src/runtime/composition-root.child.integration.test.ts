@@ -75,7 +75,6 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
 	...(await importOriginal<typeof DiscordGatewayAdapterModule>()),
 	createDiscordGatewayClient: vi.fn(() => fakes.client),
-	createDiscordGatewayEventClient: vi.fn(() => ({ on: fakes.client.on, off: fakes.client.off })),
 }));
 
 vi.mock("../modules/http/adapters/http-event-server", () => ({
@@ -91,11 +90,7 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
 
 vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	CronScheduleTimer: class {
-		scheduleOneShot(): never {
-			throw new Error("Unexpected one-shot schedule");
-		}
-
-		scheduleRecurring(): { stop(): void } {
+		schedule(): { stop(): void } {
 			return { stop() {} };
 		}
 	},

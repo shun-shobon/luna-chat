@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedule";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { AutomationLogPort } from "../ports/automation-log-port";
 import type {
 	AutomationScheduleTimerPort,
 	AutomationScheduleWatcherPort,
@@ -44,10 +44,9 @@ describe("ScheduleController", () => {
 			.mockReturnValueOnce(new Date("2026-01-01T00:00:00.000Z"))
 			.mockReturnValueOnce(new Date("2026-01-01T00:00:02.000Z"));
 		const scheduleTimer: AutomationScheduleTimerPort = {
-			scheduleOneShot: vi.fn(() => {
+			schedule: vi.fn(() => {
 				throw new Error("Date in past. Will never be fired.");
 			}),
-			scheduleRecurring: vi.fn(),
 		};
 		const workspace = createWorkspace();
 		const controller = createController({ clock, scheduleTimer, workspace });
@@ -101,7 +100,6 @@ describe("ScheduleController", () => {
 		const workspace = createWorkspace({
 			removeScheduleJob: () => {
 				order.push("delete");
-				return true;
 			},
 		});
 		const executor = createExecutor(async (_input, afterTurnStarted) => {
@@ -152,9 +150,11 @@ describe("ScheduleController", () => {
 		await scheduleTimer.oneShots[0]?.onTick();
 
 		expect(executor.execute).toHaveBeenCalledTimes(1);
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.schedule.one_shot_delete_failed",
-			expect.objectContaining({ jobId: "once" }),
+			{ jobId: "once" },
+			expect.any(Object),
 		);
 	});
 
@@ -201,8 +201,10 @@ describe("ScheduleController", () => {
 		await controller.reloadSchedule();
 		expect(scheduleTimer.recurring).toHaveLength(1);
 		expect(scheduleTimer.recurring[0]?.stop).not.toHaveBeenCalled();
-		expect(logger.error).toHaveBeenCalledWith(
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
 			"automation.schedule.reload_failed",
+			{},
 			expect.any(Object),
 		);
 
@@ -289,15 +291,14 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 	readonly oneShots: FakeTimer[] = [];
 	readonly recurring: FakeTimer[] = [];
 
-	scheduleOneShot(at: Date, onTick: () => Promise<void>): ScheduledAutomationJob {
-		const timer = { at, cron: "", onTick, stop: vi.fn() };
+	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob {
+		if (typeof cronTime === "string") {
+			const timer = { at: new Date(0), cron: cronTime, onTick, stop: vi.fn() };
+			this.recurring.push(timer);
+			return timer;
+		}
+		const timer = { at: cronTime, cron: "", onTick, stop: vi.fn() };
 		this.oneShots.push(timer);
-		return timer;
-	}
-
-	scheduleRecurring(cron: string, onTick: () => Promise<void>): ScheduledAutomationJob {
-		const timer = { at: new Date(0), cron, onTick, stop: vi.fn() };
-		this.recurring.push(timer);
 		return timer;
 	}
 }
@@ -319,7 +320,7 @@ function createController(
 	input: {
 		clock?: AutomationClockPort;
 		executor?: EventExecutionPort;
-		logger?: AutomationLogPort;
+		logger?: LoggerPort;
 		scheduleTimer?: AutomationScheduleTimerPort;
 		watcher?: AutomationScheduleWatcherPort;
 		workspace?: AutomationWorkspacePort;
@@ -344,12 +345,8 @@ function createExecutor(
 	return { execute: vi.fn(implementation) };
 }
 
-type LoggerStub = {
-	[Key in keyof AutomationLogPort]: Mock<AutomationLogPort[Key]>;
-};
-
-function createLogger(): LoggerStub {
-	return { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+function createLogger(): { log: Mock<LoggerPort["log"]> } {
+	return { log: vi.fn() };
 }
 
 function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {
@@ -358,7 +355,7 @@ function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {
 	return {
 		readHeartbeatChecklist: vi.fn(overrides.readHeartbeatChecklist ?? (async () => "checklist")),
 		readSchedule: vi.fn(overrides.readSchedule ?? (async () => ({ jobs: [] }))),
-		removeScheduleJob: vi.fn(overrides.removeScheduleJob ?? (() => true)),
+		removeScheduleJob: vi.fn(overrides.removeScheduleJob ?? (() => undefined)),
 	};
 }
 

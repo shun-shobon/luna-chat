@@ -1,11 +1,13 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import type {
 	AgentRuntimePort,
+	AgentThreadInput,
 	AgentTurnRequest,
 	StartedAgentTurn,
 	ThreadId,
 	TurnId,
 } from "../../../ports/outbound/agent-runtime-port";
-import type { ManagedAgentRuntime } from "./managed-codex-runtime";
 
 type AgentRestartPolicy = {
 	initialDelayMs: number;
@@ -14,10 +16,17 @@ type AgentRestartPolicy = {
 	windowMs: number;
 };
 
+export type SupervisedAgentRuntime = AgentRuntimePort & { close(): Promise<void> };
+
 type AgentRuntimeSupervisorDependencies = {
 	delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 	now?: () => number;
-	startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
+	onFailure(error: Error): void;
+	onFatal(error: Error): void;
+	startRuntime: (
+		signal: AbortSignal,
+		onFailure: (error: Error) => void,
+	) => Promise<SupervisedAgentRuntime>;
 };
 
 export class AgentRuntimeRestartLimitError extends Error {
@@ -28,25 +37,21 @@ export class AgentRuntimeRestartLimitError extends Error {
 }
 
 export class AgentRuntimeSupervisor implements AgentRuntimePort {
+	readonly #dependencies: AgentRuntimeSupervisorDependencies;
 	readonly #delay: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
-	readonly #fatalHandlers = new Set<(error: Error) => void>();
-	readonly #failureHandlers = new Set<(error: Error) => void>();
 	readonly #now: () => number;
 	readonly #policy: AgentRestartPolicy;
 	readonly #restartTimestamps: number[] = [];
-	readonly #startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
 	#bootPromise: Promise<AgentRuntimePort> | undefined;
 	readonly #closeController = new AbortController();
 	#closed = false;
 	#fatalError: Error | undefined;
-	#managed: ManagedAgentRuntime | undefined;
+	#runtime: SupervisedAgentRuntime | undefined;
 	#runtimeClosePromise: Promise<void> | undefined;
-	#runtimeGeneration = 0;
 
 	public constructor(policy: AgentRestartPolicy, dependencies: AgentRuntimeSupervisorDependencies) {
-		validatePolicy(policy);
 		this.#policy = policy;
-		this.#startRuntime = dependencies.startRuntime;
+		this.#dependencies = dependencies;
 		this.#now = dependencies.now ?? Date.now;
 		this.#delay = dependencies.delay ?? defaultDelay;
 	}
@@ -60,14 +65,13 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 			return;
 		}
 		this.#closed = true;
-		this.#runtimeGeneration += 1;
 		this.#closeController.abort();
-		const managed = this.#managed;
-		this.#managed = undefined;
+		const runtime = this.#runtime;
+		this.#runtime = undefined;
 		const bootPromise = this.#bootPromise;
 		const runtimeClosePromise = this.#runtimeClosePromise;
 		const closeResultsPromise = Promise.allSettled([
-			...(managed === undefined ? [] : [managed.close()]),
+			...(runtime === undefined ? [] : [runtime.close()]),
 			...(runtimeClosePromise === undefined ? [] : [runtimeClosePromise]),
 		]);
 		const [closeResults] = await Promise.all([
@@ -82,42 +86,17 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		await (await this.#getRuntime()).deleteThread(threadId);
 	}
 
-	public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
-		await (await this.#getRuntime()).interruptTurn(threadId, turnId);
-	}
-
-	public async listThreads(input?: {
-		archived?: boolean;
-		cursor?: string;
-		limit?: number;
-	}): ReturnType<AgentRuntimePort["listThreads"]> {
-		return await (await this.#getRuntime()).listThreads(input);
+	public async listArchivedThreads(
+		cursor?: string,
+	): ReturnType<AgentRuntimePort["listArchivedThreads"]> {
+		return await (await this.#getRuntime()).listArchivedThreads(cursor);
 	}
 
 	public async listModels(): ReturnType<AgentRuntimePort["listModels"]> {
 		return await (await this.#getRuntime()).listModels();
 	}
 
-	public onFatal(handler: (error: Error) => void): () => void {
-		if (this.#fatalError !== undefined) {
-			handler(this.#fatalError);
-			return () => undefined;
-		}
-		this.#fatalHandlers.add(handler);
-		return () => this.#fatalHandlers.delete(handler);
-	}
-
-	public onFailure(handler: (error: Error) => void): () => void {
-		this.#failureHandlers.add(handler);
-		return () => this.#failureHandlers.delete(handler);
-	}
-
-	public async openThread(input: {
-		baseInstructions: string;
-		config: Record<string, unknown>;
-		cwd: string;
-		developerInstructions: string;
-	}): Promise<ThreadId> {
+	public async openThread(input: AgentThreadInput): Promise<ThreadId> {
 		return await (await this.#getRuntime()).openThread(input);
 	}
 
@@ -135,31 +114,20 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 
 	async #boot(): Promise<AgentRuntimePort> {
 		while (!this.#closed && this.#fatalError === undefined) {
-			const generation = ++this.#runtimeGeneration;
 			try {
-				const managed = await this.#startRuntime(this.#closeController.signal);
-				if (this.#isSuperseded(generation)) {
-					await managed.close();
-					throw new Error("Codex runtime startup was superseded.");
-				}
-				let accepted = false;
-				let startupFailure: Error | undefined;
-				managed.onFailure((error) => {
-					if (!accepted) {
-						startupFailure = error;
-						return;
-					}
-					this.#handleRuntimeFailure(generation, managed, error);
+				let runtime: SupervisedAgentRuntime | undefined;
+				runtime = await this.#dependencies.startRuntime(this.#closeController.signal, (error) => {
+					// A failure during startup rejects startRuntime and is retried by this loop instead.
+					if (runtime !== undefined) this.#handleRuntimeFailure(runtime, error);
 				});
-				if (startupFailure !== undefined) {
-					await managed.close();
-					throw startupFailure;
+				if (this.#closeController.signal.aborted) {
+					await runtime.close();
+					break;
 				}
-				this.#managed = managed;
-				accepted = true;
-				return managed.port;
+				this.#runtime = runtime;
+				return runtime;
 			} catch (error: unknown) {
-				if (this.#isSuperseded(generation)) {
+				if (this.#closeController.signal.aborted) {
 					break;
 				}
 				const restartDelay = this.#registerRestart(toError(error));
@@ -175,8 +143,8 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 
 	async #getRuntime(): Promise<AgentRuntimePort> {
 		this.#assertAvailable();
-		if (this.#managed !== undefined) {
-			return this.#managed.port;
+		if (this.#runtime !== undefined) {
+			return this.#runtime;
 		}
 		this.#bootPromise ??= this.#boot().finally(() => {
 			this.#bootPromise = undefined;
@@ -184,19 +152,18 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		return await this.#bootPromise;
 	}
 
-	#handleRuntimeFailure(generation: number, managed: ManagedAgentRuntime, error: Error): void {
-		if (this.#isSuperseded(generation) || this.#managed !== managed) {
+	#handleRuntimeFailure(runtime: SupervisedAgentRuntime, error: Error): void {
+		if (this.#runtime !== runtime) {
 			return;
 		}
-		this.#managed = undefined;
-		this.#runtimeGeneration += 1;
-		const closePromise = managed.close();
-		let trackedClosePromise: Promise<void>;
-		trackedClosePromise = closePromise.finally(() => {
-			if (this.#runtimeClosePromise === trackedClosePromise) this.#runtimeClosePromise = undefined;
-		});
-		this.#runtimeClosePromise = trackedClosePromise;
-		void this.#runtimeClosePromise.catch(() => undefined);
+		this.#runtime = undefined;
+		const closePromise = runtime.close();
+		this.#runtimeClosePromise = closePromise;
+		void closePromise
+			.catch(() => undefined)
+			.finally(() => {
+				if (this.#runtimeClosePromise === closePromise) this.#runtimeClosePromise = undefined;
+			});
 		const restartDelay = this.#registerRestart(error);
 		if (restartDelay === undefined) {
 			return;
@@ -212,9 +179,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	}
 
 	#registerRestart(cause: Error): number | undefined {
-		for (const handler of this.#failureHandlers) {
-			handler(cause);
-		}
+		this.#dependencies.onFailure(cause);
 		const now = this.#now();
 		let oldestRestart = this.#restartTimestamps[0];
 		while (oldestRestart !== undefined && now - oldestRestart >= this.#policy.windowMs) {
@@ -224,18 +189,12 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		if (this.#restartTimestamps.length >= this.#policy.limit) {
 			const fatalError = new AgentRuntimeRestartLimitError({ cause });
 			this.#fatalError = fatalError;
-			for (const handler of this.#fatalHandlers) {
-				handler(fatalError);
-			}
+			this.#dependencies.onFatal(fatalError);
 			return undefined;
 		}
 		this.#restartTimestamps.push(now);
 		const exponent = this.#restartTimestamps.length - 1;
 		return Math.min(this.#policy.initialDelayMs * 2 ** exponent, this.#policy.maxDelayMs);
-	}
-
-	#isSuperseded(generation: number): boolean {
-		return this.#closed || generation !== this.#runtimeGeneration;
 	}
 
 	#assertAvailable(): void {
@@ -248,53 +207,9 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	}
 }
 
-function validatePolicy(policy: AgentRestartPolicy): void {
-	for (const [key, value] of Object.entries({
-		limit: policy.limit,
-		maxDelayMs: policy.maxDelayMs,
-		windowMs: policy.windowMs,
-	})) {
-		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error(`${key} must be a positive safe integer.`);
-		}
-	}
-	if (!Number.isSafeInteger(policy.initialDelayMs) || policy.initialDelayMs < 0) {
-		throw new Error("initialDelayMs must be a non-negative safe integer.");
-	}
-	if (policy.initialDelayMs > policy.maxDelayMs) {
-		throw new Error("initialDelayMs must not exceed maxDelayMs.");
-	}
-}
-
 async function defaultDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-	await new Promise<void>((resolve, reject) => {
-		let remaining = milliseconds;
-		let timeout: ReturnType<typeof setTimeout> | undefined;
-		const abort = () => {
-			if (timeout !== undefined) clearTimeout(timeout);
-			reject(signal?.reason instanceof Error ? signal.reason : new Error("Delay was aborted."));
-		};
-		const schedule = () => {
-			const chunk = Math.min(remaining, MAXIMUM_TIMEOUT_MS);
-			timeout = setTimeout(() => {
-				remaining -= chunk;
-				if (remaining > 0) schedule();
-				else {
-					signal?.removeEventListener("abort", abort);
-					resolve();
-				}
-			}, chunk);
-		};
-		if (signal?.aborted === true) {
-			abort();
-			return;
-		}
-		signal?.addEventListener("abort", abort, { once: true });
-		schedule();
-	});
+	await delay(milliseconds, undefined, { signal });
 }
-
-const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
 
 function toError(error: unknown): Error {
 	return error instanceof Error ? error : new Error("Failed to start Codex app-server.");

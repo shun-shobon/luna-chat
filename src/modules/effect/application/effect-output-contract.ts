@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { jsonValueSchema } from "../../event/domain/luna-event";
-import type { JsonValue } from "../../event/domain/luna-event";
+import { jsonObjectSchema, jsonValueSchema } from "../../../shared/json";
+import type { JsonObject } from "../../../shared/json";
 import type { EffectOutput } from "../domain/effect";
 import type { EffectOutputContract } from "../ports/effect-output-contract";
 import type { EffectRegistry } from "./effect-registry";
@@ -42,23 +42,21 @@ export function createEffectOutputContract(registry: EffectRegistry): EffectOutp
 
 			return {
 				effects: envelope.data.effects.map((effect) => {
-					let input: JsonValue;
 					try {
-						input = registry.getDefinition(effect.type).parseInput(effect.input);
+						return registry.getDefinition(effect.type).parse(effect.input);
 					} catch (error: unknown) {
 						throw new EffectOutputParseError(
 							`Invalid effect ${effect.type}: ${toErrorMessage(error)}`,
 							{ cause: error },
 						);
 					}
-					return { type: effect.type, input };
 				}),
 			};
 		},
 	});
 }
 
-function createOutputJsonSchema(registry: EffectRegistry): Record<string, unknown> {
+function createOutputJsonSchema(registry: EffectRegistry): JsonObject {
 	const schema = {
 		type: "object",
 		properties: {
@@ -80,90 +78,14 @@ function createOutputJsonSchema(registry: EffectRegistry): Record<string, unknow
 		required: ["effects"],
 		additionalProperties: false,
 	};
-	assertStructuredOutputSchema(schema);
-	return Object.freeze(schema);
+	// z.toJSONSchema is typed with unknown members, so parse once here to hand Codex a typed JSON object.
+	return Object.freeze(jsonObjectSchema.parse(schema));
 }
 
 function withoutDialect(schema: Record<string, unknown>): Record<string, unknown> {
 	const result = { ...schema };
 	delete result["$schema"];
 	return result;
-}
-
-const SUPPORTED_SCHEMA_KEYWORDS = new Set([
-	"additionalProperties",
-	"anyOf",
-	"const",
-	"description",
-	"enum",
-	"exclusiveMaximum",
-	"exclusiveMinimum",
-	"format",
-	"items",
-	"maximum",
-	"maxItems",
-	"minimum",
-	"minItems",
-	"multipleOf",
-	"pattern",
-	"properties",
-	"required",
-	"type",
-]);
-
-function assertStructuredOutputSchema(value: unknown, path = "outputSchema"): void {
-	if (Array.isArray(value)) {
-		value.forEach((item, index) => assertStructuredOutputSchema(item, `${path}[${String(index)}]`));
-		return;
-	}
-	if (!isRecord(value)) return;
-
-	for (const keyword of Object.keys(value)) {
-		if (!SUPPORTED_SCHEMA_KEYWORDS.has(keyword)) {
-			throw new Error(`${path} contains unsupported JSON Schema keyword: ${keyword}`);
-		}
-	}
-
-	if (value["type"] === "object") {
-		if (value["additionalProperties"] !== false) {
-			throw new Error(`${path} must set additionalProperties to false.`);
-		}
-		const properties = value["properties"];
-		const required = value["required"];
-		if (!isRecord(properties) || !Array.isArray(required)) {
-			throw new Error(`${path} must define object properties and required fields.`);
-		}
-		const requiredFields = z.array(z.string()).parse(required);
-		if (
-			requiredFields.length !== Object.keys(properties).length ||
-			Object.keys(properties).some((property) => !requiredFields.includes(property))
-		) {
-			throw new Error(`${path} must require every object property.`);
-		}
-	}
-
-	const properties = value["properties"];
-	if (isRecord(properties)) {
-		for (const [property, propertySchema] of Object.entries(properties)) {
-			assertStructuredOutputSchema(propertySchema, `${path}.properties.${property}`);
-		}
-	}
-	if (value["items"] !== undefined) {
-		assertStructuredOutputSchema(value["items"], `${path}.items`);
-	}
-	if (value["anyOf"] !== undefined) {
-		assertStructuredOutputSchema(value["anyOf"], `${path}.anyOf`);
-	}
-	const definitions = value["$defs"];
-	if (isRecord(definitions)) {
-		for (const [name, definition] of Object.entries(definitions)) {
-			assertStructuredOutputSchema(definition, `${path}.$defs.${name}`);
-		}
-	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value != null && !Array.isArray(value);
 }
 
 function toErrorMessage(value: unknown): string {

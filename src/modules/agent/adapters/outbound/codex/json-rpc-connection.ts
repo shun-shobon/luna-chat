@@ -1,7 +1,7 @@
 import type { ClientNotification } from "../../../../../generated/codex/ClientNotification";
 import type { ClientRequest } from "../../../../../generated/codex/ClientRequest";
 import type { RequestId } from "../../../../../generated/codex/RequestId";
-import type { CodexLineTransport } from "./codex-stdio-process";
+import type { CodexLineHandlers, CodexLineTransport } from "./codex-stdio-process";
 
 type SupportedClientRequest =
 	| Extract<ClientRequest, { method: "initialize" }>
@@ -33,15 +33,22 @@ type PendingRequest = {
 	method: SupportedClientRequestMethod;
 	reject: (error: Error) => void;
 	resolve: (result: unknown) => void;
-	timeout: Readonly<{ cancel(): void }>;
+	timeout: NodeJS.Timeout;
 };
 
-type RpcEventHandler = (
+export type RpcEventHandler = (
 	event: string,
 	context: Readonly<{ requestId?: RequestId }>,
 	details?: Readonly<Record<string, unknown>>,
 	payload?: unknown,
 ) => void;
+
+type JsonRpcConnectionHandlers = {
+	onEvent?: RpcEventHandler | undefined;
+	onFatal(error: Error): void;
+	onNotification(notification: JsonRpcNotification): void;
+	onServerRequest(request: JsonRpcServerRequest): void;
+};
 
 export class RpcTimeoutError extends Error {
 	public constructor(method: string, timeoutMs: number) {
@@ -58,11 +65,9 @@ export class JsonRpcProtocolError extends Error {
 }
 
 export class JsonRpcConnection {
-	readonly #fatalHandlers = new Set<(error: Error) => void>();
-	readonly #notificationHandlers = new Set<(notification: JsonRpcNotification) => void>();
+	readonly #handlers: JsonRpcConnectionHandlers;
 	readonly #pending = new Map<RequestId, PendingRequest>();
 	readonly #rpcTimeoutMs: number;
-	readonly #serverRequestHandlers = new Set<(request: JsonRpcServerRequest) => void>();
 	readonly #transport: CodexLineTransport;
 	#closePromise: Promise<void> | undefined;
 	#closed = false;
@@ -70,26 +75,24 @@ export class JsonRpcConnection {
 	#nextRequestId = 1;
 
 	public constructor(
-		transport: CodexLineTransport,
+		openTransport: (handlers: CodexLineHandlers) => CodexLineTransport,
 		rpcTimeoutMs: number,
-		private readonly onEvent?: RpcEventHandler,
+		handlers: JsonRpcConnectionHandlers,
 	) {
-		if (!Number.isSafeInteger(rpcTimeoutMs) || rpcTimeoutMs <= 0) {
-			throw new Error("RPC timeout must be a positive safe integer.");
-		}
-		this.#transport = transport;
+		this.#handlers = handlers;
 		this.#rpcTimeoutMs = rpcTimeoutMs;
-		transport.onLine((line) => this.#handleLine(line));
-		transport.onFailure((error) => this.fail(error));
+		this.#transport = openTransport({
+			onFailure: (error) => this.fail(error),
+			onLine: (line) => this.#handleLine(line),
+		});
 	}
 
 	public close(): Promise<void> {
 		if (this.#closePromise !== undefined) return this.#closePromise;
 		this.#closed = true;
 		this.#rejectPending(new Error("Codex JSON-RPC connection was closed."));
-		const closePromise = (async () => await this.#transport.close())();
-		this.#closePromise = closePromise;
-		return closePromise;
+		this.#closePromise = this.#transport.close();
+		return this.#closePromise;
 	}
 
 	public fail(error: Error): void {
@@ -97,11 +100,9 @@ export class JsonRpcConnection {
 			return;
 		}
 		this.#fatalError = error;
-		this.onEvent?.("agent.rpc_connection_failed", {}, { error });
+		this.#handlers.onEvent?.("agent.rpc_connection_failed", {}, { error });
 		this.#rejectPending(error);
-		for (const handler of this.#fatalHandlers) {
-			handler(error);
-		}
+		this.#handlers.onFatal(error);
 	}
 
 	public notifyInitialized(): void {
@@ -110,34 +111,15 @@ export class JsonRpcConnection {
 		this.#transport.writeLine(notification);
 	}
 
-	public onFatal(handler: (error: Error) => void): () => void {
-		if (this.#fatalError !== undefined) {
-			handler(this.#fatalError);
-			return () => undefined;
-		}
-		this.#fatalHandlers.add(handler);
-		return () => this.#fatalHandlers.delete(handler);
-	}
-
-	public onNotification(handler: (notification: JsonRpcNotification) => void): () => void {
-		this.#notificationHandlers.add(handler);
-		return () => this.#notificationHandlers.delete(handler);
-	}
-
-	public onServerRequest(handler: (request: JsonRpcServerRequest) => void): () => void {
-		this.#serverRequestHandlers.add(handler);
-		return () => this.#serverRequestHandlers.delete(handler);
-	}
-
 	public async request<M extends SupportedClientRequestMethod>(
 		method: M,
 		params: SupportedClientRequestParams<M>,
 	): Promise<unknown> {
 		this.#assertUsable();
 		const id = this.#nextRequestId++;
-		this.onEvent?.("agent.rpc_requested", { requestId: id }, { method }, params);
+		this.#handlers.onEvent?.("agent.rpc_requested", { requestId: id }, { method }, params);
 		return await new Promise((resolve, reject) => {
-			const timeout = scheduleTimeout(() => {
+			const timeout = setTimeout(() => {
 				const error = new RpcTimeoutError(method, this.#rpcTimeoutMs);
 				this.fail(error);
 			}, this.#rpcTimeoutMs);
@@ -203,25 +185,18 @@ export class JsonRpcConnection {
 				this.fail(new JsonRpcProtocolError("Codex emitted a server request with an invalid id."));
 				return;
 			}
-			const request = { ...message, id: value["id"] };
-			for (const handler of this.#serverRequestHandlers) {
-				try {
-					handler(request);
-				} catch (error: unknown) {
-					this.fail(toProtocolError(error, "Failed to handle a Codex server request."));
-					return;
-				}
+			try {
+				this.#handlers.onServerRequest({ ...message, id: value["id"] });
+			} catch (error: unknown) {
+				this.fail(toProtocolError(error, "Failed to handle a Codex server request."));
 			}
 			return;
 		}
 
-		for (const handler of this.#notificationHandlers) {
-			try {
-				handler(message);
-			} catch (error: unknown) {
-				this.fail(toProtocolError(error, "Failed to handle a Codex notification."));
-				return;
-			}
+		try {
+			this.#handlers.onNotification(message);
+		} catch (error: unknown) {
+			this.fail(toProtocolError(error, "Failed to handle a Codex notification."));
 		}
 	}
 
@@ -254,9 +229,9 @@ export class JsonRpcConnection {
 				this.fail(new JsonRpcProtocolError("Codex emitted an invalid RPC error response."));
 				return;
 			}
-			pending.timeout.cancel();
+			clearTimeout(pending.timeout);
 			this.#pending.delete(value["id"]);
-			this.onEvent?.(
+			this.#handlers.onEvent?.(
 				"agent.rpc_failed",
 				{ requestId: value["id"] },
 				{
@@ -267,9 +242,9 @@ export class JsonRpcConnection {
 			pending.reject(new Error(`Codex RPC error ${String(error["code"])}: ${error["message"]}`));
 			return;
 		}
-		pending.timeout.cancel();
+		clearTimeout(pending.timeout);
 		this.#pending.delete(value["id"]);
-		this.onEvent?.(
+		this.#handlers.onEvent?.(
 			"agent.rpc_completed",
 			{ requestId: value["id"] },
 			{ method: pending.method },
@@ -280,35 +255,11 @@ export class JsonRpcConnection {
 
 	#rejectPending(error: Error): void {
 		for (const pending of this.#pending.values()) {
-			pending.timeout.cancel();
+			clearTimeout(pending.timeout);
 			pending.reject(error);
 		}
 		this.#pending.clear();
 	}
-}
-
-const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
-
-function scheduleTimeout(callback: () => void, milliseconds: number): Readonly<{ cancel(): void }> {
-	let cancelled = false;
-	let remaining = milliseconds;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const schedule = () => {
-		const chunk = Math.min(remaining, MAXIMUM_TIMEOUT_MS);
-		timer = setTimeout(() => {
-			remaining -= chunk;
-			if (cancelled) return;
-			if (remaining > 0) schedule();
-			else callback();
-		}, chunk);
-	};
-	schedule();
-	return {
-		cancel() {
-			cancelled = true;
-			if (timer !== undefined) clearTimeout(timer);
-		},
-	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

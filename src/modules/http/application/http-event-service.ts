@@ -29,27 +29,23 @@ export class HttpEventService {
 		const response =
 			request.response_mode === "wait" ? this.dependencies.responses.register(event.id) : undefined;
 
-		try {
-			if (request.execution === "conversation") {
-				const accepted = this.dependencies.conversation.accept({
-					session: createHttpConversationSession(request.session_id),
-					event,
-				});
-				if (!accepted) {
-					this.dependencies.responses.complete(event.id, false);
-					return { kind: "unavailable" };
-				}
-			} else {
-				const execution = this.dependencies.executor.execute(event).then(
-					(result) => this.dependencies.responses.complete(event.id, result.status === "completed"),
-					() => this.dependencies.responses.complete(event.id, false),
-				);
-				this.#executions.add(execution);
-				void execution.then(() => this.#executions.delete(execution));
+		if (request.execution === "conversation") {
+			const accepted = this.dependencies.conversation.accept({
+				session: createHttpConversationSession(request.session_id),
+				event,
+			});
+			if (!accepted) {
+				this.dependencies.responses.complete(event.id, false);
+				return { kind: "unavailable" };
 			}
-		} catch (error: unknown) {
-			this.dependencies.responses.complete(event.id, false);
-			throw error;
+		} else {
+			const execution = this.dependencies.executor
+				.execute(event)
+				.then((result) =>
+					this.dependencies.responses.complete(event.id, result.status === "completed"),
+				);
+			this.#executions.add(execution);
+			void execution.then(() => this.#executions.delete(execution));
 		}
 
 		if (response === undefined) return { kind: "accepted", requestId: event.id };
@@ -62,9 +58,5 @@ export class HttpEventService {
 
 	async drain(): Promise<void> {
 		while (this.#executions.size > 0) await Promise.all(this.#executions);
-	}
-
-	failPending(): void {
-		this.dependencies.responses.failAll();
 	}
 }

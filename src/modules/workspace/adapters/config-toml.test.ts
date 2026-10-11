@@ -69,6 +69,7 @@ max_interval_ms = 2000
 		["negative history limit", "[discord]\ninitial_history_limit = -1"],
 		["zero duration", "[discord]\ndebounce_ms = 0"],
 		["unsafe integer", "[agent]\nrpc_timeout_ms = 9007199254740992"],
+		["timer duration above Node.js limit", "[discord]\nsession_idle_ms = 2147483648"],
 		["invalid memory cron", '[memory]\nenabled = true\nmaintenance_cron = "0 0 4 * * *"'],
 	])("%s を拒否する", (_title, source) => {
 		expect(() =>
