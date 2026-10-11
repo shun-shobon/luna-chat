@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { jsonValueSchema } from "../../event/domain/luna-event";
-import type { JsonValue } from "../../event/domain/luna-event";
 import type { EffectOutput } from "../domain/effect";
 import type { EffectOutputContract } from "../ports/effect-output-contract";
 import type { EffectRegistry } from "./effect-registry";
@@ -42,16 +41,14 @@ export function createEffectOutputContract(registry: EffectRegistry): EffectOutp
 
 			return {
 				effects: envelope.data.effects.map((effect) => {
-					let input: JsonValue;
 					try {
-						input = registry.getDefinition(effect.type).parseInput(effect.input);
+						return registry.getDefinition(effect.type).parse(effect.input);
 					} catch (error: unknown) {
 						throw new EffectOutputParseError(
 							`Invalid effect ${effect.type}: ${toErrorMessage(error)}`,
 							{ cause: error },
 						);
 					}
-					return { type: effect.type, input };
 				}),
 			};
 		},

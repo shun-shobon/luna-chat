@@ -101,9 +101,9 @@ describe("Discord Effect Provider", () => {
 		);
 		for (const testCase of cases) {
 			const definition = findDefinition(provider.definitions, testCase.type);
-			const parsed = definition.parseInput(testCase.input);
-			expect(definition.describeTarget(parsed)).toEqual(testCase.target);
-			await expect(definition.execute(parsed, "owner-1")).resolves.toMatchObject({
+			const request = definition.parse(testCase.input);
+			expect(request.target).toEqual(testCase.target);
+			await expect(request.run("owner-1")).resolves.toMatchObject({
 				actionKind: expect.any(String),
 			});
 		}
@@ -119,21 +119,21 @@ describe("Discord Effect Provider", () => {
 		const reaction = findDefinition(provider.definitions, "discord.add_reaction");
 
 		expect(() =>
-			send.parseInput({
+			send.parse({
 				target: { kind: "channel", channelId: "200" },
 				content: null,
 				files: null,
 			}),
 		).toThrow("A message requires content or files");
 		expect(() =>
-			send.parseInput({
+			send.parse({
 				target: { kind: "channel", channelId: "200" },
 				content: null,
 				files: [{ path: "relative.txt", fileName: null, description: null }],
 			}),
 		).toThrow("File path must be absolute");
 		expect(() =>
-			reaction.parseInput({
+			reaction.parse({
 				channelId: "200",
 				messageId: "300",
 				emoji: { kind: "custom", id: "400", name: null },
@@ -209,17 +209,17 @@ describe("Discord delegation Effect Provider", () => {
 		const delegate = vi.fn(async () => scope);
 		const registry = createEffectRegistry([createDiscordDelegationEffectProvider({ delegate })]);
 		const definition = registry.getDefinition("discord.open_conversation");
-		const input = definition.parseInput({
+		const request = definition.parse({
 			target: { kind: "dm_user", userId: "100" },
 			brief: "帰宅したので夕飯の相談をしたい",
 		});
 
-		await expect(definition.execute(input, "owner-1")).resolves.toEqual({ scope });
+		await expect(request.run("owner-1")).resolves.toEqual({ scope });
 		expect(delegate).toHaveBeenCalledWith(
 			{ kind: "dm_user", userId: "100" },
 			"帰宅したので夕飯の相談をしたい",
 		);
-		expect(definition.describeTarget(input)).toEqual({ kind: "dm_user", userId: "100" });
+		expect(request.target).toEqual({ kind: "dm_user", userId: "100" });
 	});
 
 	it("空のbriefと未知fieldを拒否する", () => {
@@ -228,10 +228,10 @@ describe("Discord delegation Effect Provider", () => {
 		]).getDefinition("discord.open_conversation");
 
 		expect(() =>
-			definition.parseInput({ target: { kind: "channel", channelId: "200" }, brief: "" }),
+			definition.parse({ target: { kind: "channel", channelId: "200" }, brief: "" }),
 		).toThrow(ZodError);
 		expect(() =>
-			definition.parseInput({
+			definition.parse({
 				target: { kind: "channel", channelId: "200" },
 				brief: "brief",
 				content: "hello",

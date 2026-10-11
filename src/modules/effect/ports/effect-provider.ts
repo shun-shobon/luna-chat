@@ -1,14 +1,12 @@
 import type { z } from "zod";
 
-import { jsonValueSchema } from "../../event/domain/luna-event";
 import type { JsonValue } from "../../event/domain/luna-event";
+import type { EffectRequest } from "../domain/effect";
 
 export interface EffectDefinition {
 	readonly type: string;
 	readonly agentInputSchema: z.ZodType;
-	parseInput(value: JsonValue): JsonValue;
-	execute(input: JsonValue, ownerId: string): Promise<JsonValue>;
-	describeTarget(input: JsonValue): JsonValue;
+	parse(value: JsonValue): EffectRequest;
 }
 
 export interface EffectProvider {
@@ -16,29 +14,26 @@ export interface EffectProvider {
 	release(ownerId: string): Promise<void>;
 }
 
-export type EffectDefinitionConfig<AgentInput extends JsonValue, Input> = Readonly<{
-	type: string;
-	agentInputSchema: z.ZodType<AgentInput>;
-	inputSchema: z.ZodType<Input>;
-	parseInput(input: AgentInput): Input;
-	execute(input: Input, ownerId: string): Promise<JsonValue>;
-	describeTarget(input: Input): JsonValue;
-}>;
-
 export function defineEffect<AgentInput extends JsonValue, Input>(
-	config: EffectDefinitionConfig<AgentInput, Input>,
+	config: Readonly<{
+		type: string;
+		agentInputSchema: z.ZodType<AgentInput>;
+		parseInput(input: AgentInput): Input;
+		execute(input: NoInfer<Input>, ownerId: string): Promise<JsonValue>;
+		describeTarget(input: NoInfer<Input>): JsonValue;
+	}>,
 ): EffectDefinition {
-	const parseAgentInput = (value: JsonValue): AgentInput => config.agentInputSchema.parse(value);
-	const parseExecutionInput = (value: JsonValue): Input => config.inputSchema.parse(value);
-
 	return Object.freeze({
 		type: config.type,
 		agentInputSchema: config.agentInputSchema,
-		parseInput: (value: JsonValue): JsonValue =>
-			jsonValueSchema.parse(config.parseInput(parseAgentInput(value))),
-		execute: async (value: JsonValue, ownerId: string): Promise<JsonValue> =>
-			jsonValueSchema.parse(await config.execute(parseExecutionInput(value), ownerId)),
-		describeTarget: (value: JsonValue): JsonValue =>
-			jsonValueSchema.parse(config.describeTarget(parseExecutionInput(value))),
+		parse: (value: JsonValue): EffectRequest => {
+			const input = config.parseInput(config.agentInputSchema.parse(value));
+			return {
+				type: config.type,
+				input: value,
+				target: config.describeTarget(input),
+				run: async (ownerId) => await config.execute(input, ownerId),
+			};
+		},
 	});
 }

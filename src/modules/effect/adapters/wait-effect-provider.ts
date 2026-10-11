@@ -15,7 +15,6 @@ export function createWaitEffectProvider(): EffectProvider {
 			defineEffect({
 				type: WAIT_EFFECT_TYPE,
 				agentInputSchema: waitInputSchema,
-				inputSchema: waitInputSchema,
 				parseInput: (input) => input,
 				execute: async (input) => {
 					await new Promise<void>((resolve) => {

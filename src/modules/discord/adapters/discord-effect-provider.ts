@@ -5,19 +5,12 @@ import { z } from "zod";
 import { defineEffect } from "../../effect/ports/effect-provider";
 import type { EffectProvider } from "../../effect/ports/effect-provider";
 import type { JsonValue } from "../../event/domain/luna-event";
-import {
-	addReactionSchema,
-	discordTargetSchema,
-	removeReactionSchema,
-	replyMessageSchema,
-	sendMessageSchema,
-	startTypingSchema,
-	stopTypingSchema,
-} from "../domain/discord-action";
-import type { DiscordAction, DiscordEmoji } from "../domain/discord-action";
+import type { DiscordAction, DiscordEmoji, SendFile } from "../domain/discord-action";
 import { discordIdSchema } from "../domain/discord-id";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
 import type { DiscordConversationDelegationPort } from "../ports/discord-conversation-delegation-port";
+
+type ActionOf<Kind extends DiscordAction["kind"]> = Extract<DiscordAction, { kind: Kind }>;
 
 const nonEmptyStringSchema = z.string().superRefine((value, context) => {
 	if (value.length === 0) context.addIssue({ code: "custom", message: "String must not be empty" });
@@ -78,10 +71,6 @@ const agentOpenConversationSchema = z.strictObject({
 	target: agentDiscordTargetSchema,
 	brief: nonEmptyStringSchema,
 });
-const openConversationSchema = z.strictObject({
-	target: discordTargetSchema,
-	brief: z.string().min(1),
-});
 
 export function createDiscordEffectProvider(actions: DiscordActionPort): EffectProvider {
 	const executeAction = async (action: DiscordAction, ownerId: string): Promise<JsonValue> =>
@@ -92,78 +81,68 @@ export function createDiscordEffectProvider(actions: DiscordActionPort): EffectP
 			defineEffect({
 				type: "discord.send_message",
 				agentInputSchema: agentSendMessageSchema,
-				inputSchema: sendMessageSchema,
-				parseInput: (input) =>
-					sendMessageSchema.parse({
-						kind: "send_message",
-						target: input.target,
-						...normalizeMessageFields(input),
-					}),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
+				parseInput: (input): ActionOf<"send_message"> => ({
+					kind: "send_message",
+					target: input.target,
+					...normalizeMessageFields(input),
+				}),
+				execute: executeAction,
 				describeTarget: (action) => action.target,
 			}),
 			defineEffect({
 				type: "discord.reply_message",
 				agentInputSchema: agentReplyMessageSchema,
-				inputSchema: replyMessageSchema,
-				parseInput: (input) =>
-					replyMessageSchema.parse({
-						kind: "reply_message",
-						channelId: input.channelId,
-						messageId: input.messageId,
-						...normalizeMessageFields(input),
-					}),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
-				describeTarget: (action) => ({
-					kind: "message",
-					channelId: action.channelId,
-					messageId: action.messageId,
+				parseInput: (input): ActionOf<"reply_message"> => ({
+					kind: "reply_message",
+					channelId: input.channelId,
+					messageId: input.messageId,
+					...normalizeMessageFields(input),
 				}),
+				execute: executeAction,
+				describeTarget: messageTarget,
 			}),
 			defineEffect({
 				type: "discord.add_reaction",
 				agentInputSchema: agentReactionSchema,
-				inputSchema: addReactionSchema,
-				parseInput: (input) =>
-					addReactionSchema.parse({
-						kind: "add_reaction",
-						channelId: input.channelId,
-						messageId: input.messageId,
-						emoji: normalizeEmoji(input.emoji),
-					}),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
-				describeTarget: (action) => messageTarget(action),
+				parseInput: (input): ActionOf<"add_reaction"> => ({
+					kind: "add_reaction",
+					channelId: input.channelId,
+					messageId: input.messageId,
+					emoji: normalizeEmoji(input.emoji),
+				}),
+				execute: executeAction,
+				describeTarget: messageTarget,
 			}),
 			defineEffect({
 				type: "discord.remove_reaction",
 				agentInputSchema: agentReactionSchema,
-				inputSchema: removeReactionSchema,
-				parseInput: (input) =>
-					removeReactionSchema.parse({
-						kind: "remove_reaction",
-						channelId: input.channelId,
-						messageId: input.messageId,
-						emoji: normalizeEmoji(input.emoji),
-					}),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
-				describeTarget: (action) => messageTarget(action),
+				parseInput: (input): ActionOf<"remove_reaction"> => ({
+					kind: "remove_reaction",
+					channelId: input.channelId,
+					messageId: input.messageId,
+					emoji: normalizeEmoji(input.emoji),
+				}),
+				execute: executeAction,
+				describeTarget: messageTarget,
 			}),
 			defineEffect({
 				type: "discord.start_typing",
 				agentInputSchema: agentTypingSchema,
-				inputSchema: startTypingSchema,
-				parseInput: (input) =>
-					startTypingSchema.parse({ kind: "start_typing", target: input.target }),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
+				parseInput: (input): ActionOf<"start_typing"> => ({
+					kind: "start_typing",
+					target: input.target,
+				}),
+				execute: executeAction,
 				describeTarget: (action) => action.target,
 			}),
 			defineEffect({
 				type: "discord.stop_typing",
 				agentInputSchema: agentTypingSchema,
-				inputSchema: stopTypingSchema,
-				parseInput: (input) =>
-					stopTypingSchema.parse({ kind: "stop_typing", target: input.target }),
-				execute: async (action, ownerId) => await executeAction(action, ownerId),
+				parseInput: (input): ActionOf<"stop_typing"> => ({
+					kind: "stop_typing",
+					target: input.target,
+				}),
+				execute: executeAction,
 				describeTarget: (action) => action.target,
 			}),
 		]),
@@ -179,8 +158,7 @@ export function createDiscordDelegationEffectProvider(
 			defineEffect({
 				type: "discord.open_conversation",
 				agentInputSchema: agentOpenConversationSchema,
-				inputSchema: openConversationSchema,
-				parseInput: (input) => openConversationSchema.parse(input),
+				parseInput: (input) => input,
 				execute: async (input) => ({
 					scope: await delegation.delegate(input.target, input.brief),
 				}),
@@ -203,10 +181,7 @@ function requireMessageBody(
 function normalizeMessageFields(input: {
 	content: string | null;
 	files: readonly z.infer<typeof agentSendFileSchema>[] | null;
-}): Readonly<{
-	content?: string;
-	files?: readonly Readonly<{ path: string; fileName?: string; description?: string }>[];
-}> {
+}): { content?: string; files?: SendFile[] } {
 	return {
 		...(input.content == null ? {} : { content: input.content }),
 		...(input.files == null

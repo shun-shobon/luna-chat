@@ -171,7 +171,8 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
                                                                    └─ 成功するまで継続
 ```
 
-- Codexからの最終出力は構造化スキーマ（Structured Outputs）によって `{ effects: EffectRequest[] }` 形式に制約される。
+- Codexからの最終出力は構造化スキーマ（Structured Outputs）によって `{ effects: [{ type, input }] }` 形式に制約される。
+- `EffectOutputContract.parse` は各Effectの入力をプロバイダ定義のスキーマで1回だけ検証・正規化し、表示用の対象（target）と型付き入力を閉じ込めた実行関数を持つ `EffectRequest` に変換する。バッチ実行時に入力を再検証しない。
 - バッチ内のEffectはすべて並行して実行され、全件完了（settle）した後に結果を集約する。
 - 失敗したEffectや `system.wait` の完了結果は、同一スレッドのフォローアップターンへ渡されて自律的なリカバリが行われる。
 - `http.respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行または会話のターンチェーンが完了した時点で、待機中のHTTPリクエストを解決する。会話側は初回バッチと成功したsteerのイベントIDを追跡し、チェーン完了時に通知する。

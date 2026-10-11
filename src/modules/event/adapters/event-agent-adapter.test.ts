@@ -261,7 +261,6 @@ function createRecordProvider(
 			defineEffect({
 				type: "fake.record",
 				agentInputSchema: recordInputSchema,
-				inputSchema: recordInputSchema,
 				parseInput: (input) => input,
 				execute: async (input, ownerId) =>
 					z.json().parse(await (overrides.execute ?? (async (value) => value))(input, ownerId)),

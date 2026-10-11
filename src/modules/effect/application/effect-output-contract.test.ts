@@ -47,7 +47,6 @@ function createProvider(
 			defineEffect({
 				type,
 				agentInputSchema: recordInputSchema,
-				inputSchema: recordInputSchema,
 				parseInput: (input) => input,
 				execute,
 				describeTarget: (input) => input.target,
@@ -80,8 +79,10 @@ describe("createEffectOutputContract", () => {
 					effects: [{ type: "fake.record", input: { target: "audit", value: "first" } }],
 				}),
 			),
-		).toEqual({
-			effects: [{ type: "fake.record", input: { target: "audit", value: "first" } }],
+		).toMatchObject({
+			effects: [
+				{ type: "fake.record", input: { target: "audit", value: "first" }, target: "audit" },
+			],
 		});
 	});
 
@@ -104,13 +105,12 @@ describe("createEffectOutputContract", () => {
 		).toEqual(["fake.record", "fake.notify"]);
 	});
 
-	it("Agent入力を実行用inputへ正規化する", () => {
+	it("Agent入力を実行用inputへ正規化する", async () => {
 		const provider: EffectProvider = {
 			definitions: [
 				defineEffect({
 					type: "fake.normalize",
 					agentInputSchema: z.strictObject({ value: z.string().nullable() }),
-					inputSchema: z.strictObject({ value: z.string().optional() }),
 					parseInput: (input) => (input.value == null ? {} : { value: input.value }),
 					execute: async (input) => z.json().parse(input),
 					describeTarget: () => null,
@@ -120,13 +120,13 @@ describe("createEffectOutputContract", () => {
 		};
 		const contract = createEffectOutputContract(createEffectRegistry([provider]));
 
-		expect(
-			contract.parse(
-				JSON.stringify({
-					effects: [{ type: "fake.normalize", input: { value: null } }],
-				}),
-			),
-		).toEqual({ effects: [{ type: "fake.normalize", input: {} }] });
+		const [effect] = contract.parse(
+			JSON.stringify({
+				effects: [{ type: "fake.normalize", input: { value: null } }],
+			}),
+		).effects;
+
+		await expect(effect?.run("owner-1")).resolves.toEqual({});
 	});
 
 	it("malformed JSONを拒否する", () => {
@@ -195,7 +195,6 @@ describe("createEffectOutputContract", () => {
 				defineEffect({
 					type: "fake.invalid_transport",
 					agentInputSchema: z.strictObject({ value: z.string().min(1) }),
-					inputSchema: z.strictObject({ value: z.string().min(1) }),
 					parseInput: (input) => input,
 					execute: async (input) => input,
 					describeTarget: () => null,
@@ -216,7 +215,6 @@ describe("createEffectOutputContract", () => {
 				defineEffect({
 					type: "fake.recursive",
 					agentInputSchema: recursiveSchema,
-					inputSchema: recursiveSchema,
 					parseInput: (input) => input,
 					execute: async (input) => input,
 					describeTarget: () => null,

@@ -322,7 +322,7 @@ describe("ConversationCoordinator", () => {
 		firstCompletion.resolve(completed([effect("first answer")]));
 		await flushPromises();
 
-		expect(execute.mock.calls[0]?.[0]).toEqual([effect("first answer")]);
+		expect(execute.mock.calls[0]?.[0]).toMatchObject([effect("first answer")]);
 		expect(runtime.startTurn).toHaveBeenCalledTimes(2);
 		expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
 			runtime.startTurn.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY,
@@ -990,7 +990,16 @@ const effectOutput = {
 		required: ["effects"],
 		additionalProperties: false,
 	},
-	parse: (text: string) => effectEnvelopeSchema.parse(JSON.parse(text)),
+	parse: (text: string) => ({
+		effects: effectEnvelopeSchema
+			.parse(JSON.parse(text))
+			.effects.map(({ type, input }): EffectRequest => ({
+				type,
+				input,
+				target: input,
+				run: async () => input,
+			})),
+	}),
 };
 const session: ConversationSession = {
 	key: "discord:guild_channel:300:200",
@@ -1092,11 +1101,13 @@ function createRuntime(completions: Promise<AgentTurnResult>[] = [Promise.resolv
 	return { port, archiveThread, interruptTurn, openThread, startTurn, steerTurn };
 }
 
-function completed(effects: readonly EffectRequest[]): AgentTurnResult {
+type AgentEffect = Pick<EffectRequest, "type" | "input">;
+
+function completed(effects: readonly AgentEffect[]): AgentTurnResult {
 	return { status: "completed", outputText: JSON.stringify({ effects }) };
 }
 
-function effect(value: string): EffectRequest {
+function effect(value: string): AgentEffect {
 	return {
 		type: "test.effect",
 		input: { target: "test", value },
