@@ -44,6 +44,10 @@ docker compose build
 
 ソースコードを変更した際は、コミット前に関連テストとすべてのクオリティゲート（CIチェック項目）を通過させてください。実装完了時にはローカルでのDockerビルドも確認します。
 
+## GitHub Actions
+
+- `uses:` はタグで記述し、SHAは `.github/workflows/actions.lock` で固定します。`uses:` を変更したら `gh-actions-lock`（miseで導入）を実行してロックファイルを更新してください。
+
 ## Git運用
 
 - Conventional Commits形式（`<type>: <日本語の要約>`）を使用します。
