@@ -67,7 +67,7 @@ describe("DiscordConversationHistory", () => {
 		]);
 	});
 
-	it("session contextとbefore Eventを境界で検証する", async () => {
+	it("session contextと未知のbefore Event typeを拒否する", async () => {
 		const history = new DiscordConversationHistory(createReadPort({}));
 		const before = createDiscordMessageEvent(createDiscordConversationSession(scope), message(201));
 
@@ -78,23 +78,6 @@ describe("DiscordConversationHistory", () => {
 				1,
 			),
 		).rejects.toThrow(ZodError);
-		await expect(
-			history.fetchBefore(createDiscordConversationSession(scope), { ...before, id: "999" }, 1),
-		).rejects.toThrow("does not match");
-		const otherScope = { kind: "guild_channel", guildId: "300", channelId: "999" } as const;
-		await expect(
-			history.fetchBefore(
-				createDiscordConversationSession(scope),
-				{
-					...createDiscordMessageEvent(createDiscordConversationSession(otherScope), {
-						...message(201),
-						channel: { id: "999", name: "other" },
-					}),
-					subject: "discord:guild_channel:300:200",
-				},
-				1,
-			),
-		).rejects.toThrow("scope does not match");
 		await expect(
 			history.fetchBefore(
 				createDiscordConversationSession(scope),

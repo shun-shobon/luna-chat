@@ -2,14 +2,11 @@ import { SnowflakeUtil } from "discord.js";
 
 import type { ConversationHistoryPort } from "../../conversation/ports/conversation-history-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
-import { conversationScopeKey, conversationScopeSchema } from "../domain/conversation-scope";
+import { conversationScopeSchema } from "../domain/conversation-scope";
 import {
 	createDiscordMessageEvent,
 	DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
-	DISCORD_EVENT_SOURCE,
 	DISCORD_MESSAGE_CREATED_EVENT_TYPE,
-	discordDelegatedEventDataSchema,
-	discordMessageEventDataSchema,
 } from "../domain/discord-event";
 import type { DiscordReadPort } from "../ports/discord-read-port";
 
@@ -22,15 +19,9 @@ export class DiscordConversationHistory implements ConversationHistoryPort {
 		limit: number,
 	): Promise<readonly LunaEvent[]> {
 		const scope = conversationScopeSchema.parse(session.context);
-		assertSession(session.source, session.key, scope);
-		const before = parseDiscordBeforeEvent(beforeEvent, session.key);
-		if (conversationScopeKey(before.scope) !== conversationScopeKey(scope)) {
-			throw new Error("Discord before Event scope does not match its ConversationSession.");
-		}
-		if (limit === 0) return [];
 		const channelId = scope.kind === "guild_thread" ? scope.threadId : scope.channelId;
 		const events: LunaEvent[] = [];
-		let cursor = before.cursor;
+		let cursor = beforeCursor(beforeEvent);
 		let remaining = limit;
 		while (remaining > 0) {
 			const pageLimit = Math.min(remaining, 100);
@@ -50,37 +41,13 @@ export class DiscordConversationHistory implements ConversationHistoryPort {
 	}
 }
 
-function assertSession(
-	source: string,
-	key: string,
-	scope: ReturnType<typeof conversationScopeSchema.parse>,
-): void {
-	if (source !== DISCORD_EVENT_SOURCE) {
-		throw new Error(`Discord history cannot read session source ${source}.`);
+function beforeCursor(event: LunaEvent): string {
+	switch (event.type) {
+		case DISCORD_MESSAGE_CREATED_EVENT_TYPE:
+			return event.id;
+		case DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE:
+			return SnowflakeUtil.generate({ timestamp: Date.parse(event.occurredAt) }).toString();
+		default:
+			throw new Error(`Discord history cannot start before event type ${event.type}.`);
 	}
-	const expectedKey = `discord:${conversationScopeKey(scope)}`;
-	if (key !== expectedKey) {
-		throw new Error(`Discord session key ${key} does not match context ${expectedKey}.`);
-	}
-}
-
-function parseDiscordBeforeEvent(event: LunaEvent, sessionKey: string) {
-	if (event.source !== DISCORD_EVENT_SOURCE || event.subject !== sessionKey) {
-		throw new Error("Discord history requires a Discord event from the same session.");
-	}
-	if (event.type === DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE) {
-		const data = discordDelegatedEventDataSchema.parse(event.data);
-		return {
-			scope: data.scope,
-			cursor: SnowflakeUtil.generate({ timestamp: Date.parse(event.occurredAt) }).toString(),
-		};
-	}
-	if (event.type !== DISCORD_MESSAGE_CREATED_EVENT_TYPE) {
-		throw new Error(`Discord history cannot start before event type ${event.type}.`);
-	}
-	const data = discordMessageEventDataSchema.parse(event.data);
-	if (data.message.id !== event.id) {
-		throw new Error("Discord message event ID does not match its message ID.");
-	}
-	return { scope: data.scope, cursor: data.message.id };
 }
