@@ -25,6 +25,17 @@ type ConversationCoordinatorOptions = Readonly<{
 	typingIdleMs: number;
 }>;
 
+type ConversationDependencies = Readonly<{
+	agent: AgentRuntimePort;
+	createThreadInput: () => Promise<AgentThreadInput>;
+	effectOutput: EffectOutputContract;
+	effects: EffectBatchPort;
+	history: ConversationHistoryPort;
+	logger: LoggerPort;
+	now: () => Date;
+	onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
+}>;
+
 export type ConversationModelSettings = Readonly<{ model: string; effort: string }>;
 
 type ScheduledTimeout = Readonly<{ cancel(): void }>;
@@ -34,43 +45,19 @@ export class ConversationCoordinator {
 	#accepting = true;
 
 	constructor(
-		private readonly dependencies: Readonly<{
-			agent: AgentRuntimePort;
-			createThreadInput: () => Promise<AgentThreadInput>;
-			effectOutput: EffectOutputContract;
-			effects: EffectBatchPort;
-			history: ConversationHistoryPort;
-			logger: LoggerPort;
-			now: () => Date;
-			onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
-		}>,
+		private readonly dependencies: ConversationDependencies,
 		private readonly options: ConversationCoordinatorOptions,
 	) {}
 
 	accept(input: AcceptedConversationEvent): boolean {
 		if (!this.#accepting) return false;
-		const key = input.session.key;
-		let actor = this.#actors.get(key);
-		if (actor === undefined) {
-			actor = new ConversationActor(input.session, this.dependencies, this.options, () => {
-				this.#actors.delete(key);
-			});
-			this.#actors.set(key, actor);
-		}
-		actor.accept(input.event);
+		this.#actorFor(input.session).accept(input.event);
 		return true;
 	}
 
 	configure(session: ConversationSession, settings: ConversationModelSettings): boolean {
 		if (!this.#accepting) return false;
-		let actor = this.#actors.get(session.key);
-		if (actor === undefined) {
-			actor = new ConversationActor(session, this.dependencies, this.options, () => {
-				this.#actors.delete(session.key);
-			});
-			this.#actors.set(session.key, actor);
-		}
-		return actor.configure(settings);
+		return this.#actorFor(session).configure(settings);
 	}
 
 	endSession(sessionKey: string): boolean {
@@ -83,15 +70,7 @@ export class ConversationCoordinator {
 
 	typing(session: ConversationSession, participantId: string): void {
 		if (!this.#accepting) return;
-		const key = session.key;
-		let actor = this.#actors.get(key);
-		if (actor === undefined) {
-			actor = new ConversationActor(session, this.dependencies, this.options, () => {
-				this.#actors.delete(key);
-			});
-			this.#actors.set(key, actor);
-		}
-		actor.typing(participantId);
+		this.#actorFor(session).typing(participantId);
 	}
 
 	stopIntake(): void {
@@ -114,6 +93,16 @@ export class ConversationCoordinator {
 
 	connectionLost(error: unknown): void {
 		for (const actor of this.#actors.values()) actor.connectionLost(error);
+	}
+
+	#actorFor(session: ConversationSession): ConversationActor {
+		const existing = this.#actors.get(session.key);
+		if (existing !== undefined) return existing;
+		const actor = new ConversationActor(session, this.dependencies, this.options, () => {
+			this.#actors.delete(session.key);
+		});
+		this.#actors.set(session.key, actor);
+		return actor;
 	}
 }
 
@@ -190,16 +179,7 @@ class ConversationActor {
 
 	constructor(
 		private readonly session: ConversationSession,
-		private readonly dependencies: Readonly<{
-			agent: AgentRuntimePort;
-			createThreadInput: () => Promise<AgentThreadInput>;
-			effectOutput: EffectOutputContract;
-			effects: EffectBatchPort;
-			history: ConversationHistoryPort;
-			logger: LoggerPort;
-			now: () => Date;
-			onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
-		}>,
+		private readonly dependencies: ConversationDependencies,
 		private readonly options: ConversationCoordinatorOptions,
 		private readonly onClosed: () => void,
 	) {}
@@ -341,12 +321,7 @@ class ConversationActor {
 				);
 				this.#startTurn(
 					this.#thread,
-					JSON.stringify({
-						source: "conversation",
-						session: { key: this.session.key, source: this.session.source },
-						history: command.history,
-						events: command.batch,
-					}),
+					this.#conversationInput(command.history, command.batch),
 					"conversation",
 				);
 				return;
@@ -512,16 +487,7 @@ class ConversationActor {
 		for (const event of batch) this.#activeEventIds.add(event.id);
 		const token = ++this.#operationToken;
 		if (this.#thread !== undefined) {
-			this.#startTurn(
-				this.#thread,
-				JSON.stringify({
-					source: "conversation",
-					session: { key: this.session.key, source: this.session.source },
-					history: [],
-					events: batch,
-				}),
-				"conversation",
-			);
+			this.#startTurn(this.#thread, this.#conversationInput([], batch), "conversation");
 			return;
 		}
 
@@ -585,16 +551,7 @@ class ConversationActor {
 		const token = this.#operationToken;
 		this.#steerActive = event;
 		void this.dependencies.agent
-			.steerTurn(
-				thread.id,
-				thread.turnId,
-				JSON.stringify({
-					source: "conversation",
-					session: { key: this.session.key, source: this.session.source },
-					history: [],
-					events: [event],
-				}),
-			)
+			.steerTurn(thread.id, thread.turnId, this.#conversationInput([], [event]))
 			.then(
 				() => this.#post({ kind: "steer_finished", token, event }),
 				(error: unknown) => this.#post({ kind: "steer_finished", token, event, error }),
@@ -765,6 +722,15 @@ class ConversationActor {
 		this.#operationToken += 1;
 		if (ownerId !== undefined) void this.#releaseEffects(ownerId);
 		this.#continueOrClose();
+	}
+
+	#conversationInput(history: readonly LunaEvent[], events: readonly LunaEvent[]): string {
+		return JSON.stringify({
+			source: "conversation",
+			session: { key: this.session.key, source: this.session.source },
+			history,
+			events,
+		});
 	}
 
 	#resetThread(): void {
