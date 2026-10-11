@@ -15,7 +15,7 @@ import type {
 	DiscordUserDetail,
 	ReadMessageHistoryInput,
 } from "../ports/discord-read-port";
-import { toDiscordGatewayMessage } from "./discord-message-adapter";
+import { toDiscordMessage } from "./discord-message-adapter";
 
 const readHistoryInputSchema = z
 	.strictObject({
@@ -53,7 +53,7 @@ export class DiscordReadAdapter implements DiscordReadPort {
 		const validated = readHistoryInputSchema.parse(input);
 		const messages = await this.client.fetchMessages(validated);
 		return messages
-			.map((message) => toDiscordGatewayMessage(message).message)
+			.map((message) => toDiscordMessage(message))
 			.toSorted((left, right) =>
 				left.timestamp === right.timestamp
 					? left.id.localeCompare(right.id)

@@ -5,7 +5,7 @@ import { ZodError } from "zod";
 import {
 	toDiscordGatewayMessage,
 	toDiscordGatewayTyping,
-	toDiscordMessageSource,
+	toDiscordMessage,
 } from "./discord-message-adapter";
 
 describe("discord message adapter", () => {
@@ -127,8 +127,17 @@ describe("discord message adapter", () => {
 		const invalid = createMessage({
 			attachments: collection([{ ...ATTACHMENT, url: "not-a-url" }]),
 		});
-		expect(() => toDiscordMessageSource(invalid)).not.toThrow();
-		expect(() => toDiscordGatewayMessage(invalid)).toThrow(ZodError);
+		expect(() => toDiscordMessage(invalid)).toThrow(ZodError);
+	});
+
+	it("system messageとsystem authorをsystemとして分類する", () => {
+		expect(toDiscordMessage(createMessage({ system: true, reference: null }))).toMatchObject({
+			kind: "system",
+			author: { kind: "system" },
+		});
+		expect(
+			toDiscordMessage(createMessage({ author: createUser({ system: true }), reference: null })),
+		).toMatchObject({ kind: "default", author: { kind: "system" } });
 	});
 
 	it("typing eventをpolicy判断せずscopeとuserへ変換する", () => {

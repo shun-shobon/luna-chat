@@ -1,11 +1,11 @@
 import { ChannelType } from "discord.js";
 import { z } from "zod";
 
-import { normalizeDiscordMessage } from "../application/normalize-discord-message";
-import type { DiscordMessageSource } from "../application/normalize-discord-message";
 import { conversationScopeSchema } from "../domain/conversation-scope";
 import type { ConversationScope } from "../domain/conversation-scope";
 import { discordIdSchema } from "../domain/discord-id";
+import { discordMessageSchema } from "../domain/discord-message";
+import type { DiscordMessage } from "../domain/discord-message";
 import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
 
 type CollectionLike = Readonly<{ values: () => unknown }>;
@@ -110,7 +110,7 @@ export function toDiscordGatewayMessage(message: unknown): DiscordGatewayMessage
 	const parsed = sdkMessageSchema.parse(message);
 	return {
 		lunaIsThreadMember: resolveLunaIsThreadMember(parsed.channel),
-		message: normalizeDiscordMessage(toDiscordMessageSourceFromParsed(parsed)),
+		message: toDiscordMessageFromParsed(parsed),
 		scope: resolveScope({ channel: parsed.channel, guildId: parsed.guild?.id ?? null }),
 	};
 }
@@ -129,33 +129,24 @@ export function toConversationScope(channel: unknown): ConversationScope {
 	return resolveScope({ channel: parsed, guildId: parsed.guildId ?? null });
 }
 
-export function toDiscordMessageSource(message: unknown): DiscordMessageSource {
-	const parsed = sdkMessageSchema.parse(message);
-	return toDiscordMessageSourceFromParsed(parsed);
+export function toDiscordMessage(message: unknown): DiscordMessage {
+	return toDiscordMessageFromParsed(sdkMessageSchema.parse(message));
 }
 
-function toDiscordMessageSourceFromParsed(
-	parsed: z.infer<typeof sdkMessageSchema>,
-): DiscordMessageSource {
-	const guild = parsed.guild == null ? null : { id: parsed.guild.id, name: parsed.guild.name };
-
-	return {
+function toDiscordMessageFromParsed(parsed: z.infer<typeof sdkMessageSchema>): DiscordMessage {
+	const replyTo = toReplyReference(parsed);
+	return discordMessageSchema.parse({
 		id: parsed.id,
-		timestamp: parsed.createdAt,
-		system: parsed.system,
-		guild,
-		channel: {
-			id: parsed.channel.id,
-			name: parsed.channel.name ?? null,
-		},
+		timestamp: parsed.createdAt.toISOString(),
+		kind: parsed.system ? "system" : replyTo == null ? "default" : "reply",
+		guild: parsed.guild == null ? null : { id: parsed.guild.id, name: parsed.guild.name },
+		channel: { id: parsed.channel.id, name: parsed.channel.name ?? null },
 		author: {
 			id: parsed.author.id,
+			kind: authorKind(parsed),
 			username: parsed.author.username,
 			displayName: parsed.member?.displayName ?? parsed.author.globalName,
-			bot: parsed.author.bot,
-			system: parsed.author.system,
 		},
-		webhookId: parsed.webhookId,
 		content: parsed.content,
 		attachments: collectionValues(parsed.attachments).map((value) => attachmentSchema.parse(value)),
 		stickers: collectionValues(parsed.stickers).map((value) => {
@@ -167,7 +158,7 @@ function toDiscordMessageSourceFromParsed(
 				format: String(sticker.format),
 			};
 		}),
-		reactions: collectionValues(parsed.reactions.cache).map(toReactionSource),
+		reactions: collectionValues(parsed.reactions.cache).map(toReaction),
 		mentions: {
 			users: collectionValues(parsed.mentions.users).map((value) => {
 				const user = userSchema.parse(value);
@@ -180,8 +171,14 @@ function toDiscordMessageSourceFromParsed(
 			}),
 			everyone: parsed.mentions.everyone,
 		},
-		replyTo: toReplyReference(parsed),
-	};
+		replyTo,
+	});
+}
+
+function authorKind(parsed: z.infer<typeof sdkMessageSchema>): DiscordMessage["author"]["kind"] {
+	if (parsed.webhookId != null) return "webhook";
+	if (parsed.system || parsed.author.system) return "system";
+	return parsed.author.bot ? "bot" : "human";
 }
 
 function resolveLunaIsThreadMember(channel: z.infer<typeof channelSchema>): boolean {
@@ -217,9 +214,7 @@ function resolveScope(input: {
 	});
 }
 
-function toReplyReference(
-	message: z.infer<typeof sdkMessageSchema>,
-): DiscordMessageSource["replyTo"] {
+function toReplyReference(message: z.infer<typeof sdkMessageSchema>): DiscordMessage["replyTo"] {
 	const messageId = message.reference?.messageId;
 	if (messageId == null) return null;
 
@@ -239,7 +234,7 @@ function toReplyReference(
 	};
 }
 
-function toReactionSource(value: unknown): DiscordMessageSource["reactions"][number] {
+function toReaction(value: unknown): DiscordMessage["reactions"][number] {
 	const reaction = reactionSchema.parse(value);
 	if (reaction.emoji.id == null) {
 		return {
