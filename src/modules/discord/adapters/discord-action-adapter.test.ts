@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TypingLeaseRegistry } from "../application/typing-lease-registry";
-import type { SendFileResolverPort } from "../ports/send-file-resolver-port";
 import { DiscordActionAdapter } from "./discord-action-adapter";
 import type {
 	DiscordActionClient,
@@ -91,10 +90,7 @@ function createAdapter(
 	client: DiscordActionClient,
 	typing = new TypingLeaseRegistry(60_000, vi.fn()),
 ): DiscordActionAdapter {
-	const files: SendFileResolverPort = {
-		resolve: vi.fn<SendFileResolverPort["resolve"]>(async (file) => ({ path: file.path })),
-	};
-	return new DiscordActionAdapter(client, files, typing);
+	return new DiscordActionAdapter(client, async (file) => file, typing);
 }
 
 function createClient(

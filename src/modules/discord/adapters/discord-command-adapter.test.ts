@@ -86,7 +86,11 @@ function commandInteraction(
 		channelId: input.channelId ?? "300",
 		guildId: input.guildId === undefined ? "200" : input.guildId,
 		user: { id: "400" },
-		channel: { type: input.channelType ?? ChannelType.GuildText, parentId: input.parentId ?? null },
+		channel: {
+			type: input.channelType ?? ChannelType.GuildText,
+			parentId: input.parentId ?? null,
+			members: { me: null },
+		},
 		options: {
 			getSubcommand: () => subcommand,
 			getSubcommandGroup: () =>

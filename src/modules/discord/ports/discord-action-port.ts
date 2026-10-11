@@ -2,7 +2,7 @@ import type { DiscordAction } from "../domain/discord-action";
 
 export type DiscordActionSuccess = Readonly<{
 	actionKind: DiscordAction["kind"];
-	detail?: Readonly<Record<string, string>>;
+	detail: Readonly<Record<string, string>>;
 }>;
 
 export interface DiscordActionPort {

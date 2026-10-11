@@ -211,7 +211,5 @@ function messageTarget(action: { channelId: string; messageId: string }): JsonVa
 }
 
 function actionSuccessToJson(result: DiscordActionSuccess): JsonValue {
-	return result.detail === undefined
-		? { actionKind: result.actionKind }
-		: { actionKind: result.actionKind, detail: result.detail };
+	return { actionKind: result.actionKind, detail: result.detail };
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FilesystemSendFileResolver } from "./filesystem-send-file-resolver";
+import { resolveSendFile } from "./filesystem-send-file-resolver";
 
 const temporaryDirectories: string[] = [];
 
@@ -14,16 +14,17 @@ afterEach(async () => {
 	);
 });
 
-describe("FilesystemSendFileResolver", () => {
+describe("resolveSendFile", () => {
 	it("realpath上の通常fileだけを解決する", async () => {
 		const directory = await createTemporaryDirectory();
 		const path = join(directory, "message.txt");
 		await writeFile(path, "hello");
 
 		const resolvedPath = await realpath(path);
-		await expect(
-			new FilesystemSendFileResolver().resolve({ path, fileName: "luna.txt" }),
-		).resolves.toEqual({ path: resolvedPath, fileName: "luna.txt" });
+		await expect(resolveSendFile({ path, fileName: "luna.txt" })).resolves.toEqual({
+			path: resolvedPath,
+			fileName: "luna.txt",
+		});
 	});
 
 	it("directoryを拒否する", async () => {
@@ -31,9 +32,7 @@ describe("FilesystemSendFileResolver", () => {
 		const child = join(directory, "child");
 		await mkdir(child);
 
-		await expect(new FilesystemSendFileResolver().resolve({ path: child })).rejects.toThrow(
-			"not a regular file",
-		);
+		await expect(resolveSendFile({ path: child })).rejects.toThrow("not a regular file");
 	});
 });
 

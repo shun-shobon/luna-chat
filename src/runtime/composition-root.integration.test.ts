@@ -80,7 +80,8 @@ vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOrig
 	createDiscordGatewayClient: vi.fn(() => fakes.client),
 }));
 
-vi.mock("../modules/discord/adapters/discord-mcp-server", () => ({
+vi.mock("../modules/discord/adapters/discord-mcp-server", async (importOriginal) => ({
+	...(await importOriginal()),
 	startDiscordMcpServer: vi.fn(async () => ({
 		close: fakes.mcpClose,
 		url: "http://127.0.0.1:12345/mcp",

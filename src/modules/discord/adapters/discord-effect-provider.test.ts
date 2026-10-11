@@ -177,7 +177,7 @@ describe("Discord Effect Provider", () => {
 				type: "discord.send_message",
 				target: { kind: "channel", channelId: "200" },
 				success: true,
-				value: { actionKind: "send_message" },
+				value: { actionKind: "send_message", detail: {} },
 			},
 		]);
 		expect(actions.execute).toHaveBeenCalledWith(
@@ -236,7 +236,10 @@ describe("Discord delegation Effect Provider", () => {
 
 function createActionPort() {
 	return {
-		execute: vi.fn<DiscordActionPort["execute"]>(async (action) => ({ actionKind: action.kind })),
+		execute: vi.fn<DiscordActionPort["execute"]>(async (action) => ({
+			actionKind: action.kind,
+			detail: {},
+		})),
 		releaseTyping: vi.fn<DiscordActionPort["releaseTyping"]>(async () => undefined),
 	};
 }

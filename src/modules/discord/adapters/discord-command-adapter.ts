@@ -14,6 +14,7 @@ import { conversationScopeSchema } from "../domain/conversation-scope";
 import type { ConversationScope } from "../domain/conversation-scope";
 import { createDiscordConversationSession } from "../domain/discord-event";
 import { shouldAcceptCommand } from "../domain/message-acceptance";
+import { isThreadChannel, resolveLunaIsThreadMember } from "./discord-message-adapter";
 
 type AllowedChannelSettings = Readonly<{
 	ids: ReadonlySet<string>;
@@ -71,7 +72,6 @@ const interactionLocationSchema = z.object({
 		})
 		.nullable(),
 });
-const threadMemberSchema = z.object({ me: z.object({ id: z.string() }).nullable() });
 const selectedOptionSchema = z.string().min(1);
 const sdkInteractionSchema = z.custom<Interaction>(
 	(value) =>
@@ -257,12 +257,7 @@ function resolveLocation(interaction: Interaction): {
 	}
 	const channel = location.channel;
 	if (channel == null) throw new Error("Discord interaction channel is unavailable");
-	if (
-		channel.type === ChannelType.AnnouncementThread ||
-		channel.type === ChannelType.PublicThread ||
-		channel.type === ChannelType.PrivateThread
-	) {
-		const member = threadMemberSchema.safeParse(channel.members);
+	if (isThreadChannel(channel.type)) {
 		return {
 			scope: conversationScopeSchema.parse({
 				kind: "guild_thread",
@@ -270,7 +265,7 @@ function resolveLocation(interaction: Interaction): {
 				parentChannelId: channel.parentId,
 				threadId: location.channelId,
 			}),
-			lunaIsThreadMember: member.success && member.data.me != null,
+			lunaIsThreadMember: resolveLunaIsThreadMember(channel),
 		};
 	}
 	return {

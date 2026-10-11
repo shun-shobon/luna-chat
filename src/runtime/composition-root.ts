@@ -27,12 +27,15 @@ import {
 	createDiscordGatewayClient,
 	DiscordGatewayAdapter,
 } from "../modules/discord/adapters/discord-gateway-adapter";
-import { startDiscordMcpServer } from "../modules/discord/adapters/discord-mcp-server";
+import {
+	DISCORD_MCP_TYPING_OWNER_HEADER,
+	startDiscordMcpServer,
+} from "../modules/discord/adapters/discord-mcp-server";
 import {
 	createDiscordReadClient,
 	DiscordReadAdapter,
 } from "../modules/discord/adapters/discord-read-adapter";
-import { FilesystemSendFileResolver } from "../modules/discord/adapters/filesystem-send-file-resolver";
+import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
@@ -76,7 +79,7 @@ export async function startLunaApplication(
 	const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
 		logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
 	});
-	const actionAdapter = new DiscordActionAdapter(client, new FilesystemSendFileResolver(), typing);
+	const actionAdapter = new DiscordActionAdapter(client, resolveSendFile, typing);
 	let conversation: ConversationCoordinator | undefined;
 	const delegation = new DiscordConversationDelegation(client, {
 		accept: (input) => conversation?.accept(input) ?? false,
@@ -165,7 +168,7 @@ export async function startLunaApplication(
 			buildMcpServers: (executionOwnerId) => ({
 				discord: {
 					url: mcp.url,
-					http_headers: { "X-Luna-Typing-Owner": executionOwnerId },
+					http_headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: executionOwnerId },
 				},
 			}),
 			capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],

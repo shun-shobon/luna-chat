@@ -181,7 +181,9 @@ function authorKind(parsed: z.infer<typeof sdkMessageSchema>): DiscordMessage["a
 	return parsed.author.bot ? "bot" : "human";
 }
 
-function resolveLunaIsThreadMember(channel: z.infer<typeof channelSchema>): boolean {
+export function resolveLunaIsThreadMember(
+	channel: Readonly<{ type: ChannelType; members?: unknown }>,
+): boolean {
 	if (!isThreadChannel(channel.type)) return false;
 	return threadMemberManagerSchema.parse(channel.members).me != null;
 }
@@ -270,7 +272,7 @@ function isIterable(value: unknown): value is Iterable<unknown> {
 	);
 }
 
-function isThreadChannel(type: ChannelType): boolean {
+export function isThreadChannel(type: ChannelType): boolean {
 	return (
 		type === ChannelType.AnnouncementThread ||
 		type === ChannelType.PublicThread ||

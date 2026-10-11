@@ -237,6 +237,7 @@ function createActionPort() {
 	return {
 		execute: vi.fn<DiscordActionPort["execute"]>(async (action) => ({
 			actionKind: action.kind,
+			detail: {},
 		})),
 		releaseTyping: vi.fn(async () => undefined),
 	};

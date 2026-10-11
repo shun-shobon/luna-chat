@@ -11,7 +11,6 @@ import type {
 	SendFile,
 } from "../domain/discord-action";
 import type { DiscordActionPort, DiscordActionSuccess } from "../ports/discord-action-port";
-import type { ResolvedSendFile, SendFileResolverPort } from "../ports/send-file-resolver-port";
 
 type SentMessage = Readonly<{ id: string }>;
 
@@ -47,7 +46,7 @@ export type DiscordActionClient = Readonly<{
 export class DiscordActionAdapter implements DiscordActionPort {
 	constructor(
 		private readonly client: DiscordActionClient,
-		private readonly files: SendFileResolverPort,
+		private readonly resolveFile: (file: SendFile) => Promise<SendFile>,
 		private readonly typing: TypingLeaseRegistry,
 	) {}
 
@@ -123,7 +122,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 		const resolvedFiles =
 			files === undefined
 				? undefined
-				: await Promise.all(files.map(async (file) => await this.files.resolve(file)));
+				: await Promise.all(files.map(async (file) => await this.resolveFile(file)));
 		return {
 			...(content === undefined ? {} : { content }),
 			...(resolvedFiles === undefined ? {} : { files: resolvedFiles.map(toAttachmentBuilder) }),
@@ -131,7 +130,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 	}
 }
 
-function toAttachmentBuilder(file: ResolvedSendFile): AttachmentBuilder {
+function toAttachmentBuilder(file: SendFile): AttachmentBuilder {
 	return new AttachmentBuilder(file.path, {
 		name: file.fileName ?? basename(file.path),
 		...(file.description === undefined ? {} : { description: file.description }),
