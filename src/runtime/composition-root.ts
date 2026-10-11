@@ -24,10 +24,6 @@ import { DiscordConversationController } from "../modules/discord/adapters/disco
 import { DiscordConversationDelegation } from "../modules/discord/adapters/discord-conversation-delegation";
 import { DiscordConversationHistory } from "../modules/discord/adapters/discord-conversation-history";
 import {
-	createDiscordDelegationEffectProvider,
-	createDiscordEffectProvider,
-} from "../modules/discord/adapters/discord-effect-provider";
-import {
 	createDiscordGatewayClient,
 	createDiscordGatewayEventClient,
 	DiscordGatewayAdapter,
@@ -41,7 +37,6 @@ import { FilesystemSendFileResolver } from "../modules/discord/adapters/filesyst
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
-import { createWaitEffectProvider } from "../modules/effect/adapters/wait-effect-provider";
 import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
 import { createEffectRegistry } from "../modules/effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
@@ -49,13 +44,13 @@ import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter
 import { EventExecutor } from "../modules/event/application/event-executor";
 import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
 import type { HttpEventServerHandle } from "../modules/http/adapters/http-event-server";
-import { createHttpResponseEffectProvider } from "../modules/http/adapters/http-response-effect-provider";
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
+import { createEffectProviders } from "./effect-providers";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createThreadInputFactory } from "./thread-input-factory";
 
@@ -91,12 +86,9 @@ export async function startLunaApplication(
 		now: () => new Date(),
 	});
 	const httpResponses = new HttpResponseRegistry();
-	const effectRegistry = createEffectRegistry([
-		createDiscordEffectProvider(actionAdapter),
-		createDiscordDelegationEffectProvider(delegation),
-		createWaitEffectProvider(),
-		createHttpResponseEffectProvider(httpResponses),
-	]);
+	const effectRegistry = createEffectRegistry(
+		createEffectProviders({ actions: actionAdapter, delegation, httpResponses }),
+	);
 	const effectOutput = createEffectOutputContract(effectRegistry);
 	const effects = createEffectBatchExecutor(effectRegistry, logger);
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));

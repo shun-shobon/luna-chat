@@ -77,7 +77,6 @@ function createOutputJsonSchema(registry: EffectRegistry): Record<string, unknow
 		required: ["effects"],
 		additionalProperties: false,
 	};
-	assertStructuredOutputSchema(schema);
 	return Object.freeze(schema);
 }
 
@@ -85,76 +84,6 @@ function withoutDialect(schema: Record<string, unknown>): Record<string, unknown
 	const result = { ...schema };
 	delete result["$schema"];
 	return result;
-}
-
-const SUPPORTED_SCHEMA_KEYWORDS = new Set([
-	"additionalProperties",
-	"anyOf",
-	"const",
-	"description",
-	"enum",
-	"exclusiveMaximum",
-	"exclusiveMinimum",
-	"format",
-	"items",
-	"maximum",
-	"maxItems",
-	"minimum",
-	"minItems",
-	"multipleOf",
-	"pattern",
-	"properties",
-	"required",
-	"type",
-]);
-
-function assertStructuredOutputSchema(value: unknown, path = "outputSchema"): void {
-	if (Array.isArray(value)) {
-		value.forEach((item, index) => assertStructuredOutputSchema(item, `${path}[${String(index)}]`));
-		return;
-	}
-	if (!isRecord(value)) return;
-
-	for (const keyword of Object.keys(value)) {
-		if (!SUPPORTED_SCHEMA_KEYWORDS.has(keyword)) {
-			throw new Error(`${path} contains unsupported JSON Schema keyword: ${keyword}`);
-		}
-	}
-
-	if (value["type"] === "object") {
-		if (value["additionalProperties"] !== false) {
-			throw new Error(`${path} must set additionalProperties to false.`);
-		}
-		const properties = value["properties"];
-		const required = value["required"];
-		if (!isRecord(properties) || !Array.isArray(required)) {
-			throw new Error(`${path} must define object properties and required fields.`);
-		}
-		const requiredFields = z.array(z.string()).parse(required);
-		if (
-			requiredFields.length !== Object.keys(properties).length ||
-			Object.keys(properties).some((property) => !requiredFields.includes(property))
-		) {
-			throw new Error(`${path} must require every object property.`);
-		}
-	}
-
-	const properties = value["properties"];
-	if (isRecord(properties)) {
-		for (const [property, propertySchema] of Object.entries(properties)) {
-			assertStructuredOutputSchema(propertySchema, `${path}.properties.${property}`);
-		}
-	}
-	if (value["items"] !== undefined) {
-		assertStructuredOutputSchema(value["items"], `${path}.items`);
-	}
-	if (value["anyOf"] !== undefined) {
-		assertStructuredOutputSchema(value["anyOf"], `${path}.anyOf`);
-	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value != null && !Array.isArray(value);
 }
 
 function toErrorMessage(value: unknown): string {

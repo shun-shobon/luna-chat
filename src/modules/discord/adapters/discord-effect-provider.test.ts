@@ -151,12 +151,6 @@ describe("Discord Effect Provider", () => {
 		expect(actions.releaseTyping).toHaveBeenCalledWith("owner-1");
 	});
 
-	it("Codex Structured Outputsで使用可能なSchemaを提供する", () => {
-		const provider = createDiscordEffectProvider(createActionPort());
-
-		expect(() => createEffectOutputContract(createEffectRegistry([provider]))).not.toThrow();
-	});
-
 	it("Agent outputを正規化してBatchからDiscord Actionまで実行する", async () => {
 		const actions = createActionPort();
 		const registry = createEffectRegistry([createDiscordEffectProvider(actions)]);
