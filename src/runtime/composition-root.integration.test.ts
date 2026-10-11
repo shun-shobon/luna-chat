@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import * as effectOutputModule from "../modules/effect/application/effect-output-contract";
 import * as effectRegistryModule from "../modules/effect/application/effect-registry";
-import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
+import { EventExecutor } from "../modules/event/application/event-executor";
 import { startLunaApplication } from "./composition-root";
 import * as threadInputModule from "./thread-input-factory";
 
@@ -191,7 +191,7 @@ describe("composition root integration", () => {
 			LUNA_HOME: "/tmp/luna-test",
 		};
 		const conversationLost = vi.spyOn(ConversationCoordinator.prototype, "connectionLost");
-		const eventLost = vi.spyOn(EventAgentAdapter.prototype, "connectionLost");
+		const eventLost = vi.spyOn(EventExecutor.prototype, "connectionLost");
 		const abort = vi.spyOn(ConversationCoordinator.prototype, "abort");
 		const drain = vi.spyOn(ConversationCoordinator.prototype, "drain");
 		const application = await startLunaApplication();

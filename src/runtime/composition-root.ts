@@ -42,7 +42,6 @@ import { discordIdSchema } from "../modules/discord/domain/discord-id";
 import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
 import { createEffectRegistry } from "../modules/effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
-import { EventAgentAdapter } from "../modules/event/adapters/event-agent-adapter";
 import { EventExecutor } from "../modules/event/application/event-executor";
 import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
 import type { HttpEventServerHandle } from "../modules/http/adapters/http-event-server";
@@ -104,7 +103,7 @@ export async function startLunaApplication(
 		read: readAdapter,
 	});
 
-	let eventAgent: EventAgentAdapter | undefined;
+	let eventExecutor: EventExecutor | undefined;
 	const fatal = Promise.withResolvers<Error>();
 	const supervisor = new AgentRuntimeSupervisor(
 		{
@@ -129,7 +128,7 @@ export async function startLunaApplication(
 	supervisor.onFailure((error) => {
 		logger.log("error", "agent.connection_failed", {}, { error });
 		conversation?.connectionLost(error);
-		eventAgent?.connectionLost();
+		eventExecutor?.connectionLost();
 	});
 	supervisor.onFatal((error) => {
 		logger.log("error", "agent.restart_budget_exceeded", {}, { error });
@@ -203,20 +202,18 @@ export async function startLunaApplication(
 		);
 
 		const clock = new SystemAutomationClock();
-		eventAgent = new EventAgentAdapter({
+		const executor = new EventExecutor({
 			agent: supervisor,
 			createThreadInput,
 			effectOutput,
 			effects,
-			onError: (error, operation) => {
-				logger.log("error", "event.operation_failed", {}, { error, operation });
-			},
+			logger,
 		});
+		eventExecutor = executor;
 		const automationWorkspace = new WorkspaceAutomationAdapter({
 			schedulePath: workspace.cronPath,
 			workspaceDir: workspace.workspaceDir,
 		});
-		const executor = new EventExecutor({ agent: eventAgent, logger });
 		httpService = new HttpEventService({
 			conversation,
 			executor,

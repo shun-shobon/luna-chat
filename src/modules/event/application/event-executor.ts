@@ -1,40 +1,72 @@
+import type {
+	AgentRuntimePort,
+	AgentThreadInput,
+	AgentTurnResult,
+} from "../../agent/ports/outbound/agent-runtime-port";
+import { requiresEffectFollowUp } from "../../effect/domain/effect";
+import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
+import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { LunaEvent } from "../domain/luna-event";
-import type { EventAgentPort } from "../ports/event-agent-port";
 import type { EventExecutionPort, EventExecutionResult } from "../ports/event-execution-port";
 
+type EventThread = Readonly<{ id: string; ownerId: string }>;
+
 export class EventExecutor implements EventExecutionPort {
+	readonly #activeOwners = new Set<string>();
+	#connectionGeneration = 0;
+
 	public constructor(
 		private readonly dependencies: Readonly<{
-			agent: EventAgentPort;
+			agent: AgentRuntimePort;
+			createThreadInput: () => Promise<AgentThreadInput>;
+			effectOutput: EffectOutputContract;
+			effects: EffectBatchPort;
 			logger: LoggerPort;
 		}>,
 	) {}
+
+	public connectionLost(): void {
+		this.#connectionGeneration += 1;
+		for (const ownerId of this.#activeOwners) void this.#releaseEffects(ownerId);
+		this.#activeOwners.clear();
+	}
 
 	public async execute(
 		event: LunaEvent,
 		afterTurnStarted?: () => Promise<void>,
 	): Promise<EventExecutionResult> {
-		let threadId: string | undefined;
+		let thread: EventThread | undefined;
 		let result: EventExecutionResult;
 
 		try {
-			threadId = await this.dependencies.agent.openEventThread();
-			const startedTurn = await this.dependencies.agent.startEventTurn(threadId, event);
+			thread = await this.#openThread();
+			const started = await this.dependencies.agent.startTurn(thread.id, {
+				input: JSON.stringify({ source: "event", event }),
+				outputSchema: this.dependencies.effectOutput.jsonSchema,
+			});
+			const completion = this.#completeChain(
+				thread,
+				this.#connectionGeneration,
+				started.completion,
+			);
 			await afterTurnStarted?.();
-			await startedTurn.completion;
+			await completion;
 			result = { status: "completed" };
 		} catch (error: unknown) {
 			this.dependencies.logger.log(
 				"error",
 				"event.execution_failed",
-				threadId === undefined ? {} : { threadId },
+				thread === undefined ? {} : { threadId: thread.id },
 				{ error, eventSource: event.source, eventType: event.type },
 			);
 			result = { error, status: "failed" };
 		}
 
-		if (threadId !== undefined) {
+		// connectionLost が所有者を解放済みなら、そのthreadは旧接続のものなのでarchiveしない。
+		if (thread !== undefined && this.#activeOwners.delete(thread.ownerId)) {
+			const threadId = thread.id;
+			await this.#releaseEffects(thread.ownerId);
 			await this.dependencies.agent.archiveThread(threadId).catch((error: unknown) => {
 				this.dependencies.logger.log(
 					"error",
@@ -46,5 +78,63 @@ export class EventExecutor implements EventExecutionPort {
 		}
 
 		return result;
+	}
+
+	async #openThread(): Promise<EventThread> {
+		const connectionGeneration = this.#connectionGeneration;
+		const input = await this.dependencies.createThreadInput();
+		if (connectionGeneration !== this.#connectionGeneration) {
+			throw new Error("Codex connection was lost while preparing an event thread");
+		}
+		const threadId = await this.dependencies.agent.openThread(input);
+		if (connectionGeneration !== this.#connectionGeneration) {
+			throw new Error("Codex connection was lost while opening an event thread");
+		}
+		this.#activeOwners.add(input.executionOwnerId);
+		return { id: threadId, ownerId: input.executionOwnerId };
+	}
+
+	async #completeChain(
+		thread: EventThread,
+		connectionGeneration: number,
+		initialCompletion: Promise<AgentTurnResult>,
+	): Promise<void> {
+		let completion = initialCompletion;
+		for (;;) {
+			try {
+				const turn = await completion;
+				if (turn.status !== "completed") {
+					throw new Error(turn.errorMessage ?? `Event turn ${turn.status}`);
+				}
+				const output = this.dependencies.effectOutput.parse(turn.outputText);
+				const results = await this.dependencies.effects.execute(output.effects, thread.ownerId);
+				await this.#releaseEffects(thread.ownerId);
+				if (connectionGeneration !== this.#connectionGeneration) {
+					throw new Error("Codex connection was lost while effects were running");
+				}
+				if (!requiresEffectFollowUp(results)) return;
+				const followUp = await this.dependencies.agent.startTurn(thread.id, {
+					input: JSON.stringify({ source: "effect_results", results }),
+					outputSchema: this.dependencies.effectOutput.jsonSchema,
+				});
+				completion = followUp.completion;
+			} catch (error: unknown) {
+				await this.#releaseEffects(thread.ownerId);
+				throw error;
+			}
+		}
+	}
+
+	async #releaseEffects(ownerId: string): Promise<void> {
+		try {
+			await this.dependencies.effects.release(ownerId);
+		} catch (error: unknown) {
+			this.dependencies.logger.log(
+				"error",
+				"event.operation_failed",
+				{},
+				{ error, operation: "effects/release" },
+			);
+		}
 	}
 }
