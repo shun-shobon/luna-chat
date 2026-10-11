@@ -16,11 +16,11 @@ const fakes = vi.hoisted(() => {
 		on: vi.fn(),
 		user: { id: "100" },
 	};
-	const managedClose = vi.fn(async () => undefined);
+	const runtimeClose = vi.fn(async () => undefined);
 	const mcpClose = vi.fn(async () => undefined);
 	const recurringCrons: string[] = [];
 	const runtime = { failure: undefined as ((error: Error) => void) | undefined };
-	return { client, managedClose, mcpClose, recurringCrons, runtime };
+	return { client, runtimeClose, mcpClose, recurringCrons, runtime };
 });
 
 vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
@@ -55,23 +55,22 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 	})),
 }));
 
-vi.mock("../modules/agent/adapters/outbound/codex/managed-codex-runtime", () => ({
-	startManagedCodexRuntime: vi.fn(async () => ({
-		close: fakes.managedClose,
-		onFailure: vi.fn((handler: (error: Error) => void) => {
-			fakes.runtime.failure = handler;
-			return () => undefined;
+vi.mock("../modules/agent/adapters/outbound/codex/codex-agent-runtime", () => ({
+	CodexAgentRuntime: {
+		start: vi.fn(async (options: { onFailure: (error: Error) => void }) => {
+			fakes.runtime.failure = options.onFailure;
+			return {
+				archiveThread: vi.fn(async () => undefined),
+				close: fakes.runtimeClose,
+				deleteThread: vi.fn(async () => undefined),
+				listArchivedThreads: vi.fn(async () => ({ data: [] })),
+				listModels: vi.fn(async () => []),
+				openThread: vi.fn(async () => "thread-1"),
+				startTurn: vi.fn(),
+				steerTurn: vi.fn(async () => undefined),
+			};
 		}),
-		port: {
-			archiveThread: vi.fn(async () => undefined),
-			deleteThread: vi.fn(async () => undefined),
-			listArchivedThreads: vi.fn(async () => ({ data: [] })),
-			listModels: vi.fn(async () => []),
-			openThread: vi.fn(async () => "thread-1"),
-			startTurn: vi.fn(),
-			steerTurn: vi.fn(async () => undefined),
-		},
-	})),
+	},
 }));
 
 vi.mock("../modules/discord/adapters/discord-gateway-adapter", async (importOriginal) => ({
@@ -155,7 +154,7 @@ describe("composition root integration", () => {
 		expect(fakes.client.off).toHaveBeenCalledTimes(3);
 		expect(fakes.mcpClose).toHaveBeenCalledOnce();
 		expect(fakes.client.destroy).toHaveBeenCalledOnce();
-		expect(fakes.managedClose).toHaveBeenCalledOnce();
+		expect(fakes.runtimeClose).toHaveBeenCalledOnce();
 	});
 
 	it("startup中のabortでDiscord接続とchild runtimeを閉じる", async () => {
@@ -178,7 +177,7 @@ describe("composition root integration", () => {
 
 		await expect(starting).rejects.toThrow("Discord login aborted");
 		expect(fakes.client.destroy).toHaveBeenCalled();
-		expect(fakes.managedClose).toHaveBeenCalled();
+		expect(fakes.runtimeClose).toHaveBeenCalled();
 		expect(fakes.mcpClose).toHaveBeenCalled();
 	});
 

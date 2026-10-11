@@ -8,7 +8,6 @@ import type {
 	ThreadId,
 	TurnId,
 } from "../../../ports/outbound/agent-runtime-port";
-import type { ManagedAgentRuntime } from "./managed-codex-runtime";
 
 type AgentRestartPolicy = {
 	initialDelayMs: number;
@@ -17,10 +16,17 @@ type AgentRestartPolicy = {
 	windowMs: number;
 };
 
+export type SupervisedAgentRuntime = AgentRuntimePort & { close(): Promise<void> };
+
 type AgentRuntimeSupervisorDependencies = {
 	delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 	now?: () => number;
-	startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
+	onFailure(error: Error): void;
+	onFatal(error: Error): void;
+	startRuntime: (
+		signal: AbortSignal,
+		onFailure: (error: Error) => void,
+	) => Promise<SupervisedAgentRuntime>;
 };
 
 export class AgentRuntimeRestartLimitError extends Error {
@@ -31,23 +37,21 @@ export class AgentRuntimeRestartLimitError extends Error {
 }
 
 export class AgentRuntimeSupervisor implements AgentRuntimePort {
+	readonly #dependencies: AgentRuntimeSupervisorDependencies;
 	readonly #delay: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
-	readonly #fatalHandlers = new Set<(error: Error) => void>();
-	readonly #failureHandlers = new Set<(error: Error) => void>();
 	readonly #now: () => number;
 	readonly #policy: AgentRestartPolicy;
 	readonly #restartTimestamps: number[] = [];
-	readonly #startRuntime: (signal: AbortSignal) => Promise<ManagedAgentRuntime>;
 	#bootPromise: Promise<AgentRuntimePort> | undefined;
 	readonly #closeController = new AbortController();
 	#closed = false;
 	#fatalError: Error | undefined;
-	#managed: ManagedAgentRuntime | undefined;
+	#runtime: SupervisedAgentRuntime | undefined;
 	#runtimeClosePromise: Promise<void> | undefined;
 
 	public constructor(policy: AgentRestartPolicy, dependencies: AgentRuntimeSupervisorDependencies) {
 		this.#policy = policy;
-		this.#startRuntime = dependencies.startRuntime;
+		this.#dependencies = dependencies;
 		this.#now = dependencies.now ?? Date.now;
 		this.#delay = dependencies.delay ?? defaultDelay;
 	}
@@ -62,12 +66,12 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		}
 		this.#closed = true;
 		this.#closeController.abort();
-		const managed = this.#managed;
-		this.#managed = undefined;
+		const runtime = this.#runtime;
+		this.#runtime = undefined;
 		const bootPromise = this.#bootPromise;
 		const runtimeClosePromise = this.#runtimeClosePromise;
 		const closeResultsPromise = Promise.allSettled([
-			...(managed === undefined ? [] : [managed.close()]),
+			...(runtime === undefined ? [] : [runtime.close()]),
 			...(runtimeClosePromise === undefined ? [] : [runtimeClosePromise]),
 		]);
 		const [closeResults] = await Promise.all([
@@ -92,20 +96,6 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		return await (await this.#getRuntime()).listModels();
 	}
 
-	public onFatal(handler: (error: Error) => void): () => void {
-		if (this.#fatalError !== undefined) {
-			handler(this.#fatalError);
-			return () => undefined;
-		}
-		this.#fatalHandlers.add(handler);
-		return () => this.#fatalHandlers.delete(handler);
-	}
-
-	public onFailure(handler: (error: Error) => void): () => void {
-		this.#failureHandlers.add(handler);
-		return () => this.#failureHandlers.delete(handler);
-	}
-
 	public async openThread(input: AgentThreadInput): Promise<ThreadId> {
 		return await (await this.#getRuntime()).openThread(input);
 	}
@@ -125,27 +115,17 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	async #boot(): Promise<AgentRuntimePort> {
 		while (!this.#closed && this.#fatalError === undefined) {
 			try {
-				const managed = await this.#startRuntime(this.#closeController.signal);
+				let runtime: SupervisedAgentRuntime | undefined;
+				runtime = await this.#dependencies.startRuntime(this.#closeController.signal, (error) => {
+					// A failure during startup rejects startRuntime and is retried by this loop instead.
+					if (runtime !== undefined) this.#handleRuntimeFailure(runtime, error);
+				});
 				if (this.#closeController.signal.aborted) {
-					await managed.close();
+					await runtime.close();
 					break;
 				}
-				let accepted = false;
-				let startupFailure: Error | undefined;
-				managed.onFailure((error) => {
-					if (!accepted) {
-						startupFailure = error;
-						return;
-					}
-					this.#handleRuntimeFailure(managed, error);
-				});
-				if (startupFailure !== undefined) {
-					await managed.close();
-					throw startupFailure;
-				}
-				this.#managed = managed;
-				accepted = true;
-				return managed.port;
+				this.#runtime = runtime;
+				return runtime;
 			} catch (error: unknown) {
 				if (this.#closeController.signal.aborted) {
 					break;
@@ -163,8 +143,8 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 
 	async #getRuntime(): Promise<AgentRuntimePort> {
 		this.#assertAvailable();
-		if (this.#managed !== undefined) {
-			return this.#managed.port;
+		if (this.#runtime !== undefined) {
+			return this.#runtime;
 		}
 		this.#bootPromise ??= this.#boot().finally(() => {
 			this.#bootPromise = undefined;
@@ -172,12 +152,12 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		return await this.#bootPromise;
 	}
 
-	#handleRuntimeFailure(managed: ManagedAgentRuntime, error: Error): void {
-		if (this.#managed !== managed) {
+	#handleRuntimeFailure(runtime: SupervisedAgentRuntime, error: Error): void {
+		if (this.#runtime !== runtime) {
 			return;
 		}
-		this.#managed = undefined;
-		const closePromise = managed.close();
+		this.#runtime = undefined;
+		const closePromise = runtime.close();
 		this.#runtimeClosePromise = closePromise;
 		void closePromise
 			.catch(() => undefined)
@@ -199,9 +179,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	}
 
 	#registerRestart(cause: Error): number | undefined {
-		for (const handler of this.#failureHandlers) {
-			handler(cause);
-		}
+		this.#dependencies.onFailure(cause);
 		const now = this.#now();
 		let oldestRestart = this.#restartTimestamps[0];
 		while (oldestRestart !== undefined && now - oldestRestart >= this.#policy.windowMs) {
@@ -211,9 +189,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		if (this.#restartTimestamps.length >= this.#policy.limit) {
 			const fatalError = new AgentRuntimeRestartLimitError({ cause });
 			this.#fatalError = fatalError;
-			for (const handler of this.#fatalHandlers) {
-				handler(fatalError);
-			}
+			this.#dependencies.onFatal(fatalError);
 			return undefined;
 		}
 		this.#restartTimestamps.push(now);

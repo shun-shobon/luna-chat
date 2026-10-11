@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRuntimePort } from "../../../ports/outbound/agent-runtime-port";
 import { AgentRuntimeRestartLimitError, AgentRuntimeSupervisor } from "./agent-runtime-supervisor";
-import type { ManagedAgentRuntime } from "./managed-codex-runtime";
+import type { SupervisedAgentRuntime } from "./agent-runtime-supervisor";
 
-function createPort(): AgentRuntimePort {
+type StartRuntime = (
+	signal: AbortSignal,
+	onFailure: (error: Error) => void,
+) => Promise<SupervisedAgentRuntime>;
+
+function createRuntime(close: () => Promise<void> = async () => undefined): SupervisedAgentRuntime {
 	return {
 		archiveThread: async () => undefined,
+		close,
 		deleteThread: async () => undefined,
 		listArchivedThreads: async () => ({ data: [] }),
 		listModels: async () => [],
@@ -18,30 +23,38 @@ function createPort(): AgentRuntimePort {
 	};
 }
 
-function createManagedRuntime(port = createPort()): ManagedAgentRuntime {
-	return {
-		close: async () => undefined,
-		onFailure: () => () => undefined,
-		port,
-	};
+function createSupervisor(
+	policy: ConstructorParameters<typeof AgentRuntimeSupervisor>[0],
+	startRuntime: StartRuntime,
+	options: {
+		delay?: (milliseconds: number) => Promise<void>;
+		onFailure?: (error: Error) => void;
+	} = {},
+): AgentRuntimeSupervisor {
+	return new AgentRuntimeSupervisor(policy, {
+		delay: options.delay ?? (async () => undefined),
+		now: () => 1_000,
+		onFailure: options.onFailure ?? (() => undefined),
+		onFatal: () => undefined,
+		startRuntime,
+	});
 }
 
 describe("AgentRuntimeSupervisor", () => {
 	it("初期化失敗を指数バックオフして再試行する", async () => {
 		const delays: number[] = [];
 		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
+			.fn<StartRuntime>()
 			.mockRejectedValueOnce(new Error("spawn failed"))
 			.mockRejectedValueOnce(new Error("initialize failed"))
-			.mockResolvedValue(createManagedRuntime());
-		const supervisor = new AgentRuntimeSupervisor(
+			.mockResolvedValue(createRuntime());
+		const supervisor = createSupervisor(
 			{ initialDelayMs: 1_000, limit: 5, maxDelayMs: 30_000, windowMs: 300_000 },
+			startRuntime,
 			{
 				delay: async (milliseconds) => {
 					delays.push(milliseconds);
 				},
-				now: () => 10_000,
-				startRuntime,
 			},
 		);
 
@@ -52,79 +65,53 @@ describe("AgentRuntimeSupervisor", () => {
 	});
 
 	it("window 内で上限を超えた次の障害を fatal にする", async () => {
-		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
-			.mockRejectedValue(new Error("always fails"));
-		const supervisor = new AgentRuntimeSupervisor(
+		const startRuntime = vi.fn<StartRuntime>().mockRejectedValue(new Error("always fails"));
+		const supervisor = createSupervisor(
 			{ initialDelayMs: 100, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+			startRuntime,
 		);
 
 		await expect(supervisor.start()).rejects.toBeInstanceOf(AgentRuntimeRestartLimitError);
 		expect(startRuntime).toHaveBeenCalledTimes(3);
 	});
 
-	it("生成直後に既に壊れている runtime を READY として採用しない", async () => {
-		const failedRuntime: ManagedAgentRuntime = {
-			close: async () => undefined,
-			onFailure: (handler) => {
-				handler(new Error("already failed"));
-				return () => undefined;
-			},
-			port: createPort(),
-		};
+	it("起動中に通知された障害では再起動せず、起動失敗として再試行する", async () => {
+		const failure = new Error("initialize failed");
 		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
-			.mockResolvedValueOnce(failedRuntime)
-			.mockResolvedValueOnce(createManagedRuntime());
-		const supervisor = new AgentRuntimeSupervisor(
-			{ initialDelayMs: 100, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+			.fn<StartRuntime>()
+			.mockImplementationOnce(async (_signal, onFailure) => {
+				onFailure(failure);
+				throw failure;
+			})
+			.mockResolvedValueOnce(createRuntime());
+		const failures: Error[] = [];
+		const supervisor = createSupervisor(
+			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
+			startRuntime,
+			{ onFailure: (error) => failures.push(error) },
 		);
 
 		await supervisor.start();
 
 		expect(startRuntime).toHaveBeenCalledTimes(2);
-	});
-
-	it("各 restart entry を onFailure で通知し、initial delay 0 を許容する", async () => {
-		const failure = new Error("spawn failed");
-		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
-			.mockRejectedValueOnce(failure)
-			.mockResolvedValueOnce(createManagedRuntime());
-		const supervisor = new AgentRuntimeSupervisor(
-			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
-		);
-		const failures: Error[] = [];
-		supervisor.onFailure((error) => failures.push(error));
-
-		await supervisor.start();
-
 		expect(failures).toEqual([failure]);
 	});
 
 	it("READY 世代の connection failure も onFailure で通知する", async () => {
 		let reportFailure: ((error: Error) => void) | undefined;
-		const firstRuntime: ManagedAgentRuntime = {
-			close: async () => undefined,
-			onFailure: (handler) => {
-				reportFailure = handler;
-				return () => undefined;
-			},
-			port: createPort(),
-		};
 		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
-			.mockResolvedValueOnce(firstRuntime)
-			.mockResolvedValueOnce(createManagedRuntime());
-		const supervisor = new AgentRuntimeSupervisor(
-			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
-		);
+			.fn<StartRuntime>()
+			.mockImplementationOnce(async (_signal, onFailure) => {
+				reportFailure = onFailure;
+				return createRuntime();
+			})
+			.mockResolvedValueOnce(createRuntime());
 		const failures: Error[] = [];
-		supervisor.onFailure((error) => failures.push(error));
+		const supervisor = createSupervisor(
+			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
+			startRuntime,
+			{ onFailure: (error) => failures.push(error) },
+		);
 		await supervisor.start();
 		const failure = new Error("connection lost");
 
@@ -139,22 +126,17 @@ describe("AgentRuntimeSupervisor", () => {
 
 	it("旧runtimeのclose完了後にreplacementを起動する", async () => {
 		let reportFailure: ((error: Error) => void) | undefined;
-		const closing = deferred<void>();
-		const firstRuntime: ManagedAgentRuntime = {
-			close: async () => await closing.promise,
-			onFailure: (handler) => {
-				reportFailure = handler;
-				return () => undefined;
-			},
-			port: createPort(),
-		};
+		const closing = Promise.withResolvers<void>();
 		const startRuntime = vi
-			.fn<() => Promise<ManagedAgentRuntime>>()
-			.mockResolvedValueOnce(firstRuntime)
-			.mockResolvedValueOnce(createManagedRuntime());
-		const supervisor = new AgentRuntimeSupervisor(
+			.fn<StartRuntime>()
+			.mockImplementationOnce(async (_signal, onFailure) => {
+				reportFailure = onFailure;
+				return createRuntime(async () => await closing.promise);
+			})
+			.mockResolvedValueOnce(createRuntime());
+		const supervisor = createSupervisor(
 			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+			startRuntime,
 		);
 		await supervisor.start();
 
@@ -168,19 +150,19 @@ describe("AgentRuntimeSupervisor", () => {
 	});
 
 	it("close時に初期化中runtimeへabort signalを渡して待機を終える", async () => {
-		const started = deferred<void>();
-		const startRuntime = vi.fn(async (signal: AbortSignal): Promise<ManagedAgentRuntime> => {
-			started.resolve(undefined);
+		const started = Promise.withResolvers<void>();
+		const startRuntime = vi.fn<StartRuntime>(async (signal) => {
+			started.resolve();
 			await new Promise<void>((_resolve, reject) => {
 				signal.addEventListener("abort", () => reject(new Error("startup aborted")), {
 					once: true,
 				});
 			});
-			return createManagedRuntime();
+			return createRuntime();
 		});
-		const supervisor = new AgentRuntimeSupervisor(
+		const supervisor = createSupervisor(
 			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+			startRuntime,
 		);
 		const startup = supervisor.start();
 		await started.promise;
@@ -192,41 +174,27 @@ describe("AgentRuntimeSupervisor", () => {
 	});
 
 	it("close後に起動完了したruntimeを採用せずに閉じる", async () => {
-		const started = deferred<void>();
-		const release = deferred<void>();
-		const managedClose = vi.fn(async () => undefined);
-		const startRuntime = vi.fn(async (): Promise<ManagedAgentRuntime> => {
-			started.resolve(undefined);
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		const runtimeClose = vi.fn(async () => undefined);
+		const startRuntime = vi.fn<StartRuntime>(async () => {
+			started.resolve();
 			await release.promise;
-			return { ...createManagedRuntime(), close: managedClose };
+			return createRuntime(runtimeClose);
 		});
-		const supervisor = new AgentRuntimeSupervisor(
+		const supervisor = createSupervisor(
 			{ initialDelayMs: 0, limit: 2, maxDelayMs: 1_000, windowMs: 10_000 },
-			{ delay: async () => undefined, now: () => 1_000, startRuntime },
+			startRuntime,
 		);
 		const startup = supervisor.start();
 		await started.promise;
 
 		const closing = supervisor.close();
-		release.resolve(undefined);
+		release.resolve();
 		await closing;
 
 		await expect(startup).rejects.toThrow("closed");
-		expect(managedClose).toHaveBeenCalledOnce();
+		expect(runtimeClose).toHaveBeenCalledOnce();
 		expect(startRuntime).toHaveBeenCalledOnce();
 	});
 });
-
-function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
-	let resolvePromise: ((value: T) => void) | undefined;
-	const promise = new Promise<T>((resolve) => {
-		resolvePromise = resolve;
-	});
-	return {
-		promise,
-		resolve(value) {
-			if (resolvePromise === undefined) throw new Error("deferred is not initialized");
-			resolvePromise(value);
-		},
-	};
-}

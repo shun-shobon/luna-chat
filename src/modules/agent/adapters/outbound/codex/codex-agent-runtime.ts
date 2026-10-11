@@ -18,14 +18,19 @@ import {
 	parseThreadList,
 	parseTurnId,
 } from "./codex-response";
+import type { CodexLineHandlers, CodexLineTransport } from "./codex-stdio-process";
 import {
 	CodexTurnTracker,
 	isTurnScopedNotificationMethod,
 	parseThreadReference,
 	parseTurnReference,
 } from "./codex-turn-tracker";
-import type { JsonRpcConnection } from "./json-rpc-connection";
-import { JsonRpcProtocolError } from "./json-rpc-connection";
+import { JsonRpcConnection, JsonRpcProtocolError } from "./json-rpc-connection";
+import type {
+	JsonRpcNotification,
+	JsonRpcServerRequest,
+	RpcEventHandler,
+} from "./json-rpc-connection";
 
 const ALL_THREAD_SOURCE_KINDS: ThreadSourceKind[] = [
 	"cli",
@@ -49,70 +54,55 @@ const CLIENT_INFO: InitializeParams = {
 	},
 };
 
+export type StartCodexAgentRuntimeOptions = {
+	onFailure(error: Error): void;
+	onRpcEvent?: RpcEventHandler | undefined;
+	openTransport: (handlers: CodexLineHandlers) => CodexLineTransport;
+	rpcTimeoutMs: number;
+	signal: AbortSignal;
+};
+
 export class CodexAgentRuntime implements AgentRuntimePort {
 	readonly #connection: JsonRpcConnection;
 	readonly #managedThreadIds = new Set<ThreadId>();
 	readonly #trackers = new Map<ThreadId, CodexTurnTracker>();
 
-	private constructor(connection: JsonRpcConnection) {
-		this.#connection = connection;
-		connection.onNotification((notification) => {
-			if (!isTurnScopedNotificationMethod(notification.method)) {
-				return;
-			}
-			const threadId = parseThreadReference(notification.params);
-			if (!this.#managedThreadIds.has(threadId)) {
-				return;
-			}
-			const tracker = this.#trackers.get(threadId);
-			if (tracker === undefined) {
-				throw new JsonRpcProtocolError(
-					`Codex emitted ${notification.method} for an unknown active turn.`,
-				);
-			}
-			tracker.handleNotification(notification);
-		});
-		connection.onServerRequest((request) => {
-			if (request.method !== "item/tool/requestUserInput") {
-				connection.respondWithError(
-					request.id,
-					-32601,
-					`Unsupported client-side method: ${request.method}`,
-				);
-				return;
-			}
-			const { threadId, turnId } = parseTurnReference(request.params);
-			const tracker = this.#trackers.get(threadId);
-			if (tracker === undefined) {
-				throw new JsonRpcProtocolError("Codex requested user input for an unknown active turn.");
-			}
-			tracker.markUserInputRequested(turnId);
-			connection.respondWithError(
-				request.id,
-				-32601,
-				"Interactive user input is not supported by this client.",
-			);
-			void this.#interruptTurn(threadId, turnId).catch((error: unknown) => {
-				connection.fail(
-					new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
-						cause: error,
-					}),
-				);
-			});
-		});
-		connection.onFatal((error) => {
-			for (const tracker of this.#trackers.values()) {
-				tracker.fail(error);
-			}
-			this.#trackers.clear();
+	private constructor(options: StartCodexAgentRuntimeOptions) {
+		this.#connection = new JsonRpcConnection(options.openTransport, options.rpcTimeoutMs, {
+			onEvent: options.onRpcEvent,
+			onFatal: (error) => {
+				for (const tracker of this.#trackers.values()) {
+					tracker.fail(error);
+				}
+				this.#trackers.clear();
+				options.onFailure(error);
+			},
+			onNotification: (notification) => this.#handleNotification(notification),
+			onServerRequest: (request) => this.#handleServerRequest(request),
 		});
 	}
 
-	public static async initialize(connection: JsonRpcConnection): Promise<CodexAgentRuntime> {
-		const result = await connection.request("initialize", CLIENT_INFO);
-		parseResponse(connection, () => parseInitializeResponse(result));
-		connection.notifyInitialized();
-		return new CodexAgentRuntime(connection);
+	public static async start(options: StartCodexAgentRuntimeOptions): Promise<CodexAgentRuntime> {
+		const runtime = new CodexAgentRuntime(options);
+		const abort = () => {
+			void runtime.close();
+		};
+		options.signal.addEventListener("abort", abort, { once: true });
+		try {
+			const result = await runtime.#connection.request("initialize", CLIENT_INFO);
+			parseResponse(runtime.#connection, () => parseInitializeResponse(result));
+			runtime.#connection.notifyInitialized();
+			return runtime;
+		} catch (error: unknown) {
+			await runtime.close();
+			throw error;
+		} finally {
+			options.signal.removeEventListener("abort", abort);
+		}
+	}
+
+	public async close(): Promise<void> {
+		await this.#connection.close();
 	}
 
 	public async archiveThread(threadId: ThreadId): Promise<void> {
@@ -228,6 +218,52 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 			this.#connection.fail(error);
 			throw error;
 		}
+	}
+
+	#handleNotification(notification: JsonRpcNotification): void {
+		if (!isTurnScopedNotificationMethod(notification.method)) {
+			return;
+		}
+		const threadId = parseThreadReference(notification.params);
+		if (!this.#managedThreadIds.has(threadId)) {
+			return;
+		}
+		const tracker = this.#trackers.get(threadId);
+		if (tracker === undefined) {
+			throw new JsonRpcProtocolError(
+				`Codex emitted ${notification.method} for an unknown active turn.`,
+			);
+		}
+		tracker.handleNotification(notification);
+	}
+
+	#handleServerRequest(request: JsonRpcServerRequest): void {
+		if (request.method !== "item/tool/requestUserInput") {
+			this.#connection.respondWithError(
+				request.id,
+				-32601,
+				`Unsupported client-side method: ${request.method}`,
+			);
+			return;
+		}
+		const { threadId, turnId } = parseTurnReference(request.params);
+		const tracker = this.#trackers.get(threadId);
+		if (tracker === undefined) {
+			throw new JsonRpcProtocolError("Codex requested user input for an unknown active turn.");
+		}
+		tracker.markUserInputRequested(turnId);
+		this.#connection.respondWithError(
+			request.id,
+			-32601,
+			"Interactive user input is not supported by this client.",
+		);
+		void this.#interruptTurn(threadId, turnId).catch((error: unknown) => {
+			this.#connection.fail(
+				new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
+					cause: error,
+				}),
+			);
+		});
 	}
 
 	async #interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {

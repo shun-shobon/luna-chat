@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
-import { startManagedCodexRuntime } from "../modules/agent/adapters/outbound/codex/managed-codex-runtime";
+import { CodexAgentRuntime } from "../modules/agent/adapters/outbound/codex/codex-agent-runtime";
+import { startCodexStdioProcess } from "../modules/agent/adapters/outbound/codex/codex-stdio-process";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
 import {
@@ -113,27 +114,31 @@ export async function startLunaApplication(
 			windowMs: workspace.config.agent.restartWindowMs,
 		},
 		{
-			startRuntime: async (signal) =>
-				await startManagedCodexRuntime({
-					codexHomeDir: workspace.codexHomeDir,
-					cwd: workspace.workspaceDir,
+			onFailure: (error) => {
+				logger.log("error", "agent.connection_failed", {}, { error });
+				conversation?.connectionLost(error);
+				eventExecutor?.connectionLost();
+			},
+			onFatal: (error) => {
+				logger.log("error", "agent.restart_budget_exceeded", {}, { error });
+				fatal.resolve(error);
+			},
+			startRuntime: async (signal, onFailure) =>
+				await CodexAgentRuntime.start({
+					onFailure,
 					onRpcEvent: (event, context, details, payload) => {
 						logger.log("info", event, context, details, payload);
 					},
+					openTransport: (handlers) =>
+						startCodexStdioProcess(
+							{ codexHomeDir: workspace.codexHomeDir, cwd: workspace.workspaceDir },
+							handlers,
+						),
 					rpcTimeoutMs: workspace.config.agent.rpcTimeoutMs,
 					signal,
 				}),
 		},
 	);
-	supervisor.onFailure((error) => {
-		logger.log("error", "agent.connection_failed", {}, { error });
-		conversation?.connectionLost(error);
-		eventExecutor?.connectionLost();
-	});
-	supervisor.onFatal((error) => {
-		logger.log("error", "agent.restart_budget_exceeded", {}, { error });
-		fatal.resolve(error);
-	});
 
 	let automation: AutomationService | undefined;
 	let httpService: HttpEventService | undefined;

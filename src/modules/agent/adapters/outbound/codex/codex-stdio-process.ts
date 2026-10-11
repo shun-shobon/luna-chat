@@ -6,10 +6,13 @@ import { createCodexChildEnvironment } from "./codex-child-environment";
 
 export interface CodexLineTransport {
 	close(): Promise<void>;
-	onFailure(handler: (error: Error) => void): () => void;
-	onLine(handler: (line: string) => void): () => void;
 	writeLine(value: object): void;
 }
+
+export type CodexLineHandlers = {
+	onFailure(error: Error): void;
+	onLine(line: string): void;
+};
 
 export type StartCodexStdioProcessOptions = {
 	codexHomeDir: string;
@@ -23,20 +26,24 @@ class CodexProcessError extends Error {
 	}
 }
 
-export function startCodexStdioProcess(options: StartCodexStdioProcessOptions): CodexLineTransport {
+export function startCodexStdioProcess(
+	options: StartCodexStdioProcessOptions,
+	handlers: CodexLineHandlers,
+): CodexLineTransport {
 	const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
 		cwd: options.cwd,
 		env: createCodexChildEnvironment(process.env, options.codexHomeDir),
 		stdio: ["pipe", "pipe", "pipe"],
 	});
 
-	return createCodexLineTransport(child);
+	return createCodexLineTransport(child, handlers);
 }
 
-function createCodexLineTransport(child: ChildProcessWithoutNullStreams): CodexLineTransport {
+function createCodexLineTransport(
+	child: ChildProcessWithoutNullStreams,
+	handlers: CodexLineHandlers,
+): CodexLineTransport {
 	const lineReader = readline.createInterface({ input: child.stdout });
-	const failureHandlers = new Set<(error: Error) => void>();
-	const lineHandlers = new Set<(line: string) => void>();
 	let closing = false;
 	let failureReported = false;
 
@@ -45,15 +52,11 @@ function createCodexLineTransport(child: ChildProcessWithoutNullStreams): CodexL
 			return;
 		}
 		failureReported = true;
-		for (const handler of failureHandlers) {
-			handler(error);
-		}
+		handlers.onFailure(error);
 	};
 
 	lineReader.on("line", (line) => {
-		for (const handler of lineHandlers) {
-			handler(line);
-		}
+		handlers.onLine(line);
 	});
 	child.on("error", (error) => {
 		reportFailure(new CodexProcessError("Codex app-server process failed.", { cause: error }));
@@ -89,14 +92,6 @@ function createCodexLineTransport(child: ChildProcessWithoutNullStreams): CodexL
 			}
 			child.kill("SIGKILL");
 			await exitsWithin(exitPromise, 1_000);
-		},
-		onFailure: (handler) => {
-			failureHandlers.add(handler);
-			return () => failureHandlers.delete(handler);
-		},
-		onLine: (handler) => {
-			lineHandlers.add(handler);
-			return () => lineHandlers.delete(handler);
 		},
 		writeLine: (value) => {
 			if (closing || child.stdin.destroyed) {
