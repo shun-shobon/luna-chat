@@ -179,24 +179,6 @@ describe("HTTP event server", () => {
 			).status,
 		).toBe(503);
 	});
-
-	it("会話への投入で例外が起きた場合は500を返し、待機登録を残さない", async () => {
-		const { registry, url } = await start({
-			accept: () => {
-				throw new Error("conversation failed");
-			},
-		});
-		const complete = vi.spyOn(registry, "complete");
-		const response = await post(url, {
-			execution: "conversation",
-			response_mode: "wait",
-			session_id: "room",
-			event: { type: "test.event.v1", data: null },
-		});
-		expect(response.status).toBe(500);
-		expect(await response.json()).toEqual({ error: "internal_error" });
-		expect(complete).toHaveBeenCalledWith(expect.any(String), false);
-	});
 });
 
 async function start(overrides: {

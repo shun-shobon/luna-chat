@@ -146,7 +146,7 @@ export async function startLunaApplication(
 			runCleanup(() => commands?.stop()),
 			runCleanup(async () => await automation?.stopIntake()),
 			runCleanup(() => httpService?.stopIntake()),
-			runCleanup(() => httpService?.failPending()),
+			runCleanup(() => httpResponses.failAll()),
 			runCleanup(async () => await httpServer?.close()),
 			runCleanup(() => typing.releaseAll()),
 			client.destroy(),
@@ -320,6 +320,7 @@ export async function startLunaApplication(
 						},
 						http: runningHttpService,
 						httpClose: () => runningHttpServer.close(),
+						httpFailPending: () => httpResponses.failAll(),
 						logger,
 						mcpClose: () => mcp.close(),
 						supervisorClose: () => supervisor.close(),
@@ -342,7 +343,7 @@ export async function startLunaApplication(
 			runCleanup(() => commands?.stop()),
 			runCleanup(async () => await automation?.stopIntake()),
 			runCleanup(() => httpService?.stopIntake()),
-			runCleanup(() => httpService?.failPending()),
+			runCleanup(() => httpResponses.failAll()),
 			runCleanup(async () => await httpServer?.close()),
 			runCleanup(() => typing.releaseAll()),
 			client.destroy(),
@@ -359,8 +360,9 @@ export async function shutdownApplication(input: {
 	clientDestroy(): Promise<void>;
 	conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
-	http: Pick<HttpEventService, "stopIntake" | "drain" | "failPending">;
+	http: Pick<HttpEventService, "stopIntake" | "drain">;
 	httpClose(): Promise<void>;
+	httpFailPending(): void;
 	logger: Pick<JsonLinesLogger, "flush" | "log">;
 	mcpClose(): Promise<void>;
 	supervisorClose(): Promise<void>;
@@ -388,7 +390,7 @@ export async function shutdownApplication(input: {
 	);
 	await settleCleanup(
 		[
-			runCleanup(() => input.http.failPending()),
+			runCleanup(() => input.httpFailPending()),
 			input.httpClose(),
 			runCleanup(() => input.typingRelease()),
 			input.mcpClose(),

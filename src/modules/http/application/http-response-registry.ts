@@ -14,7 +14,6 @@ export class HttpResponseRegistry {
 	readonly #pending = new Map<string, PendingResponse>();
 
 	register(requestId: string): Promise<HttpEventOutcome> {
-		if (this.#pending.has(requestId)) throw new Error(`Duplicate HTTP request ID: ${requestId}`);
 		return new Promise<HttpEventOutcome>((resolve) => {
 			this.#pending.set(requestId, { resolve });
 		});

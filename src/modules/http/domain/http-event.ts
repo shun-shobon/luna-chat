@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { ConversationSession } from "../../conversation/domain/conversation-session";
-import { jsonValueSchema, lunaEventSchema } from "../../event/domain/luna-event";
+import { jsonValueSchema } from "../../event/domain/luna-event";
 import type { LunaEvent } from "../../event/domain/luna-event";
 
 export const HTTP_EVENT_SOURCE = "http";
@@ -30,7 +30,7 @@ export const httpEventRequestSchema = z.discriminatedUnion("execution", [
 export type HttpEventRequest = z.infer<typeof httpEventRequestSchema>;
 
 export function createHttpEvent(request: HttpEventRequest): LunaEvent {
-	return lunaEventSchema.parse({
+	return {
 		id: randomUUID(),
 		type: request.event.type,
 		source: HTTP_EVENT_SOURCE,
@@ -39,7 +39,7 @@ export function createHttpEvent(request: HttpEventRequest): LunaEvent {
 			payload: request.event.data,
 			response_mode: request.response_mode,
 		},
-	});
+	};
 }
 
 export function createHttpConversationSession(sessionId: string): ConversationSession {

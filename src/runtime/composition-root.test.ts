@@ -39,10 +39,12 @@ describe("application composition lifecycle", () => {
 				drain: vi.fn(async () => {
 					calls.push("http.drain");
 				}),
-				failPending: vi.fn(() => calls.push("http.failPending")),
 			},
 			httpClose: async () => {
 				calls.push("http.close");
+			},
+			httpFailPending: () => {
+				calls.push("http.failPending");
 			},
 			isFatal: false,
 			logger: { flush: vi.fn(async () => undefined), log: vi.fn() },
