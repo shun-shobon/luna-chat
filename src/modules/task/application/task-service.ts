@@ -71,6 +71,7 @@ class TaskError extends Error {
 }
 
 export class TaskService {
+	readonly #background = new Set<Promise<void>>();
 	readonly #parked = new Map<string, WorkerThread>();
 	readonly #runs = new Map<string, ActiveRun>();
 	readonly #tasks = new Map<string, Task>();
@@ -99,20 +100,26 @@ export class TaskService {
 		for (const [taskId, run] of this.#runs) {
 			run.stopReason ??= "shutdown";
 			if (this.#require(taskId).status === "running") this.#update(taskId, { status: "queued" });
-			this.#interrupt(run);
+			this.#stop(run);
 		}
 	}
 
-	// workerのturnは取り消せない長いsystem.waitの途中にあり得るため、停止時は永続化の完了だけを待つ。
-	// 中断したtaskはqueueに戻し、再起動後に再開する。
 	async drain(): Promise<void> {
 		this.stopIntake();
-		await Promise.allSettled(this.#writes.values());
+		const parked = [...this.#parked.values()];
+		this.#parked.clear();
+		await Promise.allSettled(parked.map(async (thread) => await this.#closeThread(thread)));
+		while (this.#background.size > 0) await Promise.allSettled(this.#background);
+		while (this.#writes.size > 0) await Promise.allSettled(this.#writes.values());
 	}
 
 	connectionLost(): void {
 		this.#generation += 1;
 		this.#parked.clear();
+		// 旧接続のturnは失敗するが、system.waitは接続と無関係に続き実行枠を占有するため打ち切る。
+		for (const run of this.#runs.values()) {
+			if (run.thread !== undefined) void this.#releaseEffects(run.thread.ownerId);
+		}
 	}
 
 	async create(
@@ -172,12 +179,12 @@ export class TaskService {
 		const run = this.#runs.get(taskId);
 		if (run !== undefined) {
 			run.stopReason = "cancelled";
-			this.#interrupt(run);
+			this.#stop(run);
 		}
 		const parked = this.#parked.get(taskId);
 		if (parked !== undefined) {
 			this.#parked.delete(taskId);
-			void this.#closeThread(parked);
+			this.#track(this.#closeThread(parked));
 		}
 		await this.#persist(taskId);
 		return "cancelled";
@@ -239,7 +246,7 @@ export class TaskService {
 			};
 			this.#parked.delete(task.id);
 			this.#runs.set(task.id, run);
-			void this.#drive(task.id, run);
+			this.#track(this.#drive(task.id, run));
 		}
 	}
 
@@ -263,14 +270,17 @@ export class TaskService {
 			if (isStopped(run)) return;
 			if (run.generation !== this.#generation) {
 				this.dependencies.logger.log("warn", "task.run_interrupted", { taskId }, { error });
-				this.#update(taskId, { status: "queued" });
+				if (this.#require(taskId).status === "running") this.#update(taskId, { status: "queued" });
 				return;
 			}
 			this.dependencies.logger.log("error", "task.run_failed", { taskId }, { error });
 			this.#fail(taskId, error instanceof Error ? error.message : String(error));
 		} finally {
 			this.#runs.delete(taskId);
-			if (run.thread !== undefined && this.#accepting) await this.#closeThread(run.thread);
+			// 旧接続のthreadは新しいapp-serverでは閉じられないため、EventExecutorと同じく残す。
+			if (run.thread !== undefined && run.generation === this.#generation) {
+				await this.#closeThread(run.thread);
+			}
 			this.#pump();
 		}
 	}
@@ -288,7 +298,7 @@ export class TaskService {
 			outputSchema: this.dependencies.effectOutput.jsonSchema,
 		});
 		run.turnId = started.turnId;
-		if (isStopped(run)) this.#interrupt(run);
+		if (isStopped(run)) this.#stop(run);
 		this.#kickSteer(taskId, run);
 		const result = await started.completion;
 		run.turnId = undefined;
@@ -315,18 +325,20 @@ export class TaskService {
 		});
 		await this.#releaseEffects(thread.ownerId);
 		if (isStopped(run)) return undefined;
-		if (requiresEffectFollowUp(results)) {
-			return JSON.stringify({ source: "effect_results", results });
-		}
 		const current = this.#require(taskId);
 		if (isTerminalStatus(current.status)) return undefined;
+		if (current.status === "running" && requiresEffectFollowUp(results)) {
+			return JSON.stringify({ source: "effect_results", results });
+		}
 		if (current.messages.some((message) => message.deliveredAt == null)) {
 			this.#update(taskId, { status: "running" });
 			return this.#messagesInput(taskId);
 		}
 		if (current.status === "waiting_input") {
-			this.#parked.set(taskId, thread);
-			run.thread = undefined;
+			if (run.generation === this.#generation) {
+				this.#parked.set(taskId, thread);
+				run.thread = undefined;
+			}
 			return undefined;
 		}
 		if (!run.nudged) {
@@ -433,6 +445,8 @@ export class TaskService {
 	}
 
 	#deliver(taskId: string, report: TaskReport): void {
+		// 受付停止後は配送せず未配送のまま残し、次回起動時の再配送に任せる。
+		if (!this.#accepting) return;
 		const task = this.#require(taskId);
 		const event: LunaEvent = {
 			id: this.dependencies.createId(),
@@ -442,7 +456,7 @@ export class TaskService {
 			occurredAt: this.#timestamp(),
 			data: { task: summarizeTask(task), report: toReportJson(report) },
 		};
-		void this.dependencies.delivery.deliver(task.origin, event).then(
+		const delivery = this.dependencies.delivery.deliver(task.origin, event).then(
 			(outcome) => {
 				if (outcome === "rejected") {
 					this.dependencies.logger.log(
@@ -470,12 +484,15 @@ export class TaskService {
 				);
 			},
 		);
+		this.#track(delivery);
 	}
 
-	#interrupt(run: ActiveRun): void {
+	#stop(run: ActiveRun): void {
 		const thread = run.thread;
+		if (thread === undefined) return;
+		void this.#releaseEffects(thread.ownerId);
 		const turnId = run.turnId;
-		if (thread === undefined || turnId === undefined) return;
+		if (turnId === undefined) return;
 		void this.dependencies.agent.interruptTurn(thread.id, turnId).catch((error: unknown) => {
 			this.dependencies.logger.log("warn", "task.interrupt_failed", {}, { error });
 		});
@@ -543,6 +560,11 @@ export class TaskService {
 		const task = this.#tasks.get(taskId);
 		if (task === undefined) throw new TaskError(`Unknown task ${taskId}`);
 		return task;
+	}
+
+	#track(promise: Promise<void>): void {
+		this.#background.add(promise);
+		void promise.finally(() => this.#background.delete(promise));
 	}
 
 	#timestamp(): string {

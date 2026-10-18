@@ -231,8 +231,8 @@ export async function startLunaApplication(
 							coordinator.accept({ session: origin.session, event }) ? "accepted" : "rejected",
 						);
 					}
-					void executor.execute(event);
-					return Promise.resolve("accepted");
+					// 実行を始めた時点で配送済みとし、失敗しても外部作用の重複を避けて再配送しない。
+					return executor.execute(event).then(() => "accepted");
 				},
 			},
 			effectOutput: workerEffectOutput,
@@ -345,10 +345,12 @@ export async function startLunaApplication(
 				workspace: automationWorkspace,
 			}),
 		});
-		startupCleanups.push(async () => await automation.stopIntake());
-		await automation.startAutomation(workspace.schedule);
-		startupCleanups.push(() => taskService.stopIntake());
+		startupCleanups.push(
+			async () => await automation.stopIntake(),
+			() => taskService.stopIntake(),
+		);
 		await taskService.start();
+		await automation.startAutomation(workspace.schedule);
 		options.startupSignal?.throwIfAborted();
 
 		const gatewayController = new DiscordConversationController(coordinator, lunaUserId, {

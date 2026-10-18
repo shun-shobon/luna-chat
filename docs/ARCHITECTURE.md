@@ -250,7 +250,8 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 - 作業スレッドのEffectレジストリは `task.report` と `system.wait` だけで構成し、会話・イベント用レジストリとは別の出力スキーマを使う。作業スレッドにはDiscord MCPの `/mcp/read` だけを設定する。
 - 通知は `TaskDeliveryPort` を介して、会話には `ConversationCoordinator.accept`、イベント起点にはEventExecutorの新規実行として渡す。配送の受理時刻を報告に記録し、未受理の通知は起動時に再配送する。
 - 会話とイベントの入力に同梱するタスク一覧は、`ConversationTaskBoardPort` / `EventTaskBoardPort` を介して `TaskService.listFor` から取得する。conversation・eventモジュールはtaskモジュールに依存しない。
-- シャットダウン時は、実行中タスクを `queued` に戻して `turn/interrupt` を送り、保存の完了だけを待つ。作業スレッドは取り消せない `system.wait` の途中にあり得るため、ターンチェーンの完了は待たない。
+- 取消・シャットダウン・Codex接続断では、作業スレッドの `ownerId` で `EffectBatchPort.release` を呼び、`system.wait` を打ち切る（待機Effectは `ownerId` ごとに未完了の待機を保持し、`release` で失敗させる）。シャットダウンはこれと `turn/interrupt` で作業ループを終わらせ、ループ・配送・保存の完了を待つ。
+- 作業ループは終了報告の後にfollow-upを行わない。接続断で中断した場合だけ `running` を `queued` へ戻し、旧接続のスレッドは `parked` へ登録もアーカイブもしない。
 
 ## 12. 起動とシャットダウンシーケンス
 
@@ -262,9 +263,9 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 4. ログ・Discordクライアント・RESTアダプター・MCPサーバーの初期化
 5. Codex app-server の起動・初期化
 6. Discordへの接続ログイン
-7. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
-8. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
-9. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始
+7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
+8. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
+9. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
 
 ### 終了 (Shutdown)
 

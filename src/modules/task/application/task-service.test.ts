@@ -306,21 +306,75 @@ describe("TaskService", () => {
 		expect(harness.delivered.map((delivery) => delivery.event.subject)).toEqual(["answered"]);
 	});
 
-	it("停止時に実行中taskをqueueへ戻して中断し、threadを閉じない", async () => {
+	it("停止時に実行中taskをqueueへ戻してturnを中断し、threadを閉じてから終える", async () => {
 		const harness = await createHarness();
 		const task = await harness.service.create(channelOrigin, input("shutdown"));
 		await harness.waitForTurns(1);
 
-		await harness.service.drain();
-
+		const draining = harness.service.drain();
 		expect(harness.agent.interruptTurn).toHaveBeenCalledWith("thread-1", "turn-1");
-		expect(harness.saved.get(task.id)?.status).toBe("queued");
 		harness.turns[0]?.completion.resolve({ status: "interrupted" });
-		await flush();
-		expect(harness.agent.archiveThread).not.toHaveBeenCalled();
+		await draining;
+
+		expect(harness.saved.get(task.id)?.status).toBe("queued");
+		expect(harness.agent.archiveThread).toHaveBeenCalledWith("thread-1");
+		expect(harness.turns).toHaveLength(1);
 		await expect(harness.service.create(channelOrigin, input("late"))).rejects.toThrow(
 			"intake is stopped",
 		);
+	});
+
+	it("終了報告の後はEffect失敗があってもfollow-upせず、接続断でも再実行しない", async () => {
+		const harness = await createHarness();
+		const task = await harness.service.create(channelOrigin, input("done twice"));
+		await harness.waitForTurns(1);
+
+		await harness.complete(0, [report("result", "done"), report("result", "again")]);
+		await vi.waitFor(() => expect(harness.agent.archiveThread).toHaveBeenCalledWith("thread-1"));
+		harness.service.connectionLost();
+		await flush();
+
+		expect(harness.turns).toHaveLength(1);
+		expect(harness.latest(task.id).status).toBe("completed");
+	});
+
+	it("question保存中に接続が切れたら旧threadを保持せず、返答は新threadのbriefで渡す", async () => {
+		const harness = await createHarness();
+		const task = await harness.service.create(channelOrigin, input("ask"));
+		await harness.waitForTurns(1);
+
+		const gate = harness.blockSaves();
+		await harness.complete(0, [report("question", "どちら？")]);
+		harness.service.connectionLost();
+		gate.resolve(undefined);
+		await vi.waitFor(() => expect(harness.latest(task.id).status).toBe("waiting_input"));
+		await flush();
+		await harness.service.message(channelOrigin, task.id, "Bで");
+		await harness.waitForTurns(2);
+
+		expect(harness.turns[1]?.threadId).toBe("thread-2");
+		expect(harness.turns[1]?.input).toMatchObject({
+			source: "task",
+			messages: [{ text: "Bで" }],
+		});
+	});
+
+	it("取消で実行中のsystem.waitを打ち切り、実行枠を空ける", async () => {
+		const harness = await createHarness({ maxConcurrent: 1 });
+		const waiting = await harness.service.create(channelOrigin, input("wait"));
+		const next = await harness.service.create(channelOrigin, input("next"));
+		await harness.waitForTurns(1);
+		harness.completeRaw(0, JSON.stringify({ effects: [] }));
+		await harness.waitForTurns(2);
+		harness.effectsGate.block();
+		harness.completeRaw(1, JSON.stringify({ effects: [] }));
+		await vi.waitFor(() => expect(harness.effectsGate.blocked).toBe(true));
+
+		await harness.service.cancel(channelOrigin, waiting.id, null);
+
+		expect(harness.effectsGate.released).toContain("owner-1");
+		await harness.waitForTurns(3);
+		expect(harness.turns[2]?.input).toMatchObject({ task: { id: next.id } });
 	});
 
 	it("配送を拒否された通知は未配送のまま残す", async () => {
@@ -388,6 +442,8 @@ async function createHarness(
 	const delivered: Array<{ origin: TaskOrigin; event: LunaEvent }> = [];
 	const saved = new Map<string, Task>();
 	const log = vi.fn<LoggerPort["log"]>();
+	const effectsGate = createEffectsGate();
+	let saveGate: Deferred<undefined> | undefined;
 	let service: TaskService | undefined;
 	const requireService = (): TaskService => {
 		if (service === undefined) throw new Error("service is not ready");
@@ -410,7 +466,7 @@ async function createHarness(
 			},
 		},
 		effectOutput: createReportOutputContract(requireService),
-		effects: fakeEffectBatch,
+		effects: effectsGate.batch,
 		isPrivateSession: options.isPrivateSession ?? (() => false),
 		logger: { log },
 		maxConcurrent: options.maxConcurrent ?? 2,
@@ -418,6 +474,7 @@ async function createHarness(
 		store: {
 			loadAll: async () => options.tasks ?? [],
 			save: async (task) => {
+				await saveGate?.promise;
 				saved.set(task.id, task);
 			},
 		},
@@ -434,8 +491,13 @@ async function createHarness(
 			completeRaw(index, JSON.stringify({ effects }));
 			await flush();
 		},
+		blockSaves: (): Deferred<undefined> => {
+			saveGate = deferred<undefined>();
+			return saveGate;
+		},
 		completeRaw,
 		delivered,
+		effectsGate,
 		latest: (taskId: string): Task => {
 			const task = saved.get(taskId);
 			if (task === undefined) throw new Error(`task ${taskId} was not saved`);
@@ -481,6 +543,32 @@ function createReportOutputContract(service: () => TaskService): EffectOutputCon
 			})),
 		}),
 	};
+}
+
+function createEffectsGate() {
+	let pending: Deferred<undefined> | undefined;
+	const gate = {
+		blocked: false,
+		released: [] as string[],
+		block: () => {
+			pending = deferred<undefined>();
+		},
+		batch: {
+			execute: async (...args: Parameters<EffectBatchPort["execute"]>) => {
+				if (pending !== undefined) {
+					gate.blocked = true;
+					await pending.promise;
+				}
+				return await fakeEffectBatch.execute(...args);
+			},
+			release: async (ownerId: string) => {
+				gate.released.push(ownerId);
+				pending?.resolve(undefined);
+				pending = undefined;
+			},
+		} satisfies EffectBatchPort,
+	};
+	return gate;
 }
 
 const fakeEffectBatch: EffectBatchPort = {
