@@ -4,6 +4,10 @@ import type { Mock } from "vitest";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedule";
+import type {
+	AutomationCheckResult,
+	AutomationCheckRunnerPort,
+} from "../ports/automation-check-runner-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type {
 	AutomationScheduleTimerPort,
@@ -69,7 +73,8 @@ describe("ScheduleController", () => {
 			return { status: "completed" };
 		});
 		const scheduleTimer = new FakeScheduleTimer();
-		const controller = createController({ executor, scheduleTimer });
+		const checkRunner = createCheckRunner();
+		const controller = createController({ checkRunner, executor, scheduleTimer });
 		await controller.start({ jobs: [recurring("daily", true)] });
 
 		const firstTick = scheduleTimer.recurring[0]?.onTick();
@@ -92,6 +97,229 @@ describe("ScheduleController", () => {
 			},
 			undefined,
 		);
+		expect(checkRunner.run).not.toHaveBeenCalled();
+	});
+
+	it("checkの標準出力をtrimしてdataに加え、発火時刻のeventとして実行する", async () => {
+		const clock = new FakeClock();
+		const checkRunner = createCheckRunner(async () => {
+			clock.now.mockReturnValue(new Date("2026-01-01T00:01:00.000Z"));
+			return { status: "succeeded", stdout: "\n  v1.2.0 released\n\n" };
+		});
+		const executor = createExecutor();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, clock, executor, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("release", true), "./check.sh")] });
+
+		await scheduleTimer.recurring[0]?.onTick();
+
+		expect(checkRunner.run).toHaveBeenCalledWith("./check.sh");
+		expect(executor.execute).toHaveBeenCalledWith(
+			{
+				id: "schedule-event-1",
+				type: "system.schedule.fired.v1",
+				source: "system/schedule",
+				subject: "release",
+				occurredAt: "2026-01-01T00:00:00.000Z",
+				data: {
+					jobId: "release",
+					prompt: "prompt-release",
+					kind: "recurring",
+					check_output: "v1.2.0 released",
+				},
+			},
+			undefined,
+		);
+	});
+
+	it.each([
+		[32_000, undefined],
+		[32_001, true],
+	])("trim後%i文字のcheck出力を先頭32000文字に切り詰める", async (length, truncated) => {
+		const checkRunner = createCheckRunner(async () => ({
+			status: "succeeded",
+			stdout: ` ${"a".repeat(length)} `,
+		}));
+		const executor = createExecutor();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, executor, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("usage", true), "check")] });
+
+		await scheduleTimer.recurring[0]?.onTick();
+
+		expect(executor.execute.mock.calls[0]?.[0].data).toStrictEqual({
+			jobId: "usage",
+			prompt: "prompt-usage",
+			kind: "recurring",
+			check_output: "a".repeat(32_000),
+			...(truncated === undefined ? {} : { check_output_truncated: truncated }),
+		});
+	});
+
+	it("checkの標準出力が空白だけならCodexを起動せずskipを記録する", async () => {
+		const checkRunner = createCheckRunner(async () => ({ status: "succeeded", stdout: " \n\t\n" }));
+		const executor = createExecutor();
+		const logger = createLogger();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, executor, logger, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("quiet", true), "check")] });
+
+		await scheduleTimer.recurring[0]?.onTick();
+
+		expect(executor.execute).not.toHaveBeenCalled();
+		expect(logger.log).toHaveBeenCalledWith("info", "automation.schedule.check_skipped", {
+			jobId: "quiet",
+		});
+	});
+
+	it.each<[string, Extract<AutomationCheckResult, { status: "failed" }>]>([
+		[
+			"非0終了",
+			{ exitCode: 1, signal: null, status: "failed", stderr: "fetch failed", timedOut: false },
+		],
+		[
+			"シグナル終了",
+			{ exitCode: null, signal: "SIGKILL", status: "failed", stderr: "", timedOut: false },
+		],
+		[
+			"タイムアウト",
+			{ exitCode: null, signal: "SIGTERM", status: "failed", stderr: "", timedOut: true },
+		],
+		[
+			"spawn失敗",
+			{
+				error: new Error("spawn ENOENT"),
+				exitCode: null,
+				signal: null,
+				status: "failed",
+				stderr: "",
+				timedOut: false,
+			},
+		],
+	])("checkの%sではCodexを起動せずerrorを記録する", async (_title, result) => {
+		const checkRunner = createCheckRunner(async () => result);
+		const executor = createExecutor();
+		const logger = createLogger();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, executor, logger, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("broken", true), "check")] });
+
+		await scheduleTimer.recurring[0]?.onTick();
+
+		expect(executor.execute).not.toHaveBeenCalled();
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
+			"automation.schedule.check_failed",
+			{ jobId: "broken" },
+			{
+				error: result.error,
+				exitCode: result.exitCode,
+				signal: result.signal,
+				timedOut: result.timedOut,
+			},
+			{ stderr: result.stderr },
+		);
+	});
+
+	it("check失敗時の標準エラー出力は末尾2000文字だけをpayloadに渡す", async () => {
+		const checkRunner = createCheckRunner(async () => ({
+			exitCode: 2,
+			signal: null,
+			status: "failed",
+			stderr: `${"x".repeat(10)}${"y".repeat(2_000)}`,
+			timedOut: false,
+		}));
+		const logger = createLogger();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, logger, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("noisy", true), "check")] });
+
+		await scheduleTimer.recurring[0]?.onTick();
+
+		expect(logger.log).toHaveBeenCalledWith(
+			"error",
+			"automation.schedule.check_failed",
+			{ jobId: "noisy" },
+			expect.any(Object),
+			{ stderr: "y".repeat(2_000) },
+		);
+	});
+
+	it("check実行中の次の発火も前回を待たずに独立してcheckから実行する", async () => {
+		const firstCheck = createDeferred<AutomationCheckResult>();
+		const checkRunner = createCheckRunner();
+		checkRunner.run
+			.mockImplementationOnce(async () => await firstCheck.promise)
+			.mockImplementationOnce(async () => ({ status: "succeeded", stdout: "second" }));
+		const executor = createExecutor();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, executor, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("watch", true), "check")] });
+
+		const firstTick = scheduleTimer.recurring[0]?.onTick();
+		await scheduleTimer.recurring[0]?.onTick();
+		expect(checkRunner.run).toHaveBeenCalledTimes(2);
+		expect(executor.execute).toHaveBeenCalledTimes(1);
+
+		firstCheck.resolve({ status: "succeeded", stdout: "first" });
+		await firstTick;
+		expect(executor.execute.mock.calls.map(([event]) => event.data)).toEqual([
+			expect.objectContaining({ check_output: "second" }),
+			expect.objectContaining({ check_output: "first" }),
+		]);
+	});
+
+	it("checkの追加・変更・削除をjob定義の変更としてtimerを差し替える", async () => {
+		const scheduleTimer = new FakeScheduleTimer();
+		const workspace = createWorkspace({
+			readSchedule: vi
+				.fn<AutomationWorkspacePort["readSchedule"]>()
+				.mockResolvedValueOnce({ jobs: [withCheck(recurring("watch", true), "./old.sh")] })
+				.mockResolvedValueOnce({ jobs: [withCheck(recurring("watch", true), "./old.sh")] })
+				.mockResolvedValueOnce({ jobs: [withCheck(recurring("watch", true), "./new.sh")] })
+				.mockResolvedValueOnce({ jobs: [recurring("watch", true)] }),
+		});
+		const checkRunner = createCheckRunner();
+		const controller = createController({ checkRunner, scheduleTimer, workspace });
+		await controller.start({ jobs: [recurring("watch", true)] });
+
+		await controller.reloadSchedule();
+		expect(scheduleTimer.recurring).toHaveLength(2);
+		await controller.reloadSchedule();
+		expect(scheduleTimer.recurring).toHaveLength(2);
+		await controller.reloadSchedule();
+		expect(scheduleTimer.recurring).toHaveLength(3);
+		await scheduleTimer.recurring[2]?.onTick();
+		expect(checkRunner.run).toHaveBeenLastCalledWith("./new.sh");
+		await controller.reloadSchedule();
+		expect(scheduleTimer.recurring).toHaveLength(4);
+		expect(scheduleTimer.recurring.map((timer) => timer.stop.mock.calls.length)).toEqual([
+			1, 1, 1, 0,
+		]);
+	});
+
+	it("停止時は実行中のcheckと、その出力によるCodex実行の完了を待ってdrainする", async () => {
+		const check = createDeferred<AutomationCheckResult>();
+		const checkRunner = createCheckRunner(async () => await check.promise);
+		const executor = createExecutor();
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ checkRunner, executor, scheduleTimer });
+		await controller.start({ jobs: [withCheck(recurring("watch", true), "check")] });
+
+		const tick = scheduleTimer.recurring[0]?.onTick();
+		await controller.stopIntake();
+		let drained = false;
+		const draining = controller.drain().then(() => {
+			drained = true;
+		});
+		await new Promise((resolve) => {
+			setImmediate(resolve);
+		});
+		expect(drained).toBe(false);
+
+		check.resolve({ status: "succeeded", stdout: "changed" });
+		await Promise.all([tick, draining]);
+		expect(executor.execute).toHaveBeenCalledTimes(1);
 	});
 
 	it("one-shotをschedulerから先に解除し、turn/start直後のhookで最新fileから削除する", async () => {
@@ -318,6 +546,7 @@ class FakeWatcher implements AutomationScheduleWatcherPort {
 
 function createController(
 	input: {
+		checkRunner?: AutomationCheckRunnerPort;
 		clock?: AutomationClockPort;
 		executor?: EventExecutionPort;
 		logger?: LoggerPort;
@@ -328,6 +557,7 @@ function createController(
 ): ScheduleController {
 	let eventSequence = 0;
 	return new ScheduleController({
+		checkRunner: input.checkRunner ?? createCheckRunner(),
 		clock: input.clock ?? new FakeClock(),
 		createEventId: () => `schedule-event-${String(++eventSequence)}`,
 		executor: input.executor ?? createExecutor(),
@@ -343,6 +573,15 @@ function createExecutor(
 	implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
 ): { execute: Mock<EventExecutionPort["execute"]> } {
 	return { execute: vi.fn(implementation) };
+}
+
+function createCheckRunner(
+	implementation: AutomationCheckRunnerPort["run"] = async () => ({
+		status: "succeeded",
+		stdout: "",
+	}),
+): { run: Mock<AutomationCheckRunnerPort["run"]> } {
+	return { run: vi.fn(implementation) };
 }
 
 function createLogger(): { log: Mock<LoggerPort["log"]> } {
@@ -367,6 +606,10 @@ function recurring(id: string, enabled: boolean) {
 		kind: "recurring" as const,
 		prompt: `prompt-${id}`,
 	};
+}
+
+function withCheck(job: ReturnType<typeof recurring>, check: string) {
+	return { ...job, check };
 }
 
 function oneShot(id: string, at: string, enabled: boolean) {

@@ -42,8 +42,18 @@ describe("workspace schedule TOML", () => {
 		["recurring job with at", `${RECURRING_JOB_SOURCE}\nat = "2026-08-01T10:00:00+09:00"`],
 		["one-shot job without offset", ONE_SHOT_JOB_SOURCE.replace("+09:00", "")],
 		["one-shot job with cron", `${ONE_SHOT_JOB_SOURCE}\ncron = "0 9 * * *"`],
+		["one-shot job with check", `${ONE_SHOT_JOB_SOURCE}\ncheck = "./check.sh"`],
+		["empty check", `${RECURRING_JOB_SOURCE}\ncheck = ""`],
+		["blank check", `${RECURRING_JOB_SOURCE}\ncheck = "  "`],
+		["non-string check", `${RECURRING_JOB_SOURCE}\ncheck = 1`],
 	])("%s を拒否する", (_title, source) => {
 		expect(() => parseWorkspaceSchedule(source)).toThrow("cron.toml is invalid");
+	});
+
+	it("定期ジョブのcheckを読む", () => {
+		expect(parseWorkspaceSchedule(`${RECURRING_JOB_SOURCE}\ncheck = "./check.sh"`)).toEqual({
+			jobs: [{ ...SCHEDULE.jobs[0], check: "./check.sh" }],
+		});
 	});
 
 	it("ジョブを TOML に直列化して往復できる", () => {
@@ -77,6 +87,22 @@ describe("workspace schedule TOML", () => {
 		removeWorkspaceScheduleJob(schedulePath, "missing");
 		expect(parseWorkspaceSchedule(await readFile(schedulePath, "utf8"))).toEqual({
 			jobs: [SCHEDULE.jobs[1]],
+		});
+	});
+
+	it("ジョブ削除時に残る定期ジョブのcheckを保持する", async () => {
+		const directory = await createTemporaryDirectory();
+		const schedulePath = resolve(directory, "cron.toml");
+		await writeFile(
+			schedulePath,
+			`${RECURRING_JOB_SOURCE}\ncheck = "./check.sh --since 'last run'"\n\n${ONE_SHOT_JOB_SOURCE}\n`,
+			"utf8",
+		);
+
+		removeWorkspaceScheduleJob(schedulePath, "release");
+
+		expect(parseWorkspaceSchedule(await readFile(schedulePath, "utf8"))).toEqual({
+			jobs: [{ ...SCHEDULE.jobs[0], check: "./check.sh --since 'last run'" }],
 		});
 	});
 });
