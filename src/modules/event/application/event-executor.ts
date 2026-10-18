@@ -9,6 +9,7 @@ import type { EffectOutputContract } from "../../effect/ports/effect-output-cont
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { LunaEvent } from "../domain/luna-event";
 import type { EventExecutionPort, EventExecutionResult } from "../ports/event-execution-port";
+import type { EventTaskBoardPort } from "../ports/event-task-board-port";
 
 type EventThread = Readonly<{ id: string; ownerId: string }>;
 
@@ -23,6 +24,7 @@ export class EventExecutor implements EventExecutionPort {
 			effectOutput: EffectOutputContract;
 			effects: EffectBatchPort;
 			logger: LoggerPort;
+			tasks: EventTaskBoardPort;
 		}>,
 	) {}
 
@@ -42,10 +44,11 @@ export class EventExecutor implements EventExecutionPort {
 		try {
 			thread = await this.#openThread();
 			const started = await this.dependencies.agent.startTurn(thread.id, {
-				input: JSON.stringify({ source: "event", event }),
+				input: JSON.stringify({ source: "event", event, tasks: this.dependencies.tasks.listAll() }),
 				outputSchema: this.dependencies.effectOutput.jsonSchema,
 			});
 			const completion = this.#completeChain(
+				event,
 				thread,
 				this.#connectionGeneration,
 				started.completion,
@@ -94,6 +97,7 @@ export class EventExecutor implements EventExecutionPort {
 	}
 
 	async #completeChain(
+		event: LunaEvent,
 		thread: EventThread,
 		connectionGeneration: number,
 		initialCompletion: Promise<AgentTurnResult>,
@@ -106,7 +110,10 @@ export class EventExecutor implements EventExecutionPort {
 					throw new Error(turn.errorMessage ?? `Event turn ${turn.status}`);
 				}
 				const output = this.dependencies.effectOutput.parse(turn.outputText);
-				const results = await this.dependencies.effects.execute(output.effects, thread.ownerId);
+				const results = await this.dependencies.effects.execute(output.effects, {
+					ownerId: thread.ownerId,
+					origin: { kind: "event", eventId: event.id, eventType: event.type },
+				});
 				await this.#releaseEffects(thread.ownerId);
 				if (connectionGeneration !== this.#connectionGeneration) {
 					throw new Error("Codex connection was lost while effects were running");

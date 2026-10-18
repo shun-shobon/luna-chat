@@ -67,7 +67,7 @@ describe("DiscordConversationHistory", () => {
 		]);
 	});
 
-	it("session contextと未知のbefore Event typeを拒否する", async () => {
+	it("不正なsession contextを拒否する", async () => {
 		const history = new DiscordConversationHistory(createReadPort({}));
 		const before = createDiscordMessageEvent(createDiscordConversationSession(scope), message(201));
 
@@ -78,13 +78,29 @@ describe("DiscordConversationHistory", () => {
 				1,
 			),
 		).rejects.toThrow(ZodError);
-		await expect(
-			history.fetchBefore(
-				createDiscordConversationSession(scope),
-				{ ...before, type: "discord.unknown.v1" },
-				1,
-			),
-		).rejects.toThrow("cannot start before event type");
+	});
+
+	it("Discordメッセージ以外のeventはoccurredAt時点より前の履歴を読む", async () => {
+		const readMessageHistory = vi.fn<DiscordReadPort["readMessageHistory"]>(async () => []);
+		const history = new DiscordConversationHistory(createReadPort({ readMessageHistory }));
+		const occurredAt = "2026-10-19T00:00:00.000Z";
+
+		await history.fetchBefore(
+			createDiscordConversationSession(scope),
+			{
+				id: "event-1",
+				type: "luna.task.reported.v1",
+				source: "luna/task",
+				occurredAt,
+				data: null,
+			},
+			1,
+		);
+
+		const cursor = readMessageHistory.mock.calls[0]?.[0].beforeMessageId;
+		expect(cursor === undefined ? undefined : SnowflakeUtil.timestampFrom(cursor)).toBe(
+			Date.parse(occurredAt),
+		);
 	});
 });
 

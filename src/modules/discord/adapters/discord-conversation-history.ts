@@ -5,7 +5,6 @@ import type { LunaEvent } from "../../event/domain/luna-event";
 import { conversationScopeSchema } from "../domain/conversation-scope";
 import {
 	createDiscordMessageEvent,
-	DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
 	DISCORD_MESSAGE_CREATED_EVENT_TYPE,
 } from "../domain/discord-event";
 import type { DiscordReadPort } from "../ports/discord-read-port";
@@ -42,12 +41,6 @@ export class DiscordConversationHistory implements ConversationHistoryPort {
 }
 
 function beforeCursor(event: LunaEvent): string {
-	switch (event.type) {
-		case DISCORD_MESSAGE_CREATED_EVENT_TYPE:
-			return event.id;
-		case DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE:
-			return SnowflakeUtil.generate({ timestamp: Date.parse(event.occurredAt) }).toString();
-		default:
-			throw new Error(`Discord history cannot start before event type ${event.type}.`);
-	}
+	if (event.type === DISCORD_MESSAGE_CREATED_EVENT_TYPE) return event.id;
+	return SnowflakeUtil.generate({ timestamp: Date.parse(event.occurredAt) }).toString();
 }

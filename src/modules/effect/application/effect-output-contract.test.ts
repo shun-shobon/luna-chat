@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { JsonValue } from "../../../shared/json";
+import type { EffectExecution } from "../domain/effect";
 import type { EffectProvider } from "../ports/effect-provider";
 import { defineEffect } from "../ports/effect-provider";
 import { createEffectOutputContract } from "./effect-output-contract";
@@ -16,7 +17,7 @@ function createProvider(
 	type = "fake.record",
 	execute: (
 		input: z.infer<typeof recordInputSchema>,
-		ownerId: string,
+		execution: EffectExecution,
 	) => Promise<JsonValue> = async (input) => input,
 ): EffectProvider {
 	return {
@@ -115,7 +116,12 @@ describe("createEffectOutputContract", () => {
 			}),
 		).effects;
 
-		await expect(effect?.run("owner-1")).resolves.toEqual({});
+		await expect(
+			effect?.run({
+				ownerId: "owner-1",
+				origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+			}),
+		).resolves.toEqual({});
 	});
 
 	it("malformed JSONを拒否する", () => {

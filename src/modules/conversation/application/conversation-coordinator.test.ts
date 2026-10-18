@@ -14,6 +14,7 @@ import type { LunaEvent } from "../../event/domain/luna-event";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
+import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 import { ConversationCoordinator } from "./conversation-coordinator";
 
 afterEach(() => {
@@ -216,8 +217,36 @@ describe("ConversationCoordinator", () => {
 				event("100", "2026-07-23T09:00:02.000+09:00"),
 				event("101", "2026-07-23T00:00:02.000Z"),
 			],
+			tasks: [],
 		});
 		expect(runtime.startTurn.mock.calls[0]?.[1].outputSchema).toBe(effectOutput.jsonSchema);
+	});
+
+	it("入力へ会話から見えるtask一覧を含め、Effectへ会話セッションを実行元として渡す", async () => {
+		vi.useFakeTimers();
+		const runtime = createRuntime([Promise.resolve(completed([effect("reply")]))]);
+		const listFor = vi.fn<ConversationTaskBoardPort["listFor"]>(() => [
+			{ id: "task-1", status: "running" },
+		]);
+		const execute = vi.fn<EffectBatchPort["execute"]>(async () => []);
+		const coordinator = createCoordinator(runtime.port, {
+			effects: { execute, release: vi.fn(async () => undefined) },
+			tasks: { listFor },
+		});
+
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+
+		expect(listFor).toHaveBeenCalledWith(session);
+		expect(parseStartInput(runtime.startTurn.mock.calls[0]?.[1]).tasks).toEqual([
+			{ id: "task-1", status: "running" },
+		]);
+		await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+		expect(execute.mock.calls[0]?.[1]).toEqual({
+			ownerId: "owner-1",
+			origin: { kind: "conversation", session },
+		});
 	});
 
 	it("active turn中の投稿を受信順に一件ずつsteerする", async () => {
@@ -1033,6 +1062,7 @@ const conversationInputSchema = z.strictObject({
 	session: z.strictObject({ key: z.string(), source: z.string() }),
 	history: z.array(lunaEventSchema),
 	events: z.array(lunaEventSchema),
+	tasks: z.array(z.record(z.string(), z.unknown())),
 });
 
 function createCoordinator(
@@ -1042,6 +1072,7 @@ function createCoordinator(
 		history?: ConversationHistoryPort;
 		onBatchSettled?: (eventIds: readonly string[], succeeded: boolean) => void;
 		logger?: LoggerPort;
+		tasks?: ConversationTaskBoardPort;
 		now?: () => Date;
 		sessionMemoryEnabled?: boolean;
 	} = {},
@@ -1073,6 +1104,7 @@ function createCoordinator(
 			logger: overrides.logger ?? createLogger(),
 			now: overrides.now ?? (() => new Date(2026, 6, 24)),
 			onBatchSettled: overrides.onBatchSettled ?? vi.fn(),
+			tasks: overrides.tasks ?? { listFor: () => [] },
 		},
 		{
 			debounceMs: 100,
@@ -1111,6 +1143,7 @@ function createRuntime(completions: Promise<AgentTurnResult>[] = [Promise.resolv
 	const port: AgentRuntimePort = {
 		archiveThread,
 		deleteThread: vi.fn(async () => undefined),
+		interruptTurn: vi.fn(async () => undefined),
 		listArchivedThreads: vi.fn(async () => ({ data: [] })),
 		listModels: vi.fn(async () => []),
 		openThread,

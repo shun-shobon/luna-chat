@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path";
 import { z } from "zod";
 
 import type { JsonValue } from "../../../shared/json";
+import type { EffectExecution } from "../../effect/domain/effect";
 import { defineEffect } from "../../effect/ports/effect-provider";
 import type { EffectProvider } from "../../effect/ports/effect-provider";
 import type { DiscordAction, DiscordEmoji, SendFile } from "../domain/discord-action";
@@ -73,8 +74,10 @@ const agentOpenConversationSchema = z.strictObject({
 });
 
 export function createDiscordEffectProvider(actions: DiscordActionPort): EffectProvider {
-	const executeAction = async (action: DiscordAction, ownerId: string): Promise<JsonValue> =>
-		actionSuccessToJson(await actions.execute(action, ownerId));
+	const executeAction = async (
+		action: DiscordAction,
+		execution: EffectExecution,
+	): Promise<JsonValue> => actionSuccessToJson(await actions.execute(action, execution.ownerId));
 
 	return Object.freeze({
 		definitions: Object.freeze([

@@ -1,5 +1,5 @@
 import type { LoggerPort } from "../../observability/ports/logger-port";
-import type { EffectRequest, EffectResult } from "../domain/effect";
+import type { EffectExecution, EffectRequest, EffectResult } from "../domain/effect";
 import type { EffectBatchPort } from "../ports/effect-batch-port";
 import type { EffectRegistry } from "./effect-registry";
 
@@ -8,7 +8,7 @@ export function createEffectBatchExecutor(
 	logger: LoggerPort,
 ): EffectBatchPort {
 	return {
-		execute: async (effects, ownerId) => await executeEffectBatch(effects, ownerId),
+		execute: async (effects, execution) => await executeEffectBatch(effects, execution),
 		release: async (ownerId) => {
 			const settled = await Promise.allSettled(
 				registry.providers.map(async (provider) => await provider.release(ownerId)),
@@ -28,12 +28,12 @@ export function createEffectBatchExecutor(
 
 async function executeEffectBatch(
 	effects: readonly EffectRequest[],
-	ownerId: string,
+	execution: EffectExecution,
 ): Promise<readonly EffectResult[]> {
 	return await Promise.all(
 		effects.map(async ({ type, target, run }, index): Promise<EffectResult> => {
 			try {
-				return { index, type, target, success: true, value: await run(ownerId) };
+				return { index, type, target, success: true, value: await run(execution) };
 			} catch (error: unknown) {
 				return { index, type, target, success: false, error: toErrorMessage(error) };
 			}

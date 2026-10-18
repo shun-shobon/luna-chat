@@ -71,7 +71,10 @@ describe("HTTP event server", () => {
 			status: 201,
 			body_json: '{"answer":"world"}',
 		});
-		await request.run("owner-1");
+		await request.run({
+			ownerId: "owner-1",
+			origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+		});
 		let responded = false;
 		void waiting.then(() => {
 			responded = true;
@@ -88,7 +91,12 @@ describe("HTTP event server", () => {
 		expect(() => effect.parse({ request_id: requestId, status: 200, body_json: "{" })).toThrow(
 			SyntaxError,
 		);
-		await expect(request.run("owner-1")).rejects.toThrow("not waiting");
+		await expect(
+			request.run({
+				ownerId: "owner-1",
+				origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+			}),
+		).rejects.toThrow("not waiting");
 	});
 
 	it("会話セッションの複数リクエストをIDごとに返し、返答なしは204とする", async () => {

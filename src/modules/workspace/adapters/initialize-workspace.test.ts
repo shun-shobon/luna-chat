@@ -32,6 +32,7 @@ describe("workspace initializer adapter", () => {
 			cronPath: resolve(lunaHome, "workspace", "cron.toml"),
 			lunaHomeDir: lunaHome,
 			schedule: { jobs: [] },
+			tasksDir: resolve(lunaHome, "tasks"),
 			workspaceDir: resolve(lunaHome, "workspace"),
 		});
 		await expect(readFile(resolve(lunaHome, "workspace", "LUNA.md"), "utf8")).resolves.toBe(

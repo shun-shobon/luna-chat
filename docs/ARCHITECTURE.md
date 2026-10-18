@@ -18,9 +18,10 @@ Lunaは、単一のNode.jsプロセス内でDiscordとHTTPの会話、自律タ�
 Discord Gateway ─► discord ─► conversation ──────────┐
 ローカルHTTP ────► http ─────► conversation ──────────┤
                            └──► event executor ───────┼─► agent runtime ─► Codex app-server
-automation sources ──────────► event executor ────────┘         │
-                                                               ▼
-                                             effect batch ─► Discord / HTTP応答
+automation sources ──────────► event executor ────────┤
+task service（作業エージェント）──────────────────────┘         │
+      ▲  task.create / message / cancel                         ▼
+      └───────────────────────────────── effect batch ─► Discord / HTTP応答 / タスク
 
 Lunaプロセス内: 上記各モジュール、loopback MCP、observability、runtime
 外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout
@@ -46,6 +47,7 @@ src/
 │   ├── http/            # HTTPイベント受付, 応答Effect, 待機中の応答管理
 │   ├── effect/          # Effectレジストリ, バッチ実行, 出力検証
 │   ├── automation/      # ハートビート, スケジュール, 日次整理
+│   ├── task/            # バックグラウンドタスク, 作業エージェントの実行, 依頼元への通知
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   └── observability/   # 構造化ログ, 秘匿情報マスク
 ├── runtime/             # コンポジションルート, エントリポイント
@@ -57,18 +59,19 @@ src/
 
 ## 4. モジュールの責務 (Capability Ownership)
 
-| モジュール      | 主な責務・所有する概念                                          | 公開インターフェース（ポート）                                                        | 主なアダプター                                            |
-| --------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理  | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読                      | discord.js Gateway/REST、loopback MCP                     |
-| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定  | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort`         | Discordコントローラー、履歴取得                           |
-| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け           | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`listArchived`、`delete` | stdio子プロセス、JSON-RPC                                 |
-| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                   | `execute`、`connectionLost`                                                           | なし（EventExecutorがagentポートを直接呼ぶ）              |
-| `http`          | HTTPイベントの検証、受付、完了待ち応答                          | `submit`、`stopIntake`、`drain`                                                       | Hono、`http.respond` Effect                               |
-| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行              | スキーマ生成、パース、`execute`、`release`                                            | 各種Effectプロバイダ                                      |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定 | `startAutomation`、`stopIntake`、`drain`                                              | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
-| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視        | 初期化、プロンプト読み込み、スケジュール読み書き                                      | ファイルシステム、`smol-toml`、Zod                        |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング            | ロガーポート                                                                          | 標準出力（JSON Lines）                                    |
-| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線        | プロセスエントリポイント                                                              | シグナルハンドラー                                        |
+| モジュール      | 主な責務・所有する概念                                               | 公開インターフェース（ポート）                                                                       | 主なアダプター                                            |
+| --------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理       | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読                                     | discord.js Gateway/REST、loopback MCP                     |
+| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定       | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort`                        | Discordコントローラー、履歴取得                           |
+| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け                | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`listArchived`、`delete`                | stdio子プロセス、JSON-RPC                                 |
+| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                        | `execute`、`connectionLost`                                                                          | なし（EventExecutorがagentポートを直接呼ぶ）              |
+| `http`          | HTTPイベントの検証、受付、完了待ち応答                               | `submit`、`stopIntake`、`drain`                                                                      | Hono、`http.respond` Effect                               |
+| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行                   | スキーマ生成、パース、`execute`、`release`                                                           | 各種Effectプロバイダ                                      |
+| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定      | `startAutomation`、`stopIntake`、`drain`                                                             | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
+| `task`          | タスク状態、作業エージェントの実行枠とターンチェーン、公開範囲、通知 | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`、`connectionLost` | JSONファイルストア、`task.*` Effect                       |
+| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視             | 初期化、プロンプト読み込み、スケジュール読み書き                                                     | ファイルシステム、`smol-toml`、Zod                        |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング                 | ロガーポート                                                                                         | 標準出力（JSON Lines）                                    |
+| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線             | プロセスエントリポイント                                                                             | シグナルハンドラー                                        |
 
 ## 5. 依存関係の方向
 
@@ -83,6 +86,7 @@ http         ──► conversation / event / effect
 conversation ──► event / effect / agent
 automation   ──► event
 event        ──► agent / effect
+task         ──► agent / effect / event（型のみ）
 effect       ──► provider
 automation   ──► workspace
 all          ──► observability
@@ -178,6 +182,10 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 - 失敗したEffectや `system.wait` の完了結果は、同一スレッドのフォローアップターンへ渡されて自律的なリカバリが行われる。
 - `http.respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行または会話のターンチェーンが完了した時点で、待機中のHTTPリクエストを解決する。会話側は初回バッチと成功したsteerのイベントIDを追跡し、チェーン完了時に通知する。
 
+### 7.1 Effectの実行元
+
+`EffectBatchPort.execute` には `ownerId` に加えて実行元（`EffectOrigin`: 会話セッション、イベント、タスク）を渡す。`task.create` や `task.report` は、エージェントの出力ではなくランタイムが保持する実行元で依頼元・報告元を決める。
+
 ## 8. Codex app-server アダプター
 
 ### 8.1 プロセスのライフサイクル
@@ -209,7 +217,7 @@ STOPPED ── spawn/initialize ──► READY
 - **Discord Effect プロバイダ**: メッセージ送信・返信、リアクション、タイピング、会話委譲の各操作を処理する。
 - **会話委譲**: バックグラウンドタスク（ハートビート等）がDiscord上で対話を始めたい場合、自身で直接投稿せず、対象スコープの会話セッションへイベントを委譲して処理を委ねる。
 - **タイピング管理**: 各ターンやEffectバッチの実行中にタイピング表示を維持し、処理完了時に確実に解放する。
-- **MCP サーバー**: Codex向けにチャンネル一覧やメッセージ履歴の読み取りツールを提供する。
+- **MCP サーバー**: Codex向けにチャンネル一覧やメッセージ履歴の読み取りツールを提供する。同じHTTPサーバー上で、全ツールの `/mcp` と読み取りツールだけの `/mcp/read` を別のMCPサーバーインスタンスとして公開する。
 
 HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成する。`one_shot` はEventExecutorへ、`conversation` は `http:<session_id>` の会話セッションへ直接渡す。HTTP会話の初回履歴は空とする。受付停止中は503を返し、受理済みワンショット実行は終了時にdrainする。
 
@@ -228,6 +236,23 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 - **check**: `ScheduleController` は `AutomationCheckRunnerPort` だけに依存し、出力の空判定・切り詰め・ログ記録を担う。`ChildProcessCheckRunner` は `/bin/sh -c` を独立したプロセスグループで起動し、タイムアウト時はグループ全体へシグナルを送る。暴走した出力でメモリを使い切らないよう、標準出力は先頭、標準エラー出力は末尾をそれぞれ64000文字まで保持する。checkは発火の実行の一部として追跡されるため、`drain` は実行中のcheckと後続のCodex実行を待つ。
 - **日次整理**: 定期cronにより起動し、記憶の統合やファイルの整理を行った後、Gitが利用可能であればローカルコミットを作成する。
 
+## 11.1 バックグラウンドタスク
+
+```text
+依頼元(会話/イベント) ──task.create──► TaskService ──queue──► 作業スレッド(thread/start)
+        ▲                                 │  turn/start(task) ─► task.report Effect
+        │ luna.task.reported.v1           │  turn/steer(task_messages)
+        └──── TaskDeliveryPort ◄──────────┘  turn/interrupt(cancel)
+```
+
+- `TaskService` はタスクをメモリ上の `Map` で保持し、更新のたびにタスクごとに直列化した書き込みで `TaskStorePort` へ保存する。
+- 作業スレッドの開始は実行枠（`max_concurrent`）で制限する。`question` で待機したスレッドはプロセス内の `parked` 表に保持し、Codex接続の再生成で破棄する。
+- 作業スレッドのEffectレジストリは `task.report` と `system.wait` だけで構成し、会話・イベント用レジストリとは別の出力スキーマを使う。作業スレッドにはDiscord MCPの `/mcp/read` だけを設定する。
+- 通知は `TaskDeliveryPort` を介して、会話には `ConversationCoordinator.accept`、イベント起点にはEventExecutorの新規実行として渡す。配送の受理時刻を報告に記録し、未受理の通知は起動時に再配送する。
+- 会話とイベントの入力に同梱するタスク一覧は、`ConversationTaskBoardPort` / `EventTaskBoardPort` を介して `TaskService.listFor` から取得する。conversation・eventモジュールはtaskモジュールに依存しない。
+- 取消・シャットダウン・Codex接続断では、作業スレッドの `ownerId` で `EffectBatchPort.release` を呼び、`system.wait` を打ち切る（待機Effectは `ownerId` ごとに未完了の待機を保持し、`release` で失敗させる）。シャットダウンはこれと `turn/interrupt` で作業ループを終わらせ、ループ・配送・保存の完了を待つ。
+- 作業ループは終了報告の後にfollow-upを行わない。接続断で中断した場合だけ `running` を `queued` へ戻し、旧接続のスレッドは `parked` へ登録もアーカイブもしない。
+
 ## 12. 起動とシャットダウンシーケンス
 
 ### 起動 (Startup)
@@ -238,13 +263,14 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 4. ログ・Discordクライアント・RESTアダプター・MCPサーバーの初期化
 5. Codex app-server の起動・初期化
 6. Discordへの接続ログイン
-7. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
-8. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
+7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
+8. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
+9. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
 
 ### 終了 (Shutdown)
 
 1. SIGINT / SIGTERM を受信
-2. Gatewayからの新規メッセージ、HTTPイベントの受付および新規タイマー発火を停止
+2. Gatewayからの新規メッセージ、HTTPイベントの受付および新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中のターンチェーンがすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したスレッドをアーカイブ

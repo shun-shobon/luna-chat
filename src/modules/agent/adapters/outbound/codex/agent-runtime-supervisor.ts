@@ -86,6 +86,10 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		await (await this.#getRuntime()).deleteThread(threadId);
 	}
 
+	public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
+		await (await this.#getRuntime()).interruptTurn(threadId, turnId);
+	}
+
 	public async listArchivedThreads(
 		cursor?: string,
 	): ReturnType<AgentRuntimePort["listArchivedThreads"]> {

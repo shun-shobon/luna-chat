@@ -22,6 +22,7 @@ type InitializedWorkspace = {
 	config: WorkspaceConfig;
 	configPath: string;
 	cronPath: string;
+	tasksDir: string;
 	lunaHomeDir: string;
 	schedule: WorkspaceSchedule;
 	workspaceDir: string;
@@ -43,6 +44,7 @@ export async function initializeWorkspace(
 	const lunaHomeDir = resolveLunaHome(input.lunaHome);
 	const workspaceDir = resolve(lunaHomeDir, "workspace");
 	const codexHomeDir = resolve(lunaHomeDir, "codex");
+	const tasksDir = resolve(lunaHomeDir, "tasks");
 	const templatesDir =
 		input.templatesDir === undefined
 			? isSea()
@@ -56,6 +58,7 @@ export async function initializeWorkspace(
 		await Promise.all([
 			mkdir(workspaceDir, { recursive: true }),
 			mkdir(codexHomeDir, { recursive: true }),
+			mkdir(tasksDir, { recursive: true }),
 		]);
 		await createIfMissing(async () => {
 			await createWorkspaceConfigFile(configPath);
@@ -81,6 +84,7 @@ export async function initializeWorkspace(
 			cronPath,
 			lunaHomeDir,
 			schedule,
+			tasksDir,
 			workspaceDir,
 		};
 	} catch (error: unknown) {

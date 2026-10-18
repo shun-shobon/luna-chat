@@ -1,6 +1,6 @@
 import type { ConversationSession } from "../../conversation/domain/conversation-session";
 import type { LunaEvent } from "../../event/domain/luna-event";
-import { conversationScopeKey } from "./conversation-scope";
+import { conversationScopeKey, conversationScopeSchema } from "./conversation-scope";
 import type { ConversationScope } from "./conversation-scope";
 import type { DiscordMessage } from "./discord-message";
 
@@ -42,4 +42,12 @@ export function createDiscordDelegatedEvent(
 		occurredAt: input.occurredAt.toISOString(),
 		data: { scope: session.context, brief: input.brief },
 	};
+}
+
+export function isDiscordGuildSession(
+	session: Pick<ConversationSession, "context" | "source">,
+): boolean {
+	if (session.source !== DISCORD_EVENT_SOURCE) return false;
+	const scope = conversationScopeSchema.safeParse(session.context);
+	return scope.success && scope.data.kind !== "dm";
 }

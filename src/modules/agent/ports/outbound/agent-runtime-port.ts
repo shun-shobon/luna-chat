@@ -55,6 +55,7 @@ interface AgentThreadPort {
 }
 
 interface AgentTurnPort {
+	interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
 	startTurn(threadId: ThreadId, request: AgentTurnRequest): Promise<StartedAgentTurn>;
 	steerTurn(threadId: ThreadId, turnId: TurnId, input: string): Promise<void>;
 }

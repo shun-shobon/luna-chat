@@ -16,6 +16,7 @@ Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向�
 - 定期ハートビートおよびスケジュール設定に基づき、自律的にCodexターンを開始する。
 - `LUNA.md`（人格設定）および `MEMORY.md`（長期記憶）をロードし、Codexスレッドのコンテキストを構築する。
 - アイドル終了前の会話ログを日次記憶に保存し、定期cronにより記憶とワークスペースを自律的に整理する。
+- 長い作業をバックグラウンドタスクとして作業エージェントへ委任し、会話を止めずに進捗・質問・結果を依頼元へ届ける。
 
 ### 非対象範囲
 
@@ -50,6 +51,9 @@ Codexの実行環境には以下の権限が与えられる。
 - **会話委譲**: バックグラウンド処理等の実行中スレッドから `discord.open_conversation` を用い、指定したスコープのセッションへ背景情報を渡して対話を委ねる機能。
 - **セッション記憶保存**: アイドル終了を迎えた会話スレッド自身が、要約や決定事項を `memory/YYYY-MM-DD.md` に追記する処理。
 - **日次整理**: 定期cronによって専用スレッドを起動し、記憶やワークスペース内のファイルを整理してローカルGitコミットを作成する処理。
+- **バックグラウンドタスク**: 会話またはイベント実行（依頼元）が `task.create` で作業エージェントへ委任した作業。状態と報告は `LUNA_HOME/tasks/` に永続化される。
+- **作業エージェント (Worker)**: バックグラウンドタスクを1件ずつ専用Codexスレッドで実行するLuna。Discordへは投稿できず、`task.report` で依頼元へ報告する。
+- **タスク一覧**: 会話・イベントの入力に同梱される、その実行から見えるバックグラウンドタスクの現在状態。
 
 ## 5. Discord連携
 
@@ -93,8 +97,9 @@ type AgentInput =
 			session: { key: string; source: string };
 			history: LunaEvent[];
 			events: LunaEvent[];
+			tasks: TaskSummary[];
 	  }
-	| { source: "event"; event: LunaEvent }
+	| { source: "event"; event: LunaEvent; tasks: TaskSummary[] }
 	| { source: "session_memory"; date: string }
 	| { source: "effect_results"; results: EffectResult[] };
 ```
@@ -104,6 +109,7 @@ type AgentInput =
 - ハートビート、スケジュール、日次整理は、それぞれ `system.heartbeat.fired.v1`、`system.schedule.fired.v1`、`system.memory_maintenance.fired.v1` を生成し、`source: "event"` として処理される。
 - HTTPイベントは `source: "http"` の `LunaEvent` とする。`data` は `{ payload: 送信されたevent.data, response_mode }` であり、IDと受信時刻はLunaが生成する。
 - 添付ファイルはURLやメタデータのみを渡し、ランタイム側でのファイル自動ダウンロードは行わない。
+- `tasks` と作業エージェントへの入力は §20 で定義する。
 
 ### 5.6 スラッシュコマンド
 
@@ -156,6 +162,8 @@ Lunaプロセス内で `127.0.0.1` のランダムポートにバインドする
 
 また、メッセージ送信やリアクション追加等の操作も、ターン途中に実行可能な書き込みツールとして提供される。
 
+会話・イベント実行のスレッドには全ツールを持つ `/mcp` を、作業エージェントのスレッドには読み取りツールだけを持つ `/mcp/read` を設定する。
+
 ## 10. 最終出力とEffect
 
 ### 10.1 出力形式
@@ -187,7 +195,7 @@ HTTPの完了待ち入力には `http.respond` Effectを利用できる。入力
 
 ### 10.4 待機Effect (`system.wait`)
 
-`{ duration_seconds: number }` を指定して指定秒数待機する。`duration_seconds` は1以上 `2147483` 以下の整数とする。完了後は結果を同一スレッドのフォローアップターンへ渡す。
+`{ duration_seconds: number }` を指定して指定秒数待機する。`duration_seconds` は1以上 `2147483` 以下の整数とする。完了後は結果を同一スレッドのフォローアップターンへ渡す。実行中の待機は、その実行の強制終了（Codex接続断、致命的なシャットダウン、バックグラウンドタスクの取消・停止）で打ち切られ、Effectの失敗として扱われる。
 
 ### 10.5 実行制御とフォローアップ
 
@@ -291,7 +299,12 @@ restart_initial_delay_ms = 1000
 restart_max_delay_ms = 30000
 restart_window_ms = 300000
 restart_failure_limit = 5
+
+[tasks]
+max_concurrent = 2
 ```
+
+`[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
 
 `*_ms` のうちタイマーとして使う値（`thread_retention_ms` と `restart_window_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
 
@@ -322,10 +335,11 @@ restart_failure_limit = 5
 | セッション記憶保存の失敗         | エラーログを記録してスレッドをアーカイブ。リトライは行わない。                         |
 | 日次整理タスクの失敗             | エラーログを記録してスレッドをアーカイブ。次回cron時刻まで待機。                       |
 | スケジュールのcheck失敗          | エラーログを記録し、Codexを起動しない。次回の発火時刻まで待機。                        |
+| バックグラウンドタスクの失敗     | §20.4のとおり失敗として記録し、依頼元へ `failure` を通知する。                         |
 
 ### シャットダウン
 
-SIGINTまたはSIGTERMを受信すると、新規メッセージとHTTPイベントの受付および定期タスクの開始を停止し、受信済みのキューやアクティブなターンチェーンがすべて自然完了するのを待機してから安全に終了する。実行中のスケジュールのcheckも完了を待ち、Codexを起動する結果であればそのCodex実行の完了まで待つ。正常終了した会話セッションは、終了前に記憶保存を実行する。
+SIGINTまたはSIGTERMを受信すると、新規メッセージとHTTPイベントの受付および定期タスクの開始を停止し、受信済みのキューやアクティブなターンチェーンがすべて自然完了するのを待機してから安全に終了する。実行中のスケジュールのcheckも完了を待ち、Codexを起動する結果であればそのCodex実行の完了まで待つ。正常終了した会話セッションは、終了前に記憶保存を実行する。バックグラウンドタスクは §20.7 のとおり中断してキューへ戻す。
 
 ## 18. HTTPイベントAPI
 
@@ -363,3 +377,122 @@ JSON形式が不正またはスキーマに合わない入力は `400`、JSON以
 GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を指定する。easy-releaseが最新の安定版Gitタグを基準に次のバージョンを計算し、`package.json` の更新後に `pnpm format` を実行し、整形結果を含む準備PRを作成する。安定版タグがない場合の基準は `0.0.0` とする。
 
 準備PRのmainへのマージを契機に、`vX.Y.Z` 形式のタグとドラフトReleaseを作成する。通常のPR、未マージで閉じたPR、別リポジトリからのPRは公開対象にしない。Linux・macOSのamd64・arm64向けSEAアセットと、Linuxのamd64・arm64向けDockerイメージをビルドし、GitHub Artifact Attestationsを付与する。すべて成功した後にGHCRの `latest` タグを更新し、GitHub Releaseを公開する。ビルドや証明の付与に失敗した場合はドラフトのまま保持し、`latest` は更新しない。
+
+## 20. バックグラウンドタスク
+
+### 20.1 目的と構成
+
+会話やイベント実行（依頼元）は、数分以上かかる調査・制作・多数のツール呼び出しを伴う作業を `task.create` で作業エージェントへ委任し、完了を待たずにターンを終える。作業エージェントは同じ `LUNA.md` と `MEMORY.md` を読み込む別のCodexスレッドで作業し、Discordへは投稿しない。依頼元への伝達はすべて `task.report` と依頼元への通知イベントを介する。
+
+### 20.2 依頼元が使うEffect
+
+会話とイベント実行の出力スキーマに次のEffectを追加する。長さ制約を超える入力はEffect出力全体の検証失敗となる。
+
+| Effect         | 入力                                                                | 結果                               |
+| -------------- | ------------------------------------------------------------------- | ---------------------------------- |
+| `task.create`  | `{ title: string(1〜120文字), instructions: string(1〜20000文字) }` | `{ task_id, status: "queued" }`    |
+| `task.message` | `{ task_id: string, text: string(1〜8000文字) }`                    | `{ task_id, status }`              |
+| `task.cancel`  | `{ task_id: string, reason: string(1〜2000文字) \| null }`          | `{ task_id, status: "cancelled" }` |
+
+- `task.message` と `task.cancel` は、依頼元から見えるタスク（§20.5）で、かつ終了していないものだけに使える。それ以外はEffect失敗とする。
+- 作業エージェントは `task.create` を使えない。
+
+### 20.3 作業エージェントの入力・出力
+
+作業エージェントの出力スキーマは `task.report` と `system.wait` だけで構成する。Discord MCPは読み取り専用のエンドポイントだけを渡す（§9）。
+
+```ts
+type WorkerInput =
+	| {
+			source: "task";
+			task: {
+				id: string;
+				title: string;
+				instructions: string;
+				origin: string; // 依頼元の会話セッションキーまたはイベント種別
+				created_at: string;
+				attempt: number; // 1から始まる実行回数
+				previous_reports: TaskReportJson[];
+			};
+			messages: TaskMessageJson[]; // これまでの全メッセージ
+	  }
+	| { source: "task_messages"; task_id: string; messages: TaskMessageJson[] }
+	| { source: "task_check"; task_id: string }
+	| { source: "output_error"; task_id: string; error: string }
+	| { source: "effect_results"; results: EffectResult[] };
+
+type TaskReportJson = {
+	seq: number;
+	kind: TaskReportKind;
+	summary: string;
+	artifacts: string[];
+	reported_at: string;
+};
+type TaskMessageJson = { id: string; text: string; received_at: string };
+```
+
+`task.report` の入力は `{ kind, summary: string(1〜4000文字), artifacts: 絶対パスの配列 | null }` とし、`kind` は次のとおり。
+
+| `kind`      | 状態への影響    | 依頼元への通知                 |
+| ----------- | --------------- | ------------------------------ |
+| `progress`  | 変化なし        | しない（タスク一覧にのみ反映） |
+| `milestone` | 変化なし        | する                           |
+| `question`  | `waiting_input` | する                           |
+| `result`    | `completed`     | する                           |
+| `failure`   | `failed`        | する                           |
+
+### 20.4 状態遷移と実行
+
+```text
+queued ──(実行枠が空く)──► running ──result──► completed
+  ▲                          │  └─failure / 実行失敗──► failed
+  │                          │question
+  │                          ▼
+  └──(message受信)──── waiting_input
+任意の未終了状態 ──task.cancel──► cancelled
+```
+
+- 同時に `running` にできるタスクは `[tasks].max_concurrent`（デフォルト2）件までとし、超えたタスクは作成順に待機する。`waiting_input` は実行枠を使わない。
+- `queued` から実行を始めるたびに `attempts` を1増やし、新しいスレッドで `task` 入力を渡す。`attempts` が5を超えた場合は実行せず失敗とする。
+- ターンチェーンが終わった時点で未配送のメッセージがあれば、同じスレッドで `task_messages` を渡して続行する（状態は `running` に戻る）。
+- 終了報告（`result`・`failure`・`question`）がないままチェーンが終わった場合は、一度だけ `task_check` を渡す。再び終了報告がなければ失敗とする。
+- 最終出力のパースまたは検証に失敗した場合は、`output_error` で理由を返して再試行させる。連続2回まで再試行し、3回目の失敗でタスクを失敗とする。
+- ターンの失敗・中断は、タスクの失敗とする。
+- `question` で待機したスレッドは同じプロセス内で保持し、メッセージ受信時に同じスレッドで `task_messages` を渡して再開する。Codex app-serverの再起動やプロセスの再起動で保持が失われた場合は、新しいスレッドで `task` 入力から再開する。
+- 実行中のタスクへのメッセージは `turn/steer` で同じターンへ渡す。steerが拒否された場合は、チェーン終了後に次のターンで渡す。
+- `task.cancel` は実行中のターンを `turn/interrupt` で中断し、以後のターンを開始しない。実行済みの外部作用は取り消さない。
+- 終了したタスクのスレッドはアーカイブする。
+
+### 20.5 公開範囲とタスク一覧
+
+- Discordのギルドチャンネルまたはギルドスレッドの会話から作成したタスクは、すべての会話から見える。DM・HTTP会話・イベント実行から作成したタスクは非公開とし、作成した会話とイベント実行からだけ見える。イベント実行からはすべてのタスクが見える。
+- 会話とイベントの入力の `tasks` には、見えるタスクのうち未終了のもの、および終了から24時間以内のものを、更新が新しい順に最大20件含める。
+
+```ts
+type TaskSummary = {
+	id: string;
+	title: string;
+	status: "queued" | "running" | "waiting_input" | "completed" | "failed" | "cancelled";
+	origin: string;
+	created_at: string;
+	updated_at: string;
+	latest_report: { kind: TaskReportKind; summary: string; reported_at: string } | null;
+	undelivered_messages: number;
+};
+```
+
+### 20.6 依頼元への通知
+
+通知する報告は `luna.task.reported.v1` イベント（`source: "luna/task"`、`subject` はタスクID、`data` は `{ task: TaskSummary, report: TaskReportJson }`）として依頼元へ届ける。
+
+- 依頼元が会話の場合は、その会話セッションへ通常の受付イベントとして渡す。セッションが終了していれば新しいセッションで受け付ける。
+- 依頼元がイベント実行の場合は、新しいワンショット実行として渡す。実行を始めた時点で配送済みとし、その実行が失敗しても再配送しない。シャットダウン時はこの実行の完了を待つ。
+- シャットダウン開始後の通知と、受付停止中の会話へ渡せなかった通知は未配送として残し、次回起動時に配送し直す。会話へ受け付けた後にプロセスが終了した場合の再配送は行わない。
+- ランタイム起因の失敗（試行回数超過、最終報告なし、ターン失敗など）は、`failure` の報告として記録し通知する。
+
+### 20.7 永続化と再起動
+
+- タスクは `LUNA_HOME/tasks/<task_id>.json` に1件1ファイルで保存し、一時ファイルからの置き換えで更新する。読み込めないファイルやスキーマに合わないファイルはエラーログを記録して読み飛ばす。
+- 起動時に `running` だったタスクは `queued` に戻して再開する（`attempts` は再開時に増える）。作業エージェントには、前回の試行が中断されたことを `attempt` と `previous_reports` で伝え、外部作用のやり直し前に確認させる。
+- シャットダウン時は実行中のタスクを `queued` に戻し、ターンを `turn/interrupt` で中断して `system.wait` を打ち切る。中断したターンの終了、スレッドのアーカイブ、状態の保存を待ってから終了する。`question` で待機中のスレッドもアーカイブする。
+- Codex app-serverの再起動時は実行中のタスクを `queued` に戻し、`system.wait` を打ち切って、新しいスレッドで再開する。終了済みと `waiting_input` のタスクは状態を変えない。旧接続のスレッドはアーカイブしない。

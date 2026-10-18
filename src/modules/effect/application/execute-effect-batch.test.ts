@@ -45,7 +45,7 @@ describe("createEffectBatchExecutor", () => {
 				parseRecord(registry, { target: "first-target", value: "first" }),
 				parseRecord(registry, { target: "second-target", value: "second" }),
 			],
-			"owner-1",
+			{ ownerId: "owner-1", origin: { kind: "event", eventId: "event-1", eventType: "test.v1" } },
 		);
 		await vi.waitFor(() => expect(started).toEqual(["first", "second"]));
 		resolvers.get("second")?.();
@@ -94,7 +94,7 @@ describe("createEffectBatchExecutor", () => {
 					parseRecord(registry, { target: "bad", value: "failure" }),
 					parseRecord(registry, { target: "good", value: "success" }),
 				],
-				"owner-1",
+				{ ownerId: "owner-1", origin: { kind: "event", eventId: "event-1", eventType: "test.v1" } },
 			),
 		).resolves.toEqual([
 			{

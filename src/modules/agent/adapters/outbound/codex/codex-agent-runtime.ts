@@ -257,7 +257,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 			-32601,
 			"Interactive user input is not supported by this client.",
 		);
-		void this.#interruptTurn(threadId, turnId).catch((error: unknown) => {
+		void this.interruptTurn(threadId, turnId).catch((error: unknown) => {
 			this.#connection.fail(
 				new JsonRpcProtocolError("Failed to interrupt a turn that requested user input.", {
 					cause: error,
@@ -266,7 +266,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 		});
 	}
 
-	async #interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
+	public async interruptTurn(threadId: ThreadId, turnId: TurnId): Promise<void> {
 		const result = await this.#connection.request("turn/interrupt", { threadId, turnId });
 		parseResponse(this.#connection, () => parseEmptyResponse(result));
 	}

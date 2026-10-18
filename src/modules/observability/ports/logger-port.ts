@@ -7,6 +7,7 @@ export type LogContext = Readonly<{
 	effectIndex?: number | undefined;
 	jobId?: string | undefined;
 	requestId?: string | number | undefined;
+	taskId?: string | undefined;
 	threadId?: string | undefined;
 	toolCallId?: string | undefined;
 	turnId?: string | undefined;
