@@ -72,11 +72,11 @@ export class HeartbeatController {
 	}
 
 	async #runOnce(): Promise<void> {
-		let checklist: string;
+		let context: Readonly<{ checklist: string; agenda: string }>;
 		try {
-			checklist = await this.#workspace.readHeartbeatChecklist();
+			context = await this.#workspace.readHeartbeatContext();
 		} catch (error: unknown) {
-			this.#logger.log("error", "automation.heartbeat.checklist_read_failed", {}, { error });
+			this.#logger.log("error", "automation.heartbeat.context_read_failed", {}, { error });
 			return;
 		}
 
@@ -85,7 +85,7 @@ export class HeartbeatController {
 			type: "system.heartbeat.fired.v1",
 			source: "system/heartbeat",
 			occurredAt: this.#clock.now().toISOString(),
-			data: { checklist },
+			data: { checklist: context.checklist, agenda: context.agenda },
 		});
 	}
 }

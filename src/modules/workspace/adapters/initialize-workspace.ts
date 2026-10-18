@@ -13,6 +13,7 @@ const INITIAL_WORKSPACE_FILES = [
 	"LUNA.md",
 	"MEMORY.md",
 	"HEARTBEAT.md",
+	"AGENDA.md",
 	".agents/skills/cron/SKILL.md",
 	".agents/skills/heartbeat/SKILL.md",
 ] as const;

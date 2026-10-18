@@ -44,6 +44,9 @@ describe("workspace initializer adapter", () => {
 		await expect(readFile(resolve(lunaHome, "workspace", "HEARTBEAT.md"), "utf8")).resolves.toBe(
 			"heartbeat template",
 		);
+		await expect(readFile(resolve(lunaHome, "workspace", "AGENDA.md"), "utf8")).resolves.toBe(
+			"agenda template",
+		);
 		await expect(
 			readFile(resolve(lunaHome, "workspace", ".agents/skills/cron/SKILL.md"), "utf8"),
 		).resolves.toBe("cron skill template");
@@ -82,6 +85,7 @@ describe("workspace initializer adapter", () => {
 			writeFile(resolve(workspaceDir, "LUNA.md"), "custom luna"),
 			writeFile(resolve(workspaceDir, "MEMORY.md"), "custom memory"),
 			writeFile(resolve(workspaceDir, "HEARTBEAT.md"), "custom heartbeat"),
+			writeFile(resolve(workspaceDir, "AGENDA.md"), "custom agenda"),
 		]);
 		await mkdir(resolve(workspaceDir, ".agents/skills/cron"), { recursive: true });
 		await mkdir(resolve(workspaceDir, ".agents/skills/heartbeat"), { recursive: true });
@@ -162,6 +166,7 @@ async function createTemplates(root: string): Promise<string> {
 		writeFile(resolve(templatesDir, "LUNA.md"), "luna template"),
 		writeFile(resolve(templatesDir, "MEMORY.md"), "memory template"),
 		writeFile(resolve(templatesDir, "HEARTBEAT.md"), "heartbeat template"),
+		writeFile(resolve(templatesDir, "AGENDA.md"), "agenda template"),
 		writeFile(resolve(templatesDir, ".agents/skills/cron/SKILL.md"), "cron skill template"),
 		writeFile(
 			resolve(templatesDir, ".agents/skills/heartbeat/SKILL.md"),

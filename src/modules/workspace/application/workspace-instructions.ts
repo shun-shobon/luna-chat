@@ -23,11 +23,19 @@ export async function readWorkspaceBaseInstructions(
 	return { luna, memory };
 }
 
-export async function readHeartbeatChecklist(workspaceDir: string): Promise<string> {
+export async function readHeartbeatContext(
+	workspaceDir: string,
+): Promise<Readonly<{ checklist: string; agenda: string }>> {
+	const checklist = await readRequiredInstruction(workspaceDir, "HEARTBEAT.md");
+	const agenda = await readRequiredInstruction(workspaceDir, "AGENDA.md");
+	return { checklist, agenda };
+}
+
+async function readRequiredInstruction(workspaceDir: string, fileName: string): Promise<string> {
 	try {
-		return await readFile(resolve(workspaceDir, "HEARTBEAT.md"), "utf8");
+		return await readFile(resolve(workspaceDir, fileName), "utf8");
 	} catch (error: unknown) {
-		throw new WorkspaceInstructionError("HEARTBEAT.md must be readable.", { cause: error });
+		throw new WorkspaceInstructionError(`${fileName} must be readable.`, { cause: error });
 	}
 }
 
