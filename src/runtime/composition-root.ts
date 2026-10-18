@@ -174,7 +174,6 @@ export async function startLunaApplication(
 				},
 			}),
 			capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
-			now: () => new Date(),
 			workspaceDir: workspace.workspaceDir,
 		});
 		const coordinator = new ConversationCoordinator(

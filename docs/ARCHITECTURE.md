@@ -154,7 +154,7 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 ```text
 検証済み入力
      │
-     ├─ 新規スレッド作成: LUNA.md + MEMORY.md + 前日/当日の日次ログのロード, thread/start
+     ├─ 新規スレッド作成: LUNA.md + MEMORY.md のロード, thread/start
      │
      ├─ turn/start(outputSchema)
      │       ├─ 実行中にCodexがMCPツール呼び出し（即時実行）
