@@ -602,7 +602,10 @@ class ConversationActor {
 		);
 		void (async () => {
 			try {
-				const results = await this.dependencies.effects.execute(effects, ownerId);
+				const results = await this.dependencies.effects.execute(effects, {
+					ownerId,
+					origin: { kind: "conversation", session: this.session },
+				});
 				await this.#releaseEffects(ownerId);
 				this.#post({ kind: "effects_finished", token, results });
 			} catch (error: unknown) {

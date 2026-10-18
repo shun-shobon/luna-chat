@@ -46,6 +46,7 @@ export class EventExecutor implements EventExecutionPort {
 				outputSchema: this.dependencies.effectOutput.jsonSchema,
 			});
 			const completion = this.#completeChain(
+				event,
 				thread,
 				this.#connectionGeneration,
 				started.completion,
@@ -94,6 +95,7 @@ export class EventExecutor implements EventExecutionPort {
 	}
 
 	async #completeChain(
+		event: LunaEvent,
 		thread: EventThread,
 		connectionGeneration: number,
 		initialCompletion: Promise<AgentTurnResult>,
@@ -106,7 +108,10 @@ export class EventExecutor implements EventExecutionPort {
 					throw new Error(turn.errorMessage ?? `Event turn ${turn.status}`);
 				}
 				const output = this.dependencies.effectOutput.parse(turn.outputText);
-				const results = await this.dependencies.effects.execute(output.effects, thread.ownerId);
+				const results = await this.dependencies.effects.execute(output.effects, {
+					ownerId: thread.ownerId,
+					origin: { kind: "event", eventId: event.id, eventType: event.type },
+				});
 				await this.#releaseEffects(thread.ownerId);
 				if (connectionGeneration !== this.#connectionGeneration) {
 					throw new Error("Codex connection was lost while effects were running");

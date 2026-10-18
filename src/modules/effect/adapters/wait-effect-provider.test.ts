@@ -16,7 +16,10 @@ describe("system.wait", () => {
 			JSON.stringify({ effects: [{ type: "system.wait", input: { duration_seconds: 60 } }] }),
 		).effects;
 		const executor = createEffectBatchExecutor(registry, { log: vi.fn() });
-		const execution = executor.execute(effects, "owner-1");
+		const execution = executor.execute(effects, {
+			ownerId: "owner-1",
+			origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+		});
 		let settled = false;
 		void execution.then(() => {
 			settled = true;

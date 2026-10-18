@@ -1,10 +1,20 @@
 import type { JsonValue } from "../../../shared/json";
 
+export type EffectOrigin =
+	| Readonly<{
+			kind: "conversation";
+			session: Readonly<{ key: string; source: string; context: JsonValue }>;
+	  }>
+	| Readonly<{ kind: "event"; eventId: string; eventType: string }>
+	| Readonly<{ kind: "task"; taskId: string }>;
+
+export type EffectExecution = Readonly<{ ownerId: string; origin: EffectOrigin }>;
+
 export type EffectRequest = Readonly<{
 	type: string;
 	input: JsonValue;
 	target: JsonValue;
-	run(ownerId: string): Promise<JsonValue>;
+	run(execution: EffectExecution): Promise<JsonValue>;
 }>;
 
 export type EffectOutput = Readonly<{

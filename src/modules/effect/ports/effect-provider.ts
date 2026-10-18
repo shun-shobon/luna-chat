@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 import type { JsonValue } from "../../../shared/json";
-import type { EffectRequest } from "../domain/effect";
+import type { EffectExecution, EffectRequest } from "../domain/effect";
 
 export interface EffectDefinition {
 	readonly type: string;
@@ -19,7 +19,7 @@ export function defineEffect<AgentInput extends JsonValue, Input>(
 		type: string;
 		agentInputSchema: z.ZodType<AgentInput>;
 		parseInput(input: AgentInput): Input;
-		execute(input: NoInfer<Input>, ownerId: string): Promise<JsonValue>;
+		execute(input: NoInfer<Input>, execution: EffectExecution): Promise<JsonValue>;
 		describeTarget(input: NoInfer<Input>): JsonValue;
 	}>,
 ): EffectDefinition {
@@ -32,7 +32,7 @@ export function defineEffect<AgentInput extends JsonValue, Input>(
 				type: config.type,
 				input: value,
 				target: config.describeTarget(input),
-				run: async (ownerId) => await config.execute(input, ownerId),
+				run: async (execution) => await config.execute(input, execution),
 			};
 		},
 	});

@@ -84,7 +84,10 @@ describe("EventExecutor", () => {
 		});
 		expect(harness.executeEffects).toHaveBeenCalledWith(
 			[expect.objectContaining({ type: "fake.record", input: "changed" })],
-			"owner-1",
+			{
+				ownerId: "owner-1",
+				origin: { kind: "event", eventId: event.id, eventType: event.type },
+			},
 		);
 		expect(harness.release).toHaveBeenCalledWith("owner-1");
 		expect(calls).toEqual(["open", "archive"]);

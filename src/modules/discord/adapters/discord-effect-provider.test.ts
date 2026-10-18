@@ -103,7 +103,12 @@ describe("Discord Effect Provider", () => {
 			const definition = findDefinition(provider.definitions, testCase.type);
 			const request = definition.parse(testCase.input);
 			expect(request.target).toEqual(testCase.target);
-			await expect(request.run("owner-1")).resolves.toMatchObject({
+			await expect(
+				request.run({
+					ownerId: "owner-1",
+					origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+				}),
+			).resolves.toMatchObject({
 				actionKind: expect.any(String),
 			});
 		}
@@ -171,7 +176,12 @@ describe("Discord Effect Provider", () => {
 			}),
 		);
 
-		await expect(batch.execute(output.effects, "owner-1")).resolves.toEqual([
+		await expect(
+			batch.execute(output.effects, {
+				ownerId: "owner-1",
+				origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+			}),
+		).resolves.toEqual([
 			{
 				index: 0,
 				type: "discord.send_message",
@@ -208,7 +218,12 @@ describe("Discord delegation Effect Provider", () => {
 			brief: "帰宅したので夕飯の相談をしたい",
 		});
 
-		await expect(request.run("owner-1")).resolves.toEqual({ scope });
+		await expect(
+			request.run({
+				ownerId: "owner-1",
+				origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+			}),
+		).resolves.toEqual({ scope });
 		expect(delegate).toHaveBeenCalledWith(
 			{ kind: "dm_user", userId: "100" },
 			"帰宅したので夕飯の相談をしたい",
