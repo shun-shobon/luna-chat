@@ -30,10 +30,10 @@ export class ThreadRetentionCleaner {
 		this.#retentionMs = input.retentionMs;
 	}
 
-	async start(): Promise<void> {
+	// 削除は1件数秒かかり起動時に数百件溜まっていることがあるため、起動を待たせずに裏で進める。
+	start(): void {
 		this.#accepting = true;
-		await this.#runCleanup();
-		this.#scheduleNext();
+		this.#runTracked();
 	}
 
 	stopIntake(): void {
@@ -53,11 +53,15 @@ export class ThreadRetentionCleaner {
 
 		this.#timer = this.#clock.setTimer(this.#cleanupIntervalMs, () => {
 			this.#timer = undefined;
-			const cleanup = this.#runCleanup().finally(() => {
-				this.#scheduleNext();
-			});
-			this.#executions.track(cleanup);
+			this.#runTracked();
 		});
+	}
+
+	#runTracked(): void {
+		const cleanup = this.#runCleanup().finally(() => {
+			this.#scheduleNext();
+		});
+		this.#executions.track(cleanup);
 	}
 
 	async #runCleanup(): Promise<void> {
@@ -83,6 +87,7 @@ export class ThreadRetentionCleaner {
 
 				// app-serverは削除を直列に処理するため、並列に投げると後続がRPCタイムアウトして接続全体が再起動される。
 				for (const threadId of expiredThreadIds) {
+					if (!this.#accepting) return;
 					await this.#agent.deleteThread(threadId).catch((error: unknown) => {
 						this.#logger.log(
 							"error",
@@ -93,7 +98,7 @@ export class ThreadRetentionCleaner {
 					});
 				}
 				cursor = page.nextCursor;
-			} while (cursor !== undefined);
+			} while (cursor !== undefined && this.#accepting);
 		} catch (error: unknown) {
 			this.#logger.log("error", "automation.thread_retention.list_failed", {}, { error });
 		}

@@ -238,7 +238,7 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 4. ログ・Discordクライアント・RESTアダプター・MCPサーバーの初期化
 5. Codex app-server の起動・初期化
 6. Discordへの接続ログイン
-7. 過去のアーカイブ済みスレッドのクリーンアップ
+7. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
 8. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
 
 ### 終了 (Shutdown)
