@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
 import { CodexAgentRuntime } from "../modules/agent/adapters/outbound/codex/codex-agent-runtime";
 import { startCodexStdioProcess } from "../modules/agent/adapters/outbound/codex/codex-stdio-process";
+import { ChildProcessCheckRunner } from "../modules/automation/adapters/child-process-check-runner";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
 import {
@@ -62,6 +63,8 @@ import { createThreadInputFactory } from "./thread-input-factory";
 
 const TYPING_REFRESH_INTERVAL_MS = 8_000;
 const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
+const SCHEDULE_CHECK_TIMEOUT_MS = 120_000;
+const SCHEDULE_CHECK_KILL_GRACE_MS = 5_000;
 
 interface LunaApplication {
 	fatal: Promise<Error>;
@@ -255,6 +258,12 @@ export async function startLunaApplication(
 				retentionMs: workspace.config.agent.threadRetentionMs,
 			}),
 			schedule: new ScheduleController({
+				checkRunner: new ChildProcessCheckRunner({
+					cwd: workspace.workspaceDir,
+					killGraceMs: SCHEDULE_CHECK_KILL_GRACE_MS,
+					parentEnvironment: process.env,
+					timeoutMs: SCHEDULE_CHECK_TIMEOUT_MS,
+				}),
 				clock,
 				executor,
 				logger,

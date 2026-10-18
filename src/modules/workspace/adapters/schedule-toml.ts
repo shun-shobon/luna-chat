@@ -15,6 +15,10 @@ const ScheduleJobBaseSchema = z.strictObject({
 });
 
 const RecurringScheduleJobSchema = ScheduleJobBaseSchema.extend({
+	check: z
+		.string()
+		.refine((value) => value.trim().length > 0, "check must not be blank")
+		.optional(),
 	cron: z.string().min(1).refine(isValidFiveFieldCron, {
 		message: "cron must be a valid five-field cron expression.",
 	}),

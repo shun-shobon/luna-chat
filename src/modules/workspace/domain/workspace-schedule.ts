@@ -1,4 +1,5 @@
 export type RecurringScheduleJob = {
+	check?: string;
 	cron: string;
 	enabled: boolean;
 	id: string;

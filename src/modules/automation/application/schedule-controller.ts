@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { JsonObject } from "../../../shared/json";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type {
@@ -8,6 +9,7 @@ import type {
 	WorkspaceSchedule,
 	WorkspaceScheduleJob,
 } from "../../workspace/domain/workspace-schedule";
+import type { AutomationCheckRunnerPort } from "../ports/automation-check-runner-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type {
 	AutomationScheduleTimerPort,
@@ -24,7 +26,11 @@ type RegisteredScheduleJob = {
 
 type FiredOneShotState = "starting" | "delete_only";
 
+const CHECK_OUTPUT_MAX_LENGTH = 32_000;
+const CHECK_STDERR_MAX_LENGTH = 2_000;
+
 export class ScheduleController {
+	readonly #checkRunner: AutomationCheckRunnerPort;
 	readonly #clock: AutomationClockPort;
 	readonly #createEventId: () => string;
 	readonly #executions: ActiveExecutionSet;
@@ -42,6 +48,7 @@ export class ScheduleController {
 	#reloadTimer: AutomationTimerHandle | undefined;
 
 	constructor(input: {
+		checkRunner: AutomationCheckRunnerPort;
 		clock: AutomationClockPort;
 		createEventId?: (() => string) | undefined;
 		executions?: ActiveExecutionSet;
@@ -52,6 +59,7 @@ export class ScheduleController {
 		watcher: AutomationScheduleWatcherPort;
 		workspace: AutomationWorkspacePort;
 	}) {
+		this.#checkRunner = input.checkRunner;
 		this.#clock = input.clock;
 		this.#createEventId = input.createEventId ?? randomUUID;
 		this.#executions = input.executions ?? new ActiveExecutionSet();
@@ -221,14 +229,23 @@ export class ScheduleController {
 	}
 
 	async #runJob(job: WorkspaceScheduleJob): Promise<void> {
+		const occurredAt = this.#clock.now().toISOString();
+		const data: JsonObject = { jobId: job.id, prompt: job.prompt, kind: job.kind };
+		if (job.kind === "recurring" && job.check !== undefined) {
+			const checkData = await this.#runCheck(job.id, job.check);
+			if (checkData === undefined) {
+				return;
+			}
+			Object.assign(data, checkData);
+		}
 		await this.#executor.execute(
 			{
 				id: this.#createEventId(),
 				type: "system.schedule.fired.v1",
 				source: "system/schedule",
 				subject: job.id,
-				occurredAt: this.#clock.now().toISOString(),
-				data: { jobId: job.id, prompt: job.prompt, kind: job.kind },
+				occurredAt,
+				data,
 			},
 			job.kind === "one_shot"
 				? () => {
@@ -237,6 +254,37 @@ export class ScheduleController {
 					}
 				: undefined,
 		);
+	}
+
+	async #runCheck(jobId: string, command: string): Promise<JsonObject | undefined> {
+		const result = await this.#checkRunner.run(command);
+		if (result.status === "failed") {
+			this.#logger.log(
+				"error",
+				"automation.schedule.check_failed",
+				{ jobId },
+				{
+					error: result.error,
+					exitCode: result.exitCode,
+					signal: result.signal,
+					timedOut: result.timedOut,
+				},
+				{ stderr: result.stderr.slice(-CHECK_STDERR_MAX_LENGTH) },
+			);
+			return undefined;
+		}
+		const output = result.stdout.trim();
+		if (output.length === 0) {
+			this.#logger.log("info", "automation.schedule.check_skipped", { jobId });
+			return undefined;
+		}
+		if (output.length > CHECK_OUTPUT_MAX_LENGTH) {
+			return {
+				check_output: output.slice(0, CHECK_OUTPUT_MAX_LENGTH),
+				check_output_truncated: true,
+			};
+		}
+		return { check_output: output };
 	}
 
 	#deleteStartedOneShot(jobId: string): void {
@@ -280,7 +328,7 @@ function isSameRecurringDefinition(
 	left: RecurringScheduleJob,
 	right: RecurringScheduleJob,
 ): boolean {
-	return left.cron === right.cron;
+	return left.cron === right.cron && left.check === right.check;
 }
 
 function isSameOneShotDefinition(left: OneShotScheduleJob, right: OneShotScheduleJob): boolean {

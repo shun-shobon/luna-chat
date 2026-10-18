@@ -57,18 +57,18 @@ src/
 
 ## 4. モジュールの責務 (Capability Ownership)
 
-| モジュール      | 主な責務・所有する概念                                         | 公開インターフェース（ポート）                                                        | 主なアダプター                               |
-| --------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理 | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読                      | discord.js Gateway/REST、loopback MCP        |
-| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定 | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort`         | Discordコントローラー、履歴取得              |
-| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け          | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`listArchived`、`delete` | stdio子プロセス、JSON-RPC                    |
-| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                  | `execute`、`connectionLost`                                                           | なし（EventExecutorがagentポートを直接呼ぶ） |
-| `http`          | HTTPイベントの検証、受付、完了待ち応答                         | `submit`、`stopIntake`、`drain`                                                       | Hono、`http.respond` Effect                  |
-| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行             | スキーマ生成、パース、`execute`、`release`                                            | 各種Effectプロバイダ                         |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火             | `startAutomation`、`stopIntake`、`drain`                                              | タイマー、cronスケジューラ、ファイル監視     |
-| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視       | 初期化、プロンプト読み込み、スケジュール読み書き                                      | ファイルシステム、`smol-toml`、Zod           |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング           | ロガーポート                                                                          | 標準出力（JSON Lines）                       |
-| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線       | プロセスエントリポイント                                                              | シグナルハンドラー                           |
+| モジュール      | 主な責務・所有する概念                                          | 公開インターフェース（ポート）                                                        | 主なアダプター                                            |
+| --------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `discord`       | メッセージ正規化、スコープ判定、Discord Effect、タイピング管理  | イベント変換、Effectプロバイダ、Discord API呼び出し、Gateway購読                      | discord.js Gateway/REST、loopback MCP                     |
+| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定  | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`、`abort`         | Discordコントローラー、履歴取得                           |
+| `agent`         | Codexプロセス、スレッド・ターンの管理、通知の相関付け           | `listModels`、`openThread`、`startTurn`、`steer`、`archive`、`listArchived`、`delete` | stdio子プロセス、JSON-RPC                                 |
+| `event`         | 共通イベント（`LunaEvent`）、ワンショット実行                   | `execute`、`connectionLost`                                                           | なし（EventExecutorがagentポートを直接呼ぶ）              |
+| `http`          | HTTPイベントの検証、受付、完了待ち応答                          | `submit`、`stopIntake`、`drain`                                                       | Hono、`http.respond` Effect                               |
+| `effect`        | Effect定義、スキーマ生成、出力検証、バッチ並行実行              | スキーマ生成、パース、`execute`、`release`                                            | 各種Effectプロバイダ                                      |
+| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定 | `startAutomation`、`stopIntake`、`drain`                                              | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
+| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視        | 初期化、プロンプト読み込み、スケジュール読み書き                                      | ファイルシステム、`smol-toml`、Zod                        |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング            | ロガーポート                                                                          | 標準出力（JSON Lines）                                    |
+| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線        | プロセスエントリポイント                                                              | シグナルハンドラー                                        |
 
 ## 5. 依存関係の方向
 
@@ -224,7 +224,8 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 ハートビート、スケジュール、日次整理は、それぞれ独立したイベントソースとして動作し、共通のワンショットエグゼキュータを呼び出す。
 
 - **ハートビート**: ランダムな時間間隔で `HEARTBEAT.md` を読み込み、定期チェックを行う。
-- **スケジュール**: cron定義または指定日時に基づき、登録されたプロンプトを実行する。
+- **スケジュール**: cron定義または指定日時に基づき、登録されたプロンプトを実行する。各発火を `ActiveExecutionSet` で追跡し、同じジョブの発火同士も直列化しない。
+- **check**: `ScheduleController` は `AutomationCheckRunnerPort` だけに依存し、出力の空判定・切り詰め・ログ記録を担う。`ChildProcessCheckRunner` は `/bin/sh -c` を独立したプロセスグループで起動し、タイムアウト時はグループ全体へシグナルを送る。暴走した出力でメモリを使い切らないよう、標準出力は先頭、標準エラー出力は末尾をそれぞれ64000文字まで保持する。checkは発火の実行の一部として追跡されるため、`drain` は実行中のcheckと後続のCodex実行を待つ。
 - **日次整理**: 定期cronにより起動し、記憶の統合やファイルの整理を行った後、Gitが利用可能であればローカルコミットを作成する。
 
 ## 12. 起動とシャットダウンシーケンス
@@ -244,7 +245,7 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 
 1. SIGINT / SIGTERM を受信
 2. Gatewayからの新規メッセージ、HTTPイベントの受付および新規タイマー発火を停止
-3. 受信済みのキューおよび実行中のターンチェーンがすべて自然完了するのを待機
+3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中のターンチェーンがすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したスレッドをアーカイブ
 6. 待機中HTTPリクエストの完了を確認し、HTTPサーバー、タイピングリース、ファイル監視、MCP、Discord接続、Codexプロセスを停止
