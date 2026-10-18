@@ -35,7 +35,8 @@ describe("ThreadRetentionCleaner", () => {
 			retentionMs: 100_000,
 		});
 
-		await cleaner.start();
+		cleaner.start();
+		await cleaner.drain();
 
 		expect(agent.listArchivedThreads).toHaveBeenNthCalledWith(1, undefined);
 		expect(agent.listArchivedThreads).toHaveBeenNthCalledWith(2, "next");
@@ -75,15 +76,53 @@ describe("ThreadRetentionCleaner", () => {
 			retentionMs: 100_000,
 		});
 
-		const starting = cleaner.start();
+		cleaner.start();
 		await vi.waitFor(() => {
 			expect(agent.deleteThread).toHaveBeenCalledWith("expired-1");
 		});
 		expect(agent.deleteThread).toHaveBeenCalledTimes(1);
 		first.resolve(undefined);
-		await starting;
+		await cleaner.drain();
 
 		expect(agent.deleteThread).toHaveBeenNthCalledWith(2, "expired-2");
+	});
+
+	it("起動時のcleanupを待たずに返り、停止後は残りの削除と次回予約をしない", async () => {
+		const now = new Date("2026-01-01T00:00:00.000Z");
+		const expiredAt = now.getTime() / 1_000 - 101;
+		const first = createDeferred<undefined>();
+		const agent = createAgent({
+			deleteThread: vi
+				.fn<AgentRuntimePort["deleteThread"]>()
+				.mockImplementationOnce(async () => await first.promise),
+			listArchivedThreads: vi.fn(async () => ({
+				data: [
+					{ id: "expired-1", updatedAt: expiredAt },
+					{ id: "expired-2", updatedAt: expiredAt },
+				],
+				nextCursor: "next",
+			})),
+		});
+		const clock = new FakeClock(now);
+		const cleaner = new ThreadRetentionCleaner({
+			agent,
+			cleanupIntervalMs: 1_000,
+			clock,
+			logger: createLogger(),
+			retentionMs: 100_000,
+		});
+
+		cleaner.start();
+		await vi.waitFor(() => {
+			expect(agent.deleteThread).toHaveBeenCalledWith("expired-1");
+		});
+		cleaner.stopIntake();
+		first.resolve(undefined);
+		await cleaner.drain();
+
+		expect(agent.deleteThread).toHaveBeenCalledTimes(1);
+		expect(agent.listArchivedThreads).toHaveBeenCalledTimes(1);
+		expect(clock.delays).toEqual([]);
 	});
 
 	it("listとdeleteの失敗を記録し、完了後に次回を予約する", async () => {
@@ -105,7 +144,8 @@ describe("ThreadRetentionCleaner", () => {
 			logger,
 			retentionMs: 100_000,
 		});
-		await cleaner.start();
+		cleaner.start();
+		await cleaner.drain();
 		expect(logger.log).toHaveBeenCalledWith(
 			"error",
 			"automation.thread_retention.delete_failed",
@@ -144,7 +184,8 @@ describe("ThreadRetentionCleaner", () => {
 			logger: createLogger(),
 			retentionMs: 100_000,
 		});
-		await cleaner.start();
+		cleaner.start();
+		await cleaner.drain();
 
 		await clock.fireNext();
 		cleaner.stopIntake();
