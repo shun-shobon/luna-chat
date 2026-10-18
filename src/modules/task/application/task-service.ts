@@ -423,7 +423,7 @@ export class TaskService {
 		return this.#update(taskId, {
 			messages: task.messages.map((message) =>
 				message.deliveredAt == null && (ids === undefined || ids.has(message.id))
-					? { ...message, deliveredAt }
+					? withDeliveredAt(message, deliveredAt)
 					: message,
 			),
 		});
@@ -471,7 +471,7 @@ export class TaskService {
 				const deliveredAt = this.#timestamp();
 				this.#update(taskId, {
 					reports: latest.reports.map((candidate) =>
-						candidate.seq === report.seq ? { ...candidate, deliveredAt } : candidate,
+						candidate.seq === report.seq ? withDeliveredAt(candidate, deliveredAt) : candidate,
 					),
 				});
 			},
@@ -587,6 +587,13 @@ function statusAfterReport(status: TaskStatus, kind: TaskReportKind): TaskStatus
 // cancelや停止は別の非同期処理から書き換えるため、await後に改めて読む。
 function isStopped(run: ActiveRun): boolean {
 	return run.stopReason !== undefined;
+}
+
+function withDeliveredAt<Item extends { deliveredAt: string | null }>(
+	item: Item,
+	deliveredAt: string,
+): Item {
+	return { ...item, deliveredAt };
 }
 
 function toReportJson(report: TaskReport): JsonObject {
