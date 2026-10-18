@@ -55,6 +55,14 @@ describe("application composition lifecycle", () => {
 			supervisorClose: async () => {
 				calls.push("supervisor.close");
 			},
+			tasks: {
+				stopIntake: vi.fn(() => {
+					calls.push("tasks.stopIntake");
+				}),
+				drain: vi.fn(async () => {
+					calls.push("tasks.drain");
+				}),
+			},
 			typingRelease: () => {
 				calls.push("typing.release");
 			},
@@ -67,9 +75,11 @@ describe("application composition lifecycle", () => {
 				"conversation.stopIntake",
 				"automation.stopIntake",
 				"http.stopIntake",
+				"tasks.stopIntake",
 				"conversation.drain",
 				"automation.drain",
 				"http.drain",
+				"tasks.drain",
 				"http.failPending",
 				"http.close",
 				"typing.release",

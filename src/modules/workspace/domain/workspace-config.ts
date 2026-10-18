@@ -25,6 +25,9 @@ export type WorkspaceConfig = {
 		enabled: boolean;
 		maintenanceCron: string;
 	};
+	tasks: {
+		maxConcurrent: number;
+	};
 };
 
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
@@ -53,5 +56,8 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 	memory: {
 		enabled: true,
 		maintenanceCron: "0 4 * * *",
+	},
+	tasks: {
+		maxConcurrent: 2,
 	},
 };

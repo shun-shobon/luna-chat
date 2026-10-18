@@ -46,11 +46,13 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 			},
 			heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
 			memory: { enabled: true, maintenanceCron: "0 4 * * *" },
+			tasks: { maxConcurrent: 2 },
 		},
 		configPath: "/tmp/luna-test/config.toml",
 		cronPath: "/tmp/luna-test/workspace/cron.toml",
 		lunaHomeDir: "/tmp/luna-test",
 		schedule: { jobs: [] },
+		tasksDir: "/tmp/luna-test/tasks",
 		workspaceDir: "/tmp/luna-test/workspace",
 	})),
 }));
@@ -63,6 +65,7 @@ vi.mock("../modules/agent/adapters/outbound/codex/codex-agent-runtime", () => ({
 				archiveThread: vi.fn(async () => undefined),
 				close: fakes.runtimeClose,
 				deleteThread: vi.fn(async () => undefined),
+				interruptTurn: vi.fn(async () => undefined),
 				listArchivedThreads: vi.fn(async () => ({ data: [] })),
 				listModels: vi.fn(async () => []),
 				openThread: vi.fn(async () => "thread-1"),
@@ -82,8 +85,18 @@ vi.mock("../modules/discord/adapters/discord-mcp-server", async (importOriginal)
 	...(await importOriginal()),
 	startDiscordMcpServer: vi.fn(async () => ({
 		close: fakes.mcpClose,
+		readOnlyUrl: "http://127.0.0.1:12345/mcp/read",
 		url: "http://127.0.0.1:12345/mcp",
 	})),
+}));
+
+vi.mock("../modules/task/adapters/json-file-task-store", () => ({
+	JsonFileTaskStore: class {
+		async loadAll(): Promise<[]> {
+			return [];
+		}
+		async save(): Promise<void> {}
+	},
 }));
 
 vi.mock("../modules/http/adapters/http-event-server", () => ({
@@ -134,16 +147,31 @@ describe("composition root integration", () => {
 		expect(fakes.client.on).toHaveBeenCalledTimes(3);
 		expect(fakes.client.application.commands.create).toHaveBeenCalledOnce();
 		expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
-		expect(registry).toHaveBeenCalledOnce();
-		expect(registry.mock.calls[0]?.[0].flatMap((provider) => provider.definitions)).toHaveLength(9);
+		expect(registry).toHaveBeenCalledTimes(2);
+		expect(
+			registry.mock.calls[0]?.[0].flatMap((provider) =>
+				provider.definitions.map((definition) => definition.type),
+			),
+		).toEqual(expect.arrayContaining(["task.create", "task.message", "task.cancel"]));
+		expect(
+			registry.mock.calls[1]?.[0].flatMap((provider) =>
+				provider.definitions.map((definition) => definition.type),
+			),
+		).toEqual(["task.report", "system.wait"]);
 		expect(outputContract).toHaveBeenCalledWith(registry.mock.results[0]?.value);
+		expect(outputContract).toHaveBeenCalledWith(registry.mock.results[1]?.value);
 		const factoryInput = threadInputFactory.mock.calls[0]?.[0];
-		expect(factoryInput?.capabilityInstructions).toHaveLength(1);
+		expect(factoryInput?.developerInstructions).toHaveLength(3);
 		expect(factoryInput?.buildMcpServers("owner-1")).toEqual({
 			discord: {
 				url: "http://127.0.0.1:12345/mcp",
 				http_headers: { "X-Luna-Typing-Owner": "owner-1" },
 			},
+		});
+		const workerFactoryInput = threadInputFactory.mock.calls[1]?.[0];
+		expect(workerFactoryInput?.developerInstructions).toHaveLength(1);
+		expect(workerFactoryInput?.buildMcpServers("owner-2")).toEqual({
+			discord: { url: "http://127.0.0.1:12345/mcp/read" },
 		});
 
 		await application.shutdown();

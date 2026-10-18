@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { AgentThreadInput } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
 import type { JsonObject } from "../shared/json";
-import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 
 export function buildBaseInstructions(input: {
 	luna: string | undefined;
@@ -21,7 +20,7 @@ export function buildCodexThreadConfig(mcpServers: JsonObject, workspaceDir: str
 
 export function createThreadInputFactory(input: {
 	buildMcpServers: (executionOwnerId: string) => JsonObject;
-	capabilityInstructions: readonly string[];
+	developerInstructions: readonly string[];
 	workspaceDir: string;
 	createExecutionOwnerId?: (() => string) | undefined;
 }): () => Promise<AgentThreadInput & { executionOwnerId: string }> {
@@ -33,9 +32,7 @@ export function createThreadInputFactory(input: {
 			baseInstructions: buildBaseInstructions(instructions),
 			config: buildCodexThreadConfig(input.buildMcpServers(executionOwnerId), input.workspaceDir),
 			cwd: input.workspaceDir,
-			developerInstructions: [LUNA_DEVELOPER_INSTRUCTIONS, ...input.capabilityInstructions].join(
-				"\n\n",
-			),
+			developerInstructions: input.developerInstructions.join("\n\n"),
 			executionOwnerId,
 		};
 	};

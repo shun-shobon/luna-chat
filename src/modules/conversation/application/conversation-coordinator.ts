@@ -16,6 +16,7 @@ import type {
 	ConversationSession,
 } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
+import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 
 type ConversationCoordinatorOptions = Readonly<{
 	debounceMs: number;
@@ -34,6 +35,7 @@ type ConversationDependencies = Readonly<{
 	logger: LoggerPort;
 	now: () => Date;
 	onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
+	tasks: ConversationTaskBoardPort;
 }>;
 
 export type ConversationModelSettings = Readonly<{ model: string; effort: string }>;
@@ -742,6 +744,7 @@ class ConversationActor {
 			session: { key: this.session.key, source: this.session.source },
 			history,
 			events,
+			tasks: this.dependencies.tasks.listFor(this.session),
 		});
 	}
 

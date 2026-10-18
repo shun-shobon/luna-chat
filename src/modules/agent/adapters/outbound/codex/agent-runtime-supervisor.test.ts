@@ -13,6 +13,7 @@ function createRuntime(close: () => Promise<void> = async () => undefined): Supe
 		archiveThread: async () => undefined,
 		close,
 		deleteThread: async () => undefined,
+		interruptTurn: async () => undefined,
 		listArchivedThreads: async () => ({ data: [] }),
 		listModels: async () => [],
 		openThread: async () => "thread-1",

@@ -67,6 +67,11 @@ const WorkspaceConfigTomlSchema = z
 				message: "memory.maintenance_cron must be a valid five-field cron expression.",
 			}),
 		}),
+		tasks: z
+			.strictObject({
+				max_concurrent: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.tasks.maxConcurrent),
+			})
+			.prefault({}),
 	})
 	.superRefine((config, context) => {
 		if (config.heartbeat.min_interval_ms > config.heartbeat.max_interval_ms) {
@@ -158,6 +163,9 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 			enabled: config.memory.enabled,
 			maintenanceCron: config.memory.maintenance_cron,
 		},
+		tasks: {
+			maxConcurrent: config.tasks.max_concurrent,
+		},
 	};
 }
 
@@ -188,6 +196,9 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 		memory: {
 			enabled: config.memory.enabled,
 			maintenance_cron: config.memory.maintenanceCron,
+		},
+		tasks: {
+			max_concurrent: config.tasks.maxConcurrent,
 		},
 	};
 }

@@ -246,6 +246,7 @@ function createAgent(overrides: Partial<AgentRuntimePort> = {}): {
 	return {
 		archiveThread: vi.fn(overrides.archiveThread ?? (async () => undefined)),
 		deleteThread: vi.fn(overrides.deleteThread ?? (async () => undefined)),
+		interruptTurn: vi.fn(overrides.interruptTurn ?? (async () => undefined)),
 		listArchivedThreads: vi.fn(overrides.listArchivedThreads ?? (async () => ({ data: [] }))),
 		listModels: vi.fn(overrides.listModels ?? (async () => [])),
 		openThread: vi.fn(overrides.openThread ?? (async () => "thread-1")),

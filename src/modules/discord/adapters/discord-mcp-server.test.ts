@@ -42,6 +42,24 @@ describe("Discord MCP server", () => {
 		expect(url.pathname).toBe("/mcp");
 	});
 
+	it("読み取り専用endpointではwrite action toolを公開しない", async () => {
+		const resource = await connect(
+			{ actions: createActionPort(), read: createReadPort() },
+			"turn-owner",
+			"readOnlyUrl",
+		);
+
+		const tools = await resource.client.listTools();
+		expect(tools.tools.map((tool) => tool.name).toSorted()).toEqual([
+			"get_guild_emoji",
+			"get_user_detail",
+			"list_channels",
+			"list_guild_emojis",
+			"read_message_history",
+		]);
+		expect(new URL(resource.server.readOnlyUrl).pathname).toBe("/mcp/read");
+	});
+
 	it("read toolを対応portへそのまま委譲する", async () => {
 		const read = createReadPort();
 		const resource = await connect({ actions: createActionPort(), read });
@@ -214,6 +232,7 @@ async function connect(
 		read: DiscordReadPort;
 	},
 	ownerId: string | null = "turn-owner",
+	endpoint: "readOnlyUrl" | "url" = "url",
 ) {
 	const server = await startDiscordMcpServer({
 		actions: input.actions,
@@ -223,7 +242,7 @@ async function connect(
 	});
 	const client = new McpClient({ name: "discord-mcp-contract", version: "1.0.0" });
 	await client.connect(
-		new StreamableHTTPClientTransport(new URL(server.url), {
+		new StreamableHTTPClientTransport(new URL(server[endpoint]), {
 			requestInit:
 				ownerId == null ? {} : { headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: ownerId } },
 		}),

@@ -79,7 +79,7 @@ describe("EventExecutor", () => {
 
 		expect(harness.openThread).toHaveBeenCalledWith(threadInput);
 		expect(harness.startTurn).toHaveBeenCalledWith("thread-1", {
-			input: JSON.stringify({ source: "event", event }),
+			input: JSON.stringify({ source: "event", event, tasks: [{ id: "task-1" }] }),
 			outputSchema: effectOutput.jsonSchema,
 		});
 		expect(harness.executeEffects).toHaveBeenCalledWith(
@@ -235,6 +235,7 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 	const agent: AgentRuntimePort = {
 		archiveThread,
 		deleteThread: vi.fn(async () => {}),
+		interruptTurn: vi.fn(async () => {}),
 		listArchivedThreads: vi.fn(async () => ({ data: [] })),
 		listModels: vi.fn(async () => []),
 		openThread,
@@ -258,6 +259,7 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 		effectOutput,
 		effects: { execute: executeEffects, release },
 		logger: { log },
+		tasks: { listAll: () => [{ id: "task-1" }] },
 	});
 	return { archiveThread, executeEffects, executor, log, openThread, release, startTurn };
 }

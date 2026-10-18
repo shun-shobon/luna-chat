@@ -63,11 +63,13 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => ({
 			},
 			heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
 			memory: { enabled: true, maintenanceCron: "0 4 * * *" },
+			tasks: { maxConcurrent: 2 },
 		},
 		configPath: `${fakes.lunaHome}/config.toml`,
 		cronPath: `${fakes.workspaceDir}/cron.toml`,
 		lunaHomeDir: fakes.lunaHome,
 		schedule: { jobs: [] },
+		tasksDir: `${fakes.lunaHome}/tasks`,
 		workspaceDir: fakes.workspaceDir,
 	})),
 }));
@@ -116,6 +118,7 @@ describe("composition root child integration", () => {
 		const rpcLogPath = join(root, "rpc.log");
 		const fakeCodexPath = join(root, "codex");
 		await mkdir(fakes.workspaceDir, { recursive: true });
+		await mkdir(join(fakes.lunaHome, "tasks"));
 		await Promise.all([
 			writeFile(join(fakes.workspaceDir, "LUNA.md"), "Luna"),
 			writeFile(join(fakes.workspaceDir, "MEMORY.md"), "Memory"),

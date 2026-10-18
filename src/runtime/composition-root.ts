@@ -40,7 +40,9 @@ import {
 import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
+import { isDiscordGuildSession } from "../modules/discord/domain/discord-event";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
+import { createWaitEffectProvider } from "../modules/effect/adapters/wait-effect-provider";
 import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
 import { createEffectRegistry } from "../modules/effect/application/effect-registry";
 import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
@@ -50,6 +52,16 @@ import { HttpEventService } from "../modules/http/application/http-event-service
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
+import { JsonFileTaskStore } from "../modules/task/adapters/json-file-task-store";
+import {
+	createTaskBoardEffectProvider,
+	createTaskReportEffectProvider,
+} from "../modules/task/adapters/task-effect-provider";
+import { TaskService } from "../modules/task/application/task-service";
+import {
+	TASK_BOARD_INSTRUCTIONS,
+	TASK_WORKER_INSTRUCTIONS,
+} from "../modules/task/task-instructions";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
 import {
@@ -57,6 +69,7 @@ import {
 	removeWorkspaceScheduleJob,
 } from "../modules/workspace/adapters/schedule-toml";
 import { readHeartbeatChecklist } from "../modules/workspace/application/workspace-instructions";
+import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 import { createEffectProviders } from "./effect-providers";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createThreadInputFactory } from "./thread-input-factory";
@@ -95,11 +108,29 @@ export async function startLunaApplication(
 		now: () => new Date(),
 	});
 	const httpResponses = new HttpResponseRegistry();
-	const effectRegistry = createEffectRegistry(
-		createEffectProviders({ actions: actionAdapter, delegation, httpResponses }),
-	);
+	let tasks: TaskService | undefined;
+	const taskBoard = {
+		cancel: async (...input: Parameters<TaskService["cancel"]>) =>
+			await requireTasks(tasks).cancel(...input),
+		create: async (...input: Parameters<TaskService["create"]>) =>
+			await requireTasks(tasks).create(...input),
+		message: async (...input: Parameters<TaskService["message"]>) =>
+			await requireTasks(tasks).message(...input),
+		report: async (...input: Parameters<TaskService["report"]>) =>
+			await requireTasks(tasks).report(...input),
+	};
+	const effectRegistry = createEffectRegistry([
+		...createEffectProviders({ actions: actionAdapter, delegation, httpResponses }),
+		createTaskBoardEffectProvider(taskBoard),
+	]);
 	const effectOutput = createEffectOutputContract(effectRegistry);
 	const effects = createEffectBatchExecutor(effectRegistry, logger);
+	const workerEffectRegistry = createEffectRegistry([
+		createTaskReportEffectProvider(taskBoard),
+		createWaitEffectProvider(),
+	]);
+	const workerEffectOutput = createEffectOutputContract(workerEffectRegistry);
+	const workerEffects = createEffectBatchExecutor(workerEffectRegistry, logger);
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
 	const discordHistory = new DiscordConversationHistory(readAdapter);
 	const mcp = await startDiscordMcpServer({
@@ -125,6 +156,7 @@ export async function startLunaApplication(
 				logger.log("error", "agent.connection_failed", {}, { error });
 				conversation?.connectionLost(error);
 				eventExecutor?.connectionLost();
+				tasks?.connectionLost();
 			},
 			onFatal: (error) => {
 				logger.log("error", "agent.restart_budget_exceeded", {}, { error });
@@ -176,9 +208,44 @@ export async function startLunaApplication(
 					http_headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: executionOwnerId },
 				},
 			}),
-			capabilityInstructions: [DISCORD_CAPABILITY_INSTRUCTIONS],
+			developerInstructions: [
+				LUNA_DEVELOPER_INSTRUCTIONS,
+				DISCORD_CAPABILITY_INSTRUCTIONS,
+				TASK_BOARD_INSTRUCTIONS,
+			],
 			workspaceDir: workspace.workspaceDir,
 		});
+		const createWorkerThreadInput = createThreadInputFactory({
+			buildMcpServers: () => ({ discord: { url: mcp.readOnlyUrl } }),
+			developerInstructions: [TASK_WORKER_INSTRUCTIONS],
+			workspaceDir: workspace.workspaceDir,
+		});
+		const taskService = new TaskService({
+			agent: supervisor,
+			createId: randomUUID,
+			createThreadInput: createWorkerThreadInput,
+			delivery: {
+				deliver: (origin, event) => {
+					if (origin.kind === "conversation") {
+						return Promise.resolve(
+							coordinator.accept({ session: origin.session, event }) ? "accepted" : "rejected",
+						);
+					}
+					void executor.execute(event);
+					return Promise.resolve("accepted");
+				},
+			},
+			effectOutput: workerEffectOutput,
+			effects: workerEffects,
+			isPrivateSession: (session) => !isDiscordGuildSession(session),
+			logger,
+			maxConcurrent: workspace.config.tasks.maxConcurrent,
+			now: () => new Date(),
+			store: new JsonFileTaskStore(workspace.tasksDir, (path, error) => {
+				logger.log("error", "task.file_invalid", {}, { error, path });
+			}),
+		});
+		tasks = taskService;
 		const coordinator = new ConversationCoordinator(
 			{
 				agent: supervisor,
@@ -195,6 +262,10 @@ export async function startLunaApplication(
 				now: () => new Date(),
 				onBatchSettled: (eventIds, succeeded) => {
 					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
+				},
+				tasks: {
+					listFor: (session) =>
+						taskService.listFor({ kind: "conversation", sessionKey: session.key }),
 				},
 			},
 			{
@@ -214,6 +285,7 @@ export async function startLunaApplication(
 			effectOutput,
 			effects,
 			logger,
+			tasks: { listAll: () => taskService.listFor({ kind: "event" }) },
 		});
 		eventExecutor = executor;
 		const automationWorkspace: AutomationWorkspacePort = {
@@ -275,6 +347,8 @@ export async function startLunaApplication(
 		});
 		startupCleanups.push(async () => await automation.stopIntake());
 		await automation.startAutomation(workspace.schedule);
+		startupCleanups.push(() => taskService.stopIntake());
+		await taskService.start();
 		options.startupSignal?.throwIfAborted();
 
 		const gatewayController = new DiscordConversationController(coordinator, lunaUserId, {
@@ -339,6 +413,7 @@ export async function startLunaApplication(
 						logger,
 						mcpClose: () => mcp.close(),
 						supervisorClose: () => supervisor.close(),
+						tasks: taskService,
 						typingRelease: () => typing.releaseAll(),
 						isFatal,
 					});
@@ -370,6 +445,7 @@ export async function shutdownApplication(input: {
 	logger: Pick<JsonLinesLogger, "flush" | "log">;
 	mcpClose(): Promise<void>;
 	supervisorClose(): Promise<void>;
+	tasks: Pick<TaskService, "drain" | "stopIntake">;
 	typingRelease(): void;
 	isFatal: boolean;
 }): Promise<void> {
@@ -380,6 +456,7 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.gateway.stop()),
 			runCleanup(() => input.conversation.stopIntake()),
 			runCleanup(() => input.http.stopIntake()),
+			runCleanup(() => input.tasks.stopIntake()),
 			input.automation.stopIntake(),
 		],
 		failures,
@@ -389,6 +466,7 @@ export async function shutdownApplication(input: {
 			input.isFatal ? input.conversation.abort() : input.conversation.drain(),
 			input.automation.drain(),
 			input.http.drain(),
+			input.tasks.drain(),
 		],
 		failures,
 	);
@@ -433,4 +511,9 @@ function logCleanupFailures(
 	for (const result of results) {
 		if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
 	}
+}
+
+function requireTasks(tasks: TaskService | undefined): TaskService {
+	if (tasks === undefined) throw new Error("Task service is not ready");
+	return tasks;
 }

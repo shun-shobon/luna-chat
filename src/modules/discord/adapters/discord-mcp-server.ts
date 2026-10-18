@@ -20,6 +20,7 @@ import type { DiscordReadPort } from "../ports/discord-read-port";
 
 const HOSTNAME = "127.0.0.1";
 const MCP_PATH = "/mcp";
+const READ_ONLY_MCP_PATH = "/mcp/read";
 export const DISCORD_MCP_TYPING_OWNER_HEADER = "X-Luna-Typing-Owner";
 
 const typingOwnerStorage = new AsyncLocalStorage<string | undefined>();
@@ -59,18 +60,52 @@ const getGuildEmojiInputSchema = z.strictObject({
 });
 
 export type DiscordMcpServerHandle = Readonly<{
+	readOnlyUrl: string;
 	url: string;
 	close(): Promise<void>;
 }>;
 
+type DiscordMcpServerInput = Readonly<{
+	actions: DiscordActionPort;
+	onError: (error: Error) => void;
+	onEvent: McpToolEventHandler;
+	read: DiscordReadPort;
+}>;
+
 export async function startDiscordMcpServer(
-	input: Readonly<{
-		actions: DiscordActionPort;
-		onError: (error: Error) => void;
-		onEvent: McpToolEventHandler;
-		read: DiscordReadPort;
-	}>,
+	input: DiscordMcpServerInput,
 ): Promise<DiscordMcpServerHandle> {
+	const endpoints = [
+		{ path: MCP_PATH, mcp: createMcpServer(input, true) },
+		{ path: READ_ONLY_MCP_PATH, mcp: createMcpServer(input, false) },
+	];
+	const app = new Hono();
+	for (const endpoint of endpoints) {
+		const transport = new StreamableHTTPTransport();
+		let connectPromise: Promise<void> | undefined;
+		app.all(endpoint.path, async (context) => {
+			const typingOwner = context.req.header(DISCORD_MCP_TYPING_OWNER_HEADER);
+			return await typingOwnerStorage.run(typingOwner, async () => {
+				connectPromise ??= endpoint.mcp.connect(transport);
+				await connectPromise;
+				return (await transport.handleRequest(context)) ?? context.body(null, 204);
+			});
+		});
+	}
+
+	const started = await startHttpServer(app, input.onError);
+	const origin = `http://${HOSTNAME}:${started.port}`;
+	return {
+		readOnlyUrl: `${origin}${READ_ONLY_MCP_PATH}`,
+		url: `${origin}${MCP_PATH}`,
+		close: async () => {
+			await Promise.all(endpoints.map(async (endpoint) => await endpoint.mcp.close()));
+			await stopHttpServer(started.server);
+		},
+	};
+}
+
+function createMcpServer(input: DiscordMcpServerInput, includeActions: boolean): McpServer {
 	const mcp = new McpServer({ name: "luna-discord", version: "1.0.0" });
 
 	const register = <Input>(
@@ -80,6 +115,7 @@ export async function startDiscordMcpServer(
 		isAction: boolean,
 		operation: (arguments_: Input) => Promise<unknown>,
 	): void => {
+		if (isAction && !includeActions) return;
 		mcp.registerTool(name, { description, inputSchema }, async (arguments_, extra) =>
 			result(
 				await runTool(
@@ -174,26 +210,7 @@ export async function startDiscordMcpServer(
 		async (arguments_) => await executeAction({ kind: "stop_typing", ...arguments_ }),
 	);
 
-	const transport = new StreamableHTTPTransport();
-	let connectPromise: Promise<void> | undefined;
-	const app = new Hono();
-	app.all(MCP_PATH, async (context) => {
-		const typingOwner = context.req.header(DISCORD_MCP_TYPING_OWNER_HEADER);
-		return await typingOwnerStorage.run(typingOwner, async () => {
-			connectPromise ??= mcp.connect(transport);
-			await connectPromise;
-			return (await transport.handleRequest(context)) ?? context.body(null, 204);
-		});
-	});
-
-	const started = await startHttpServer(app, input.onError);
-	return {
-		url: `http://${HOSTNAME}:${started.port}${MCP_PATH}`,
-		close: async () => {
-			await mcp.close();
-			await stopHttpServer(started.server);
-		},
-	};
+	return mcp;
 }
 
 async function runTool<Result>(
