@@ -81,18 +81,17 @@ export class ThreadRetentionCleaner {
 					}
 				}
 
-				await Promise.all(
-					expiredThreadIds.map(async (threadId) => {
-						await this.#agent.deleteThread(threadId).catch((error: unknown) => {
-							this.#logger.log(
-								"error",
-								"automation.thread_retention.delete_failed",
-								{ threadId },
-								{ error },
-							);
-						});
-					}),
-				);
+				// app-serverは削除を直列に処理するため、並列に投げると後続がRPCタイムアウトして接続全体が再起動される。
+				for (const threadId of expiredThreadIds) {
+					await this.#agent.deleteThread(threadId).catch((error: unknown) => {
+						this.#logger.log(
+							"error",
+							"automation.thread_retention.delete_failed",
+							{ threadId },
+							{ error },
+						);
+					});
+				}
 				cursor = page.nextCursor;
 			} while (cursor !== undefined);
 		} catch (error: unknown) {

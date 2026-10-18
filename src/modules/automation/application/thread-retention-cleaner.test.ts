@@ -51,6 +51,41 @@ describe("ThreadRetentionCleaner", () => {
 		expect(clock.delays).toEqual([1_000]);
 	});
 
+	it("期限切れthreadを1件ずつ順に削除する", async () => {
+		const now = new Date("2026-01-01T00:00:00.000Z");
+		const expiredAt = now.getTime() / 1_000 - 101;
+		const first = createDeferred<undefined>();
+		const agent = createAgent({
+			deleteThread: vi
+				.fn<AgentRuntimePort["deleteThread"]>()
+				.mockImplementationOnce(async () => await first.promise)
+				.mockResolvedValue(undefined),
+			listArchivedThreads: vi.fn(async () => ({
+				data: [
+					{ id: "expired-1", updatedAt: expiredAt },
+					{ id: "expired-2", updatedAt: expiredAt },
+				],
+			})),
+		});
+		const cleaner = new ThreadRetentionCleaner({
+			agent,
+			cleanupIntervalMs: 1_000,
+			clock: new FakeClock(now),
+			logger: createLogger(),
+			retentionMs: 100_000,
+		});
+
+		const starting = cleaner.start();
+		await vi.waitFor(() => {
+			expect(agent.deleteThread).toHaveBeenCalledWith("expired-1");
+		});
+		expect(agent.deleteThread).toHaveBeenCalledTimes(1);
+		first.resolve(undefined);
+		await starting;
+
+		expect(agent.deleteThread).toHaveBeenNthCalledWith(2, "expired-2");
+	});
+
 	it("listとdeleteの失敗を記録し、完了後に次回を予約する", async () => {
 		const now = new Date("2026-01-01T00:00:00.000Z");
 		const logger = createLogger();
