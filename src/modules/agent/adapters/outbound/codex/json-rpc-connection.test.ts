@@ -67,6 +67,10 @@ describe("JsonRpcConnection", () => {
 		transport.emitLine("not-json");
 
 		await expect(request).rejects.toBeInstanceOf(JsonRpcProtocolError);
+		await expect(request).rejects.toMatchObject({
+			message: "Codex emitted malformed JSON (line length 8).",
+			cause: expect.any(SyntaxError),
+		});
 	});
 
 	it("未知の response id を protocol fatal として扱う", () => {

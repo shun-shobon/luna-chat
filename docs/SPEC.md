@@ -132,7 +132,7 @@ Effectの実行やフォローアップを含む一連のターンチェーン�
 - `.agents/skills/cron/SKILL.md`: スケジュールタスクの登録・管理手順。
 - `.agents/skills/heartbeat/SKILL.md`: ハートビート運用の手順。
 
-新規スレッド作成時には、`LUNA.md` と `MEMORY.md` の全文に加え、前日および当日の `memory/YYYY-MM-DD.md` がベースインストラクションとしてCodexに読み込まれる。
+新規スレッド作成時には、`LUNA.md` と `MEMORY.md` の全文がベースインストラクションとしてCodexに読み込まれる。日次記憶 `memory/YYYY-MM-DD.md` とトピック記憶 `memory/topics/*.md` は事前に読み込まず、エージェントが必要な時に検索して該当部分だけを読む。
 
 ## 8. Codex連携
 
@@ -204,8 +204,9 @@ HTTPの完了待ち入力には `http.respond` Effectを利用できる。入力
 
 `[memory].enabled = true` の場合、指定されたcronスケジュール（`maintenance_cron`）に基づいて日次整理タスクが実行される。
 
-- 専用Codexスレッドが起動し、`memory/` 配下のログ、`MEMORY.md`、ワークスペース全体を読み込む。
-- 長期記憶への集約、古い情報の整理、不要ファイルの削除などを自律的に行う。
+- 専用Codexスレッドが起動し、前回の整理以降の日次記憶（少なくとも前日と当日）、`MEMORY.md`、`memory/topics/`、ワークスペース全体を確認する。
+- `MEMORY.md` は全スレッドが読み込む中核記憶として16000文字以内に保ち、詳細な経緯・手順・制作物の知識は `memory/topics/<topic>.md` へ移して `MEMORY.md` には1行の参照を残す。
+- 古い情報の整理、不要ファイルの削除などを自律的に行う。
 - Gitが利用可能な環境であれば、整理完了後に `Luna <luna@localhost>` 名義でローカルコミットを作成する。リモートへのpushは行わない。
 
 ## 13. スケジュール実行
@@ -280,7 +281,7 @@ restart_failure_limit = 5
 ## 15. スレッドの保持とクリーンアップ
 
 生成されたCodexスレッドはディスク上に永続化され、セッション終了時にアーカイブされる。
-起動時および `thread_cleanup_interval_ms` ごとに、アーカイブ済みスレッドのうち `thread_retention_ms`（デフォルト7日）を経過したものが自動的に削除される。
+起動時および `thread_cleanup_interval_ms` ごとに、アーカイブ済みスレッドのうち `thread_retention_ms`（デフォルト7日）を経過したものが1件ずつ順に自動削除される。削除に失敗したスレッドは次回のクリーンアップで再試行する。
 
 ## 16. エラーハンドリングとシャットダウン
 

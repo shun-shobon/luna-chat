@@ -155,8 +155,13 @@ export class JsonRpcConnection {
 		let value: unknown;
 		try {
 			value = JSON.parse(line);
-		} catch {
-			this.fail(new JsonRpcProtocolError("Codex emitted malformed JSON."));
+		} catch (error: unknown) {
+			this.fail(
+				new JsonRpcProtocolError(
+					`Codex emitted malformed JSON (line length ${String(line.length)}).`,
+					{ cause: error },
+				),
+			);
 			return;
 		}
 

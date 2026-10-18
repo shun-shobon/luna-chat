@@ -154,7 +154,7 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 ```text
 検証済み入力
      │
-     ├─ 新規スレッド作成: LUNA.md + MEMORY.md + 前日/当日の日次ログのロード, thread/start
+     ├─ 新規スレッド作成: LUNA.md + MEMORY.md のロード, thread/start
      │
      ├─ turn/start(outputSchema)
      │       ├─ 実行中にCodexがMCPツール呼び出し（即時実行）
@@ -200,7 +200,7 @@ STOPPED ── spawn/initialize ──► READY
 
 - スレッドは永続スレッド（`ephemeral: false`）として作成される。
 - 会話のアイドル終了時またはタスク完了時に `thread/archive` を呼び出す。
-- 定期クリーンアップタスクにより、保持期間（デフォルト7日）を過ぎたアーカイブ済みスレッドを `thread/delete` で削除する。
+- 定期クリーンアップタスクにより、保持期間（デフォルト7日）を過ぎたアーカイブ済みスレッドを `thread/delete` で1件ずつ削除する。app-serverは削除を直列に処理するため、並列に要求すると後続がRPCタイムアウトし接続全体の再起動を招く。
 
 ## 9. Discord アダプター
 
