@@ -28,7 +28,8 @@ const itemCompletedSchema = z.looseObject({
 	turnId: z.string().min(1),
 });
 const agentMessageSchema = z.looseObject({
-	phase: z.enum(["commentary", "final_answer"]).nullable(),
+	// Codex 0.162.0でpartial_answerが追加された。本番のCodexは自動更新され得るため、生成型より先に受け付ける。
+	phase: z.enum(["commentary", "partial_answer", "final_answer"]).nullable(),
 	text: z.string(),
 	type: z.literal("agentMessage"),
 });
