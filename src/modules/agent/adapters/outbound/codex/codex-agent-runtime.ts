@@ -22,6 +22,7 @@ import type { CodexLineHandlers, CodexLineTransport } from "./codex-stdio-proces
 import {
 	CodexTurnTracker,
 	isTurnScopedNotificationMethod,
+	parseNotificationTurnId,
 	parseThreadReference,
 	parseTurnReference,
 } from "./codex-turn-tracker";
@@ -32,6 +33,7 @@ import type {
 	RpcEventHandler,
 } from "./json-rpc-connection";
 
+const COMPLETED_TURNS_PER_THREAD = 50;
 const ALL_THREAD_SOURCE_KINDS: ThreadSourceKind[] = [
 	"cli",
 	"vscode",
@@ -66,6 +68,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 	readonly #connection: JsonRpcConnection;
 	readonly #managedThreadIds = new Set<ThreadId>();
 	readonly #trackers = new Map<ThreadId, CodexTurnTracker>();
+	readonly #completedTurnIds = new Map<ThreadId, Set<TurnId>>();
 
 	private constructor(options: StartCodexAgentRuntimeOptions) {
 		this.#connection = new JsonRpcConnection(options.openTransport, options.rpcTimeoutMs, {
@@ -111,6 +114,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 			parseResponse(this.#connection, () => parseEmptyResponse(result));
 		} finally {
 			this.#managedThreadIds.delete(threadId);
+			this.#completedTurnIds.delete(threadId);
 		}
 	}
 
@@ -189,6 +193,7 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 				if (this.#trackers.get(threadId) === tracker) {
 					this.#trackers.delete(threadId);
 				}
+				this.#rememberCompletedTurn(threadId, turnId);
 			});
 			return { completion, turnId };
 		} catch (error: unknown) {
@@ -228,6 +233,11 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 		if (!this.#managedThreadIds.has(threadId)) {
 			return;
 		}
+		// 前のturnで起動した常駐プロセスの出力など、完了済みturn宛ての通知は次のturn中にも届く。
+		const turnId = parseNotificationTurnId(notification);
+		if (turnId !== undefined && this.#completedTurnIds.get(threadId)?.has(turnId) === true) {
+			return;
+		}
 		const tracker = this.#trackers.get(threadId);
 		if (tracker === undefined) {
 			throw new JsonRpcProtocolError(
@@ -235,6 +245,16 @@ export class CodexAgentRuntime implements AgentRuntimePort {
 			);
 		}
 		tracker.handleNotification(notification);
+	}
+
+	#rememberCompletedTurn(threadId: ThreadId, turnId: TurnId): void {
+		const turnIds = this.#completedTurnIds.get(threadId) ?? new Set<TurnId>();
+		turnIds.add(turnId);
+		if (turnIds.size > COMPLETED_TURNS_PER_THREAD) {
+			const oldest = turnIds.values().next().value;
+			if (oldest !== undefined) turnIds.delete(oldest);
+		}
+		this.#completedTurnIds.set(threadId, turnIds);
 	}
 
 	#handleServerRequest(request: JsonRpcServerRequest): void {
