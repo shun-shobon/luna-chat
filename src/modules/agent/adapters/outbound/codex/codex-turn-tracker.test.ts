@@ -35,6 +35,31 @@ describe("CodexTurnTracker", () => {
 		});
 	});
 
+	it("partial_answer は最終出力として扱わず、後続の final_answer を返す", async () => {
+		const tracker = new CodexTurnTracker("thread-1");
+		tracker.bindTurnId("turn-1");
+		for (const [phase, text] of [
+			["partial_answer", "partial"],
+			["final_answer", "final"],
+		] as const) {
+			tracker.handleNotification({
+				method: "item/completed",
+				params: {
+					completedAtMs: 1,
+					item: { phase, text, type: "agentMessage" },
+					threadId: "thread-1",
+					turnId: "turn-1",
+				},
+			});
+		}
+		tracker.handleNotification({
+			method: "turn/completed",
+			params: { threadId: "thread-1", turn: { error: null, id: "turn-1", status: "completed" } },
+		});
+
+		await expect(tracker.completion).resolves.toEqual({ outputText: "final", status: "completed" });
+	});
+
 	it("同一 thread の異なる turn id を拒否する", () => {
 		const tracker = new CodexTurnTracker("thread-1");
 		tracker.bindTurnId("turn-1");
