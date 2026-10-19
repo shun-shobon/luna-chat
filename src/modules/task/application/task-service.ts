@@ -4,9 +4,10 @@ import type {
 	AgentThreadInput,
 } from "../../agent/ports/outbound/agent-runtime-port";
 import { requiresEffectFollowUp } from "../../effect/domain/effect";
-import type { EffectOrigin } from "../../effect/domain/effect";
+import type { EffectOrigin, EffectOutput } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
+import { parseEffectOutputs } from "../../effect/ports/effect-output-contract";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import {
@@ -48,7 +49,9 @@ type TaskServiceDependencies = Readonly<{
 	logger: LoggerPort;
 	maxConcurrent: number;
 	now: () => Date;
+	sleep: (milliseconds: number) => Promise<void>;
 	store: TaskStorePort;
+	turnRetryDelaysMs: readonly number[];
 }>;
 
 type WorkerThread = Readonly<{ id: string; ownerId: string }>;
@@ -57,6 +60,7 @@ type ActiveRun = {
 	readonly generation: number;
 	nudged: boolean;
 	outputErrors: number;
+	retries: number;
 	steering: boolean;
 	stopReason: "cancelled" | "shutdown" | undefined;
 	thread: WorkerThread | undefined;
@@ -239,6 +243,7 @@ export class TaskService {
 				generation: this.#generation,
 				nudged: false,
 				outputErrors: 0,
+				retries: 0,
 				steering: false,
 				stopReason: undefined,
 				thread: this.#parked.get(task.id),
@@ -304,11 +309,24 @@ export class TaskService {
 		run.turnId = undefined;
 		if (isStopped(run)) return undefined;
 		if (result.status !== "completed") {
-			throw new Error(result.errorMessage ?? `Task turn ${result.status}`);
+			const failure = result.errorMessage ?? `Task turn ${result.status}`;
+			const delay = this.dependencies.turnRetryDelaysMs[run.retries];
+			if (!result.retryable || delay === undefined) throw new Error(failure);
+			run.retries += 1;
+			this.dependencies.logger.log(
+				"warn",
+				"task.turn_retry_scheduled",
+				{ taskId },
+				{ error: failure, retries: run.retries },
+			);
+			await this.dependencies.sleep(delay);
+			if (isStopped(run)) return undefined;
+			return JSON.stringify({ source: "turn_retry", task_id: taskId, error: failure });
 		}
-		let output: ReturnType<EffectOutputContract["parse"]>;
+		run.retries = 0;
+		let output: EffectOutput;
 		try {
-			output = this.dependencies.effectOutput.parse(result.outputText);
+			output = parseEffectOutputs(this.dependencies.effectOutput, result.outputTexts);
 		} catch (error: unknown) {
 			if (run.outputErrors >= MAX_OUTPUT_ERRORS) throw error;
 			run.outputErrors += 1;

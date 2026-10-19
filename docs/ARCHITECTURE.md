@@ -164,7 +164,7 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
      │       ├─ 実行中にCodexがMCPツール呼び出し（即時実行）
      │       └─ 完了通知を待機
      │
-     ├─ EffectOutputContract.parse(最終テキスト)
+     ├─ parseEffectOutputs(全最終テキスト)  # steer後の続行で1ターンに複数出る
      │
      ├─ EffectBatchPort.execute(effects, ownerId)  # 並行実行
      ├─ EffectBatchPort.release(ownerId)            # タイピング状態の解放
@@ -177,6 +177,8 @@ COLLECTING ── dispatch ready ──► OPENING_THREAD ──► STARTING_TUR
 
 - Codexからの最終出力は構造化スキーマ（Structured Outputs）によって `{ effects: [{ type, input }] }` 形式に制約される。
 - 出力スキーマとEffect typeの一意性は起動時には検証せず、本番の全プロバイダ（`src/runtime/effect-providers.ts`）を対象とするテストで保証する。
+- `CodexTurnTracker` は1ターン内の `final_answer` を出た順にすべて保持し、`AgentTurnResult.outputTexts` として返す。最後の1件だけを使うと、steerの前に出た最終回答のEffectが失われる。
+- ターンの失敗結果は、Codexの `codexErrorInfo` から求めた `retryable` を持つ。会話アクターは再試行待ちの間 `retry_wait` フェーズで新着をキューへ積み、再試行ターンの開始時にsteerへ移す。EventExecutorとTaskServiceは同じ待機時間（`TURN_RETRY_DELAYS_MS`）で再試行する。
 - `EffectOutputContract.parse` は各Effectの入力をプロバイダ定義のスキーマで1回だけ検証・正規化し、表示用の対象（target）と型付き入力を閉じ込めた実行関数を持つ `EffectRequest` に変換する。バッチ実行時に入力を再検証しない。
 - バッチ内のEffectはすべて並行して実行され、全件完了（settle）した後に結果を集約する。
 - 失敗したEffectや `system.wait` の完了結果は、同一スレッドのフォローアップターンへ渡されて自律的なリカバリが行われる。

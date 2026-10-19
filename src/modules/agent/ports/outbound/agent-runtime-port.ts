@@ -23,13 +23,17 @@ export type AgentThreadSummary = {
 
 export type AgentTurnResult =
 	| Readonly<{
-			outputText: string;
+			// steerで受けた入力を同じturnで続けて処理すると最終回答が複数出るため、出た順にすべて返す。
+			outputTexts: readonly [string, ...string[]];
 			status: "completed";
 	  }>
 	| Readonly<{
 			errorMessage?: string;
+			retryable: boolean;
 			status: "failed" | "interrupted";
 	  }>;
+
+export const TURN_RETRY_DELAYS_MS: readonly number[] = [15_000, 60_000, 180_000];
 
 export type StartedAgentTurn = {
 	completion: Promise<AgentTurnResult>;

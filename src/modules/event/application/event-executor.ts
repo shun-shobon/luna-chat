@@ -6,6 +6,7 @@ import type {
 import { requiresEffectFollowUp } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
+import { parseEffectOutputs } from "../../effect/ports/effect-output-contract";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { LunaEvent } from "../domain/luna-event";
 import type { EventExecutionPort, EventExecutionResult } from "../ports/event-execution-port";
@@ -24,7 +25,9 @@ export class EventExecutor implements EventExecutionPort {
 			effectOutput: EffectOutputContract;
 			effects: EffectBatchPort;
 			logger: LoggerPort;
+			sleep: (milliseconds: number) => Promise<void>;
 			tasks: EventTaskBoardPort;
+			turnRetryDelaysMs: readonly number[];
 		}>,
 	) {}
 
@@ -103,13 +106,35 @@ export class EventExecutor implements EventExecutionPort {
 		initialCompletion: Promise<AgentTurnResult>,
 	): Promise<void> {
 		let completion = initialCompletion;
+		let retries = 0;
 		for (;;) {
 			try {
 				const turn = await completion;
 				if (turn.status !== "completed") {
-					throw new Error(turn.errorMessage ?? `Event turn ${turn.status}`);
+					const failure = turn.errorMessage ?? `Event turn ${turn.status}`;
+					const delay = this.dependencies.turnRetryDelaysMs[retries];
+					if (!turn.retryable || delay === undefined) throw new Error(failure);
+					retries += 1;
+					this.dependencies.logger.log(
+						"warn",
+						"event.turn_retry_scheduled",
+						{ threadId: thread.id },
+						{ error: failure, retries },
+					);
+					await this.dependencies.sleep(delay);
+					if (connectionGeneration !== this.#connectionGeneration) {
+						throw new Error("Codex connection was lost while waiting to retry");
+					}
+					completion = (
+						await this.dependencies.agent.startTurn(thread.id, {
+							input: JSON.stringify({ source: "turn_retry", error: failure }),
+							outputSchema: this.dependencies.effectOutput.jsonSchema,
+						})
+					).completion;
+					continue;
 				}
-				const output = this.dependencies.effectOutput.parse(turn.outputText);
+				retries = 0;
+				const output = parseEffectOutputs(this.dependencies.effectOutput, turn.outputTexts);
 				const results = await this.dependencies.effects.execute(output.effects, {
 					ownerId: thread.ownerId,
 					origin: { kind: "event", eventId: event.id, eventType: event.type },

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
 import { CodexAgentRuntime } from "../modules/agent/adapters/outbound/codex/codex-agent-runtime";
 import { startCodexStdioProcess } from "../modules/agent/adapters/outbound/codex/codex-stdio-process";
+import { TURN_RETRY_DELAYS_MS } from "../modules/agent/ports/outbound/agent-runtime-port";
 import { ChildProcessCheckRunner } from "../modules/automation/adapters/child-process-check-runner";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
@@ -241,9 +243,11 @@ export async function startLunaApplication(
 			logger,
 			maxConcurrent: workspace.config.tasks.maxConcurrent,
 			now: () => new Date(),
+			sleep,
 			store: new JsonFileTaskStore(workspace.tasksDir, (path, error) => {
 				logger.log("error", "task.file_invalid", {}, { error, path });
 			}),
+			turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 		});
 		tasks = taskService;
 		const coordinator = new ConversationCoordinator(
@@ -273,6 +277,7 @@ export async function startLunaApplication(
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
+				turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 				typingIdleMs: workspace.config.discord.typingIdleMs,
 			},
 		);
@@ -285,7 +290,9 @@ export async function startLunaApplication(
 			effectOutput,
 			effects,
 			logger,
+			sleep,
 			tasks: { listAll: () => taskService.listFor({ kind: "event" }) },
+			turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 		});
 		eventExecutor = executor;
 		const automationWorkspace: AutomationWorkspacePort = {

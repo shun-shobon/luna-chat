@@ -253,7 +253,7 @@ function createAgent(overrides: Partial<AgentRuntimePort> = {}): {
 		startTurn: vi.fn(
 			overrides.startTurn ??
 				(async () => ({
-					completion: Promise.resolve({ outputText: "", status: "completed" }),
+					completion: Promise.resolve({ outputTexts: [""], status: "completed" }),
 					turnId: "turn-1",
 				})),
 		),

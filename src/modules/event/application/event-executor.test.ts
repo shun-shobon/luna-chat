@@ -111,10 +111,31 @@ describe("EventExecutor", () => {
 		expect(harness.archiveThread).toHaveBeenCalledWith("thread-1");
 	});
 
+	it("一時的なturn失敗は同じthreadでturn_retryを送って続ける", async () => {
+		const harness = createHarness([
+			{ status: "failed", errorMessage: "Selected model is at capacity.", retryable: true },
+			completed([]),
+		]);
+
+		await expect(harness.executor.execute(event)).resolves.toEqual({ status: "completed" });
+
+		expect(harness.startTurn).toHaveBeenCalledTimes(2);
+		expect(JSON.parse(harness.startTurn.mock.calls[1]?.[1].input ?? "null")).toEqual({
+			source: "turn_retry",
+			error: "Selected model is at capacity.",
+		});
+		expect(harness.log).toHaveBeenCalledWith(
+			"warn",
+			"event.turn_retry_scheduled",
+			{ threadId: "thread-1" },
+			{ error: "Selected model is at capacity.", retries: 1 },
+		);
+	});
+
 	it.each<AgentTurnResult>([
-		{ status: "completed", outputText: "{" },
-		{ status: "failed", errorMessage: "turn failed" },
-		{ status: "interrupted" },
+		{ status: "completed", outputTexts: ["{"] },
+		{ status: "failed", errorMessage: "turn failed", retryable: false },
+		{ status: "interrupted", retryable: false },
 	])("turn結果が$statusで処理できなくてもthreadをarchiveする", async (turn) => {
 		const harness = createHarness([turn]);
 
@@ -259,7 +280,9 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 		effectOutput,
 		effects: { execute: executeEffects, release },
 		logger: { log },
+		sleep: async () => {},
 		tasks: { listAll: () => [{ id: "task-1" }] },
+		turnRetryDelaysMs: [1, 2, 3],
 	});
 	return { archiveThread, executeEffects, executor, log, openThread, release, startTurn };
 }
@@ -267,7 +290,7 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 function completed(
 	effects: readonly Readonly<{ type: string; input: unknown }>[],
 ): AgentTurnResult {
-	return { status: "completed", outputText: JSON.stringify({ effects }) };
+	return { status: "completed", outputTexts: [JSON.stringify({ effects })] };
 }
 
 function createDeferred<Value>(): {

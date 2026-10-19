@@ -9,6 +9,7 @@ import { requiresEffectFollowUp } from "../../effect/domain/effect";
 import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
 import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
 import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
+import { parseEffectOutputs } from "../../effect/ports/effect-output-contract";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { LogContext, LoggerPort } from "../../observability/ports/logger-port";
 import type {
@@ -23,6 +24,7 @@ type ConversationCoordinatorOptions = Readonly<{
 	initialHistoryLimit: number;
 	sessionMemoryEnabled: boolean;
 	sessionIdleMs: number;
+	turnRetryDelaysMs: readonly number[];
 	typingIdleMs: number;
 }>;
 
@@ -113,6 +115,7 @@ type Phase =
 	| "opening"
 	| "starting"
 	| "turn"
+	| "retry_wait"
 	| "effects"
 	| "orphaned_effects"
 	| "idle"
@@ -125,6 +128,7 @@ type ActiveThread = {
 	readonly id: string;
 	readonly ownerId: string;
 	purpose: TurnPurpose;
+	retries: number;
 	turnId: string | undefined;
 };
 
@@ -147,6 +151,7 @@ type Command =
 	| Readonly<{ kind: "operation_failed"; token: number; operation: string; error: unknown }>
 	| Readonly<{ kind: "turn_started"; token: number; turn: StartedAgentTurn }>
 	| Readonly<{ kind: "turn_finished"; token: number; result: AgentTurnResult }>
+	| Readonly<{ kind: "retry_turn"; token: number; errorMessage: string }>
 	| Readonly<{ kind: "steer_finished"; token: number; event: LunaEvent; error?: unknown }>
 	| Readonly<{ kind: "effects_finished"; token: number; results: readonly EffectResult[] }>
 	| Readonly<{ kind: "archive_finished"; token: number; error?: unknown }>
@@ -317,6 +322,7 @@ class ConversationActor {
 					id: command.threadId,
 					ownerId: command.executionOwnerId,
 					purpose: "conversation",
+					retries: 0,
 					turnId: undefined,
 				};
 				this.#logEvent(
@@ -356,7 +362,7 @@ class ConversationActor {
 						this.#post({
 							kind: "turn_finished",
 							token: command.token,
-							result: { status: "failed", errorMessage: errorMessage(error) },
+							result: { status: "failed", errorMessage: errorMessage(error), retryable: false },
 						}),
 				);
 				return;
@@ -371,6 +377,14 @@ class ConversationActor {
 					command.result,
 				);
 				this.#finishTurnAfterSteering();
+				return;
+			case "retry_turn":
+				if (!this.#matches(command.token, "retry_wait") || this.#thread === undefined) return;
+				this.#startTurn(
+					this.#thread,
+					JSON.stringify({ source: "turn_retry", error: command.errorMessage }),
+					this.#thread.purpose,
+				);
 				return;
 			case "steer_finished":
 				if (command.token !== this.#operationToken) return;
@@ -579,16 +593,26 @@ class ConversationActor {
 		const { ownerId, turnId } = thread;
 		thread.turnId = undefined;
 		if (result.status !== "completed") {
-			this.#logError(
-				new Error(result.errorMessage ?? `Agent turn ended with status: ${result.status}`),
-				"turn/completion",
-			);
+			const failure = result.errorMessage ?? `Agent turn ended with status: ${result.status}`;
+			this.#logError(new Error(failure), "turn/completion");
+			const delay = this.options.turnRetryDelaysMs[thread.retries];
+			if (result.retryable && delay !== undefined) {
+				thread.retries += 1;
+				this.#phase = "retry_wait";
+				const token = ++this.#operationToken;
+				scheduleTimeout(
+					() => this.#post({ kind: "retry_turn", token, errorMessage: failure }),
+					delay,
+				);
+				return;
+			}
 			this.#archive();
 			return;
 		}
+		thread.retries = 0;
 		let effects: readonly EffectRequest[];
 		try {
-			effects = this.dependencies.effectOutput.parse(result.outputText).effects;
+			effects = parseEffectOutputs(this.dependencies.effectOutput, result.outputTexts).effects;
 		} catch (error: unknown) {
 			this.#logError(error, "effects/parse");
 			this.#archive();
