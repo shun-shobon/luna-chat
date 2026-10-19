@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readHeartbeatChecklist, readWorkspaceBaseInstructions } from "./workspace-instructions";
+import { readHeartbeatContext, readWorkspaceBaseInstructions } from "./workspace-instructions";
 
 const temporaryDirectories: string[] = [];
 
@@ -51,14 +51,23 @@ describe("workspace instructions", () => {
 		});
 	});
 
-	it("HEARTBEAT.md の全文を読み、読めなければ失敗する", async () => {
+	it("HEARTBEAT.md と AGENDA.md の全文を読み、どちらかが読めなければ失敗する", async () => {
 		const workspaceDir = await createTemporaryDirectory();
 		const heartbeatPath = resolve(workspaceDir, "HEARTBEAT.md");
-		await writeFile(heartbeatPath, "heartbeat body");
+		const agendaPath = resolve(workspaceDir, "AGENDA.md");
+		await Promise.all([
+			writeFile(heartbeatPath, "heartbeat body"),
+			writeFile(agendaPath, "agenda body"),
+		]);
 
-		await expect(readHeartbeatChecklist(workspaceDir)).resolves.toBe("heartbeat body");
+		await expect(readHeartbeatContext(workspaceDir)).resolves.toEqual({
+			checklist: "heartbeat body",
+			agenda: "agenda body",
+		});
+		await rm(agendaPath);
+		await expect(readHeartbeatContext(workspaceDir)).rejects.toThrow("AGENDA.md must be readable.");
 		await rm(heartbeatPath);
-		await expect(readHeartbeatChecklist(workspaceDir)).rejects.toThrow(
+		await expect(readHeartbeatContext(workspaceDir)).rejects.toThrow(
 			"HEARTBEAT.md must be readable.",
 		);
 	});

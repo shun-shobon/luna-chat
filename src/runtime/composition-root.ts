@@ -68,7 +68,7 @@ import {
 	readWorkspaceSchedule,
 	removeWorkspaceScheduleJob,
 } from "../modules/workspace/adapters/schedule-toml";
-import { readHeartbeatChecklist } from "../modules/workspace/application/workspace-instructions";
+import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
 import { createEffectProviders } from "./effect-providers";
 import { readRuntimeEnvironment } from "./runtime-environment";
@@ -289,7 +289,7 @@ export async function startLunaApplication(
 		});
 		eventExecutor = executor;
 		const automationWorkspace: AutomationWorkspacePort = {
-			readHeartbeatChecklist: async () => await readHeartbeatChecklist(workspace.workspaceDir),
+			readHeartbeatContext: async () => await readHeartbeatContext(workspace.workspaceDir),
 			readSchedule: async () => await readWorkspaceSchedule(workspace.cronPath),
 			removeScheduleJob: (jobId) => {
 				removeWorkspaceScheduleJob(workspace.cronPath, jobId);

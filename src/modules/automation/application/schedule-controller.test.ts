@@ -592,7 +592,10 @@ function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {
 	[Key in keyof AutomationWorkspacePort]: Mock<AutomationWorkspacePort[Key]>;
 } {
 	return {
-		readHeartbeatChecklist: vi.fn(overrides.readHeartbeatChecklist ?? (async () => "checklist")),
+		readHeartbeatContext: vi.fn(
+			overrides.readHeartbeatContext ??
+				(async () => ({ checklist: "checklist", agenda: "agenda" })),
+		),
 		readSchedule: vi.fn(overrides.readSchedule ?? (async () => ({ jobs: [] }))),
 		removeScheduleJob: vi.fn(overrides.removeScheduleJob ?? (() => undefined)),
 	};

@@ -34,7 +34,7 @@ describe("HeartbeatController", () => {
 				type: "system.heartbeat.fired.v1",
 				source: "system/heartbeat",
 				occurredAt: "2026-01-01T00:00:00.000Z",
-				data: { checklist: "checklist" },
+				data: { checklist: "checklist", agenda: "agenda" },
 			});
 		});
 		expect(clock.delays).toEqual([]);
@@ -46,12 +46,12 @@ describe("HeartbeatController", () => {
 		});
 	});
 
-	it("checklist読込失敗を記録し、次回を予約する", async () => {
+	it("checklistまたはagendaの読込失敗を記録し、次回を予約する", async () => {
 		const clock = new FakeClock();
 		const logger = createLogger();
 		const executor = createExecutor();
 		const workspace = createWorkspace({
-			readHeartbeatChecklist: vi.fn(async () => {
+			readHeartbeatContext: vi.fn(async () => {
 				throw new Error("unreadable");
 			}),
 		});
@@ -73,7 +73,7 @@ describe("HeartbeatController", () => {
 		expect(executor.execute).not.toHaveBeenCalled();
 		expect(logger.log).toHaveBeenCalledWith(
 			"error",
-			"automation.heartbeat.checklist_read_failed",
+			"automation.heartbeat.context_read_failed",
 			{},
 			expect.any(Object),
 		);
@@ -165,7 +165,7 @@ function createWorkspace(
 	overrides: Partial<AutomationWorkspacePort> = {},
 ): AutomationWorkspacePort {
 	return {
-		readHeartbeatChecklist: vi.fn(async () => "checklist"),
+		readHeartbeatContext: vi.fn(async () => ({ checklist: "checklist", agenda: "agenda" })),
 		readSchedule: vi.fn(async () => ({ jobs: [] })),
 		removeScheduleJob: vi.fn(),
 		...overrides,
