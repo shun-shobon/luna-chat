@@ -109,6 +109,57 @@ describe("CodexAgentRuntime", () => {
 		expect(failures[0]).toBeInstanceOf(JsonRpcProtocolError);
 	});
 
+	it("完了済みturn宛てに遅れて届いた通知は無視し、未知のturn宛ては接続障害とする", async () => {
+		const transport = new FakeTransport();
+		const failures: Error[] = [];
+		const starting = startRuntime(transport, { onFailure: (error) => failures.push(error) });
+		transport.emit(INITIALIZE_RESPONSE);
+		const runtime = await starting;
+		const finalAnswer = (turnId: string) => ({
+			method: "item/completed",
+			params: {
+				completedAtMs: 1,
+				item: { phase: "final_answer", text: "{}", type: "agentMessage" },
+				threadId: "thread-1",
+				turnId,
+			},
+		});
+		const turnCompleted = (turnId: string) => ({
+			method: "turn/completed",
+			params: { threadId: "thread-1", turn: { error: null, id: turnId, status: "completed" } },
+		});
+
+		const firstStarting = runtime.startTurn("thread-1", turnRequest("first"));
+		transport.emit({ id: 2, result: { turn: { id: "turn-1" } } });
+		const first = await firstStarting;
+		transport.emit(finalAnswer("turn-1"));
+		transport.emit(turnCompleted("turn-1"));
+		await first.completion;
+		const secondStarting = runtime.startTurn("thread-1", turnRequest("second"));
+		transport.emit({ id: 3, result: { turn: { id: "turn-2" } } });
+		const second = await secondStarting;
+
+		transport.emit({
+			method: "item/commandExecution/outputDelta",
+			params: { delta: "server log", itemId: "item-1", threadId: "thread-1", turnId: "turn-1" },
+		});
+		transport.emit(finalAnswer("turn-2"));
+		transport.emit(turnCompleted("turn-2"));
+		await expect(second.completion).resolves.toEqual({ outputTexts: ["{}"], status: "completed" });
+		expect(failures).toEqual([]);
+
+		const thirdStarting = runtime.startTurn("thread-1", turnRequest("third"));
+		transport.emit({ id: 4, result: { turn: { id: "turn-3" } } });
+		const third = await thirdStarting;
+		transport.emit({
+			method: "item/commandExecution/outputDelta",
+			params: { delta: "?", itemId: "item-2", threadId: "thread-1", turnId: "turn-unknown" },
+		});
+
+		await expect(third.completion).rejects.toBeInstanceOf(JsonRpcProtocolError);
+		expect(failures).toHaveLength(1);
+	});
+
 	it("model/listを全ページ取得する", async () => {
 		const transport = new FakeTransport();
 		const runtime = await initializeRuntime(transport);

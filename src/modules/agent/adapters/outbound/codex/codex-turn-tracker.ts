@@ -86,6 +86,18 @@ export function parseThreadReference(params: unknown): ThreadId {
 	return threadReferenceSchema.parse(params).threadId;
 }
 
+const notificationTurnIdSchema = z.union([
+	z.looseObject({ turnId: z.string().min(1) }).transform((params) => params.turnId),
+	z
+		.looseObject({ turn: z.looseObject({ id: z.string().min(1) }) })
+		.transform((params) => params.turn.id),
+]);
+
+export function parseNotificationTurnId(notification: JsonRpcNotification): TurnId | undefined {
+	const parsed = notificationTurnIdSchema.safeParse(notification.params);
+	return parsed.success ? parsed.data : undefined;
+}
+
 export function parseTurnReference(params: unknown): { threadId: ThreadId; turnId: TurnId } {
 	return turnReferenceSchema.parse(params);
 }
