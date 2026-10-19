@@ -233,7 +233,7 @@ describe("CodexAgentRuntime", () => {
 			},
 		});
 		await expect(started.completion).resolves.toEqual({
-			outputText: '{"actions":[]}',
+			outputTexts: ['{"actions":[]}'],
 			status: "completed",
 		});
 	});
@@ -301,8 +301,9 @@ describe("CodexAgentRuntime", () => {
 			},
 		});
 		await expect(started.completion).resolves.toEqual({
-			outputText:
+			outputTexts: [
 				'{"actions":[{"kind":"send_message","target":{"kind":"channel","channelId":"123456789012345678"},"content":"first answer","files":null}]}',
+			],
 			status: "completed",
 		});
 	});

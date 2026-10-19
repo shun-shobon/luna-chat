@@ -17,7 +17,9 @@ const turnStartedSchema = z.looseObject({
 const turnCompletedSchema = z.looseObject({
 	threadId: z.string().min(1),
 	turn: z.looseObject({
-		error: z.looseObject({ message: z.string() }).nullable(),
+		error: z
+			.looseObject({ codexErrorInfo: z.unknown().optional(), message: z.string() })
+			.nullable(),
 		id: z.string().min(1),
 		status: z.enum(["completed", "failed", "interrupted", "inProgress"]),
 	}),
@@ -108,7 +110,7 @@ const USER_INPUT_REQUESTED_MESSAGE =
 export class CodexTurnTracker {
 	readonly #completion = Promise.withResolvers<AgentTurnResult>();
 	readonly #threadId: ThreadId;
-	#finalMessage: string | undefined;
+	readonly #finalMessages: string[] = [];
 	#forcedFailureMessage: string | undefined;
 	#lastErrorMessage: string | undefined;
 	#settled = false;
@@ -124,7 +126,7 @@ export class CodexTurnTracker {
 
 	public assertSteerable(turnId: TurnId): void {
 		this.#correlateTurn(turnId);
-		if (this.#finalMessage !== undefined) {
+		if (this.#finalMessages.length > 0) {
 			throw new TurnNotSteerableError(this.#threadId, turnId);
 		}
 	}
@@ -157,7 +159,7 @@ export class CodexTurnTracker {
 				if (params.item.type === "agentMessage") {
 					const item = agentMessageSchema.parse(params.item);
 					if (item.phase === "final_answer") {
-						this.#finalMessage = item.text;
+						this.#finalMessages.push(item.text);
 					}
 				}
 				return;
@@ -171,7 +173,11 @@ export class CodexTurnTracker {
 			case "turn/completed": {
 				const params = turnCompletedSchema.parse(notification.params);
 				this.#correlateTurn(params.turn.id);
-				this.#complete(params.turn.status, params.turn.error?.message);
+				this.#complete(
+					params.turn.status,
+					params.turn.error?.message,
+					isRetryableCodexError(params.turn.error?.codexErrorInfo),
+				);
 				return;
 			}
 			default: {
@@ -185,7 +191,11 @@ export class CodexTurnTracker {
 		this.#forcedFailureMessage = USER_INPUT_REQUESTED_MESSAGE;
 	}
 
-	#complete(status: "completed" | "failed" | "inProgress" | "interrupted", error?: string): void {
+	#complete(
+		status: "completed" | "failed" | "inProgress" | "interrupted",
+		error?: string,
+		retryable = false,
+	): void {
 		if (this.#settled) {
 			return;
 		}
@@ -196,6 +206,7 @@ export class CodexTurnTracker {
 		if (this.#forcedFailureMessage !== undefined) {
 			this.#completion.resolve({
 				errorMessage: this.#forcedFailureMessage,
+				retryable: false,
 				status: "failed",
 			});
 			return;
@@ -204,18 +215,21 @@ export class CodexTurnTracker {
 			const errorMessage = error ?? this.#lastErrorMessage;
 			this.#completion.resolve({
 				...(errorMessage === undefined ? {} : { errorMessage }),
+				retryable: status === "failed" && retryable,
 				status,
 			});
 			return;
 		}
-		if (this.#finalMessage === undefined) {
+		const [first, ...rest] = this.#finalMessages;
+		if (first === undefined) {
 			this.#completion.resolve({
 				errorMessage: "Completed turn did not emit a final agent message.",
+				retryable: false,
 				status: "failed",
 			});
 			return;
 		}
-		this.#completion.resolve({ outputText: this.#finalMessage, status: "completed" });
+		this.#completion.resolve({ outputTexts: [first, ...rest], status: "completed" });
 	}
 
 	#correlateTurn(turnId: string): void {
@@ -229,4 +243,21 @@ export class CodexTurnTracker {
 			);
 		}
 	}
+}
+
+const RETRYABLE_CODEX_ERRORS: ReadonlySet<string> = new Set([
+	"serverOverloaded",
+	"internalServerError",
+	"httpConnectionFailed",
+	"responseStreamConnectionFailed",
+	"responseStreamDisconnected",
+	"responseTooManyFailedAttempts",
+]);
+
+// CodexErrorInfoは文字列か、HTTPステータスを持つ単一キーのオブジェクトで届く。
+function isRetryableCodexError(info: unknown): boolean {
+	if (typeof info === "string") return RETRYABLE_CODEX_ERRORS.has(info);
+	if (typeof info !== "object" || info == null) return false;
+	const keys = Object.keys(info);
+	return keys.length === 1 && keys[0] !== undefined && RETRYABLE_CODEX_ERRORS.has(keys[0]);
 }

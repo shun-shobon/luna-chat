@@ -189,12 +189,37 @@ describe("TaskService", () => {
 		await vi.waitFor(() => expect(harness.latest(task.id).status).toBe("failed"));
 	});
 
+	it("一時的なturn失敗は同じthreadでturn_retryを送り、作業を続ける", async () => {
+		const harness = await createHarness();
+		const task = await harness.service.create(channelOrigin, input("retry"));
+		await harness.waitForTurns(1);
+
+		harness.turns[0]?.completion.resolve({
+			status: "failed",
+			errorMessage: "Selected model is at capacity.",
+			retryable: true,
+		});
+		await harness.waitForTurns(2);
+
+		expect(harness.turns[1]?.threadId).toBe("thread-1");
+		expect(harness.turns[1]?.input).toEqual({
+			source: "turn_retry",
+			task_id: task.id,
+			error: "Selected model is at capacity.",
+		});
+		expect(harness.latest(task.id).status).toBe("running");
+	});
+
 	it("turnの失敗はtaskを失敗させて理由を配送する", async () => {
 		const harness = await createHarness();
 		const task = await harness.service.create(channelOrigin, input("fail"));
 		await harness.waitForTurns(1);
 
-		harness.turns[0]?.completion.resolve({ status: "failed", errorMessage: "model error" });
+		harness.turns[0]?.completion.resolve({
+			status: "failed",
+			errorMessage: "model error",
+			retryable: false,
+		});
 
 		await vi.waitFor(() => expect(harness.latest(task.id).status).toBe("failed"));
 		expect(harness.latest(task.id).outcome).toBe("model error");
@@ -232,7 +257,7 @@ describe("TaskService", () => {
 
 		await expect(harness.service.cancel(channelOrigin, task.id, "不要")).resolves.toBe("cancelled");
 		expect(harness.agent.interruptTurn).toHaveBeenCalledWith("thread-1", "turn-1");
-		harness.turns[0]?.completion.resolve({ status: "interrupted" });
+		harness.turns[0]?.completion.resolve({ status: "interrupted", retryable: false });
 
 		await vi.waitFor(() => expect(harness.agent.archiveThread).toHaveBeenCalledWith("thread-1"));
 		expect(harness.turns).toHaveLength(1);
@@ -313,7 +338,7 @@ describe("TaskService", () => {
 
 		const draining = harness.service.drain();
 		expect(harness.agent.interruptTurn).toHaveBeenCalledWith("thread-1", "turn-1");
-		harness.turns[0]?.completion.resolve({ status: "interrupted" });
+		harness.turns[0]?.completion.resolve({ status: "interrupted", retryable: false });
 		await draining;
 
 		expect(harness.saved.get(task.id)?.status).toBe("queued");
@@ -471,6 +496,7 @@ async function createHarness(
 		logger: { log },
 		maxConcurrent: options.maxConcurrent ?? 2,
 		now: () => new Date("2026-10-19T00:00:00.000Z"),
+		sleep: async () => {},
 		store: {
 			loadAll: async () => options.tasks ?? [],
 			save: async (task) => {
@@ -478,12 +504,13 @@ async function createHarness(
 				saved.set(task.id, task);
 			},
 		},
+		turnRetryDelaysMs: [1, 2, 3],
 	});
 	await service.start();
 	const completeRaw = (index: number, outputText: string): void => {
 		const turn = turns[index];
 		if (turn === undefined) throw new Error(`turn ${String(index)} is missing`);
-		turn.completion.resolve({ status: "completed", outputText });
+		turn.completion.resolve({ status: "completed", outputTexts: [outputText] });
 	};
 	return {
 		agent,

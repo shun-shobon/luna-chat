@@ -44,7 +44,7 @@ describe("ConversationCoordinator", () => {
 
 	it("ターン出力が不正なら処理中のHTTP入力へ失敗を通知する", async () => {
 		vi.useFakeTimers();
-		const runtime = createRuntime([Promise.resolve({ status: "completed", outputText: "{" })]);
+		const runtime = createRuntime([Promise.resolve({ status: "completed", outputTexts: ["{"] })]);
 		const onBatchSettled = vi.fn();
 		const coordinator = createCoordinator(runtime.port, { onBatchSettled });
 
@@ -406,7 +406,7 @@ describe("ConversationCoordinator", () => {
 
 	it("Effect output parse失敗時はEffectを実行せずthreadをarchiveする", async () => {
 		vi.useFakeTimers();
-		const runtime = createRuntime([Promise.resolve({ status: "completed", outputText: "{" })]);
+		const runtime = createRuntime([Promise.resolve({ status: "completed", outputTexts: ["{"] })]);
 		const execute = vi.fn<EffectBatchPort["execute"]>(async () => []);
 		const logger = createLogger();
 		const coordinator = createCoordinator(runtime.port, {
@@ -817,7 +817,7 @@ describe("ConversationCoordinator", () => {
 
 		const completionFailureRuntime = createRuntime([
 			Promise.resolve(completed([])),
-			Promise.resolve({ status: "failed", errorMessage: "memory failed" }),
+			Promise.resolve({ status: "failed", errorMessage: "memory failed", retryable: false }),
 		]);
 		const completionLogger = createLogger();
 		const completionFailureCoordinator = createCoordinator(completionFailureRuntime.port, {
@@ -835,6 +835,69 @@ describe("ConversationCoordinator", () => {
 
 		expect(completionLogger.log).toHaveBeenCalledWith(...operationFailed("turn/completion"));
 		expect(completionFailureRuntime.archiveThread).toHaveBeenCalledWith("thread-1");
+	});
+
+	it("同じturnで出た複数の最終回答のEffectを出た順にまとめて実行する", async () => {
+		vi.useFakeTimers();
+		const runtime = createRuntime([
+			Promise.resolve({
+				status: "completed",
+				outputTexts: [
+					JSON.stringify({ effects: [effect("first")] }),
+					JSON.stringify({ effects: [effect("second")] }),
+				],
+			}),
+		]);
+		const execute = vi.fn<EffectBatchPort["execute"]>(async () => []);
+		const coordinator = createCoordinator(runtime.port, {
+			effects: { execute, release: vi.fn(async () => undefined) },
+		});
+
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+
+		await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+		expect(execute.mock.calls[0]?.[0].map((request) => request.input)).toEqual([
+			{ target: "test", value: "first" },
+			{ target: "test", value: "second" },
+		]);
+	});
+
+	it("一時的なturn失敗は待ってから同じthreadでturn_retryを送り、上限を超えたらarchiveする", async () => {
+		vi.useFakeTimers();
+		const overloaded = {
+			status: "failed",
+			errorMessage: "Selected model is at capacity.",
+			retryable: true,
+		} as const;
+		const runtime = createRuntime([
+			Promise.resolve(overloaded),
+			Promise.resolve(overloaded),
+			Promise.resolve(overloaded),
+		]);
+		const coordinator = createCoordinator(runtime.port);
+
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+		expect(runtime.startTurn).toHaveBeenCalledOnce();
+		coordinator.accept({ session, event: event("101", "2026-07-23T00:00:01.000Z") });
+		await vi.advanceTimersByTimeAsync(10);
+		await flushPromises();
+
+		expect(runtime.startTurn).toHaveBeenCalledTimes(2);
+		expect(runtime.startTurn.mock.calls[1]?.[0]).toBe("thread-1");
+		expect(parseRequestInput(runtime.startTurn.mock.calls[1]?.[1])).toEqual({
+			source: "turn_retry",
+			error: "Selected model is at capacity.",
+		});
+		expect(runtime.steerTurn).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(20);
+		await flushPromises();
+		expect(runtime.startTurn).toHaveBeenCalledTimes(3);
+		await flushPromises();
+		expect(runtime.archiveThread).toHaveBeenCalledWith("thread-1");
 	});
 
 	it("shutdown時はactive chainを待ってsession memory turnを完了してからarchiveする", async () => {
@@ -889,7 +952,7 @@ describe("ConversationCoordinator", () => {
 	it("turn失敗を記録し、Effect resourceを解放してからarchiveする", async () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime([
-			Promise.resolve({ status: "failed", errorMessage: "model failed" }),
+			Promise.resolve({ status: "failed", errorMessage: "model failed", retryable: false }),
 		]);
 		const release = vi.fn(async () => undefined);
 		const effects: EffectBatchPort = {
@@ -1110,6 +1173,7 @@ function createCoordinator(
 			debounceMs: 100,
 			typingIdleMs: 50,
 			sessionIdleMs: 1_000,
+			turnRetryDelaysMs: [10, 20],
 			initialHistoryLimit: 20,
 			sessionMemoryEnabled: overrides.sessionMemoryEnabled ?? false,
 		},
@@ -1156,7 +1220,7 @@ function createRuntime(completions: Promise<AgentTurnResult>[] = [Promise.resolv
 type AgentEffect = Pick<EffectRequest, "type" | "input">;
 
 function completed(effects: readonly AgentEffect[]): AgentTurnResult {
-	return { status: "completed", outputText: JSON.stringify({ effects }) };
+	return { status: "completed", outputTexts: [JSON.stringify({ effects })] };
 }
 
 function effect(value: string): AgentEffect {
