@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { HonoServerHandle } from "../../../shared/hono-server";
 import type { AcceptedConversationEvent } from "../../conversation/domain/conversation-session";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import { HttpEventService } from "../application/http-event-service";
 import { HttpResponseRegistry } from "../application/http-response-registry";
 import { startHttpEventServer } from "./http-event-server";
-import type { HttpEventServerHandle } from "./http-event-server";
 import { createHttpResponseEffectProvider } from "./http-response-effect-provider";
 
-const servers: HttpEventServerHandle[] = [];
+const servers: HonoServerHandle[] = [];
 
 afterEach(async () => {
 	await Promise.all(servers.splice(0).map(async (server) => await server.close()));

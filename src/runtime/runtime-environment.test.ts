@@ -8,10 +8,14 @@ describe("readRuntimeEnvironment", () => {
 			readRuntimeEnvironment({
 				DISCORD_BOT_TOKEN: "token",
 				LOG_LEVEL: "debug",
+				LUNA_DASHBOARD_HOST: "0.0.0.0",
+				LUNA_DASHBOARD_PORT: "8080",
 				LUNA_HOME: "/var/lib/luna",
 				UNRELATED: "preserved outside this parser",
 			}),
 		).toEqual({
+			dashboardHost: "0.0.0.0",
+			dashboardPort: 8080,
 			discordBotToken: "token",
 			httpHost: "127.0.0.1",
 			httpPort: 3000,
@@ -22,6 +26,8 @@ describe("readRuntimeEnvironment", () => {
 
 	it("省略可能な環境変数に明示既定値を適用する", () => {
 		expect(readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token" })).toEqual({
+			dashboardHost: "127.0.0.1",
+			dashboardPort: 3001,
 			discordBotToken: "token",
 			httpHost: "127.0.0.1",
 			httpPort: 3000,
@@ -42,5 +48,11 @@ describe("readRuntimeEnvironment", () => {
 		expect(() =>
 			readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_HTTP_HOST: "example.com" }),
 		).toThrow("at LUNA_HTTP_HOST");
+		expect(() =>
+			readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_DASHBOARD_PORT: "65536" }),
+		).toThrow("at LUNA_DASHBOARD_PORT");
+		expect(() =>
+			readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_DASHBOARD_HOST: "localhost" }),
+		).toThrow("at LUNA_DASHBOARD_HOST");
 	});
 });

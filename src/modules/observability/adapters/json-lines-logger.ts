@@ -43,13 +43,15 @@ export class JsonLinesLogger implements LoggerPort {
 			level,
 			event,
 			...context,
-			...(details === undefined ? {} : { details: serialize(details, new WeakSet()) }),
-			...(includePayload && payload !== undefined
-				? { payload: serialize(payload, new WeakSet()) }
-				: {}),
+			...(details === undefined ? {} : { details: serializeLogValue(details) }),
+			...(includePayload && payload !== undefined ? { payload: serializeLogValue(payload) } : {}),
 		};
 		this.write(`${JSON.stringify(record)}\n`);
 	}
+}
+
+export function serializeLogValue(value: unknown): unknown {
+	return serialize(value, new WeakSet());
 }
 
 function serialize(value: unknown, seen: WeakSet<object>): unknown {

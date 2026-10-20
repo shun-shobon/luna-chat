@@ -16,6 +16,7 @@ import type {
 	AutomationScheduleWatcherPort,
 	ScheduledAutomationJob,
 } from "../ports/automation-schedule-port";
+import type { ScheduleJobStatus } from "../ports/automation-status";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { ActiveExecutionSet } from "./active-execution-set";
 
@@ -113,6 +114,17 @@ export class ScheduleController {
 			this.#jobs.clear();
 			this.#firedOneShots.clear();
 		});
+	}
+
+	snapshot(): readonly ScheduleJobStatus[] {
+		return [...this.#jobs.values()].map(({ definition, timer }) => ({
+			check: definition.kind === "recurring" ? (definition.check ?? null) : null,
+			cron: definition.kind === "recurring" ? definition.cron : null,
+			id: definition.id,
+			kind: definition.kind,
+			nextFireAt: timer.nextRunAt()?.toISOString() ?? null,
+			prompt: definition.prompt,
+		}));
 	}
 
 	async drain(): Promise<void> {

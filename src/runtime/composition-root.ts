@@ -19,6 +19,8 @@ import { ScheduleController } from "../modules/automation/application/schedule-c
 import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
 import type { AutomationWorkspacePort } from "../modules/automation/ports/automation-workspace-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
+import { startDashboardServer } from "../modules/dashboard/adapters/dashboard-server";
+import { DashboardService } from "../modules/dashboard/application/dashboard-service";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
 import {
 	createDiscordCommandClient,
@@ -42,7 +44,10 @@ import {
 import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
-import { isDiscordGuildSession } from "../modules/discord/domain/discord-event";
+import {
+	createDiscordConversationSession,
+	isDiscordGuildSession,
+} from "../modules/discord/domain/discord-event";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
 import { createWaitEffectProvider } from "../modules/effect/adapters/wait-effect-provider";
 import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
@@ -54,6 +59,8 @@ import { HttpEventService } from "../modules/http/application/http-event-service
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
+import { RecentLogBuffer } from "../modules/observability/adapters/recent-log-buffer";
+import type { LoggerPort } from "../modules/observability/ports/logger-port";
 import { JsonFileTaskStore } from "../modules/task/adapters/json-file-task-store";
 import {
 	createTaskBoardEffectProvider,
@@ -80,6 +87,13 @@ const TYPING_REFRESH_INTERVAL_MS = 8_000;
 const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
 const SCHEDULE_CHECK_TIMEOUT_MS = 120_000;
 const SCHEDULE_CHECK_KILL_GRACE_MS = 5_000;
+const RECENT_LOG_CAPACITY = 500;
+const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
+// RPCごとに出る要求・応答のログはメソッド名だけで頻度が高く、直近の出来事を押し流すため保持しない。
+const RECENT_LOG_EXCLUDED_EVENTS: ReadonlySet<string> = new Set([
+	"agent.rpc_requested",
+	"agent.rpc_completed",
+]);
 
 interface LunaApplication {
 	fatal: Promise<Error>;
@@ -90,13 +104,27 @@ export async function startLunaApplication(
 	options: Readonly<{ startupSignal?: AbortSignal }> = {},
 ): Promise<LunaApplication> {
 	options.startupSignal?.throwIfAborted();
+	const startedAt = new Date();
 	const environment = readRuntimeEnvironment(process.env);
 	const workspace = await initializeWorkspace({ lunaHome: environment.lunaHome });
 	const allowedChannels = new AllowedChannelSettings(
 		workspace.configPath,
 		workspace.config.discord.allowedChannelIds,
 	);
-	const logger = new JsonLinesLogger(environment.logLevel);
+	const stdoutLogger = new JsonLinesLogger(environment.logLevel);
+	const recentLogs = new RecentLogBuffer({
+		capacity: RECENT_LOG_CAPACITY,
+		excludedEvents: RECENT_LOG_EXCLUDED_EVENTS,
+		maxFieldLength: RECENT_LOG_MAX_FIELD_LENGTH,
+		now: () => new Date(),
+	});
+	const logger = {
+		flush: async () => await stdoutLogger.flush(),
+		log: (...entry: Parameters<LoggerPort["log"]>) => {
+			stdoutLogger.log(...entry);
+			recentLogs.log(...entry);
+		},
+	};
 	const client = createDiscordGatewayClient();
 	const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
 		logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
@@ -290,6 +318,7 @@ export async function startLunaApplication(
 			effectOutput,
 			effects,
 			logger,
+			now: () => new Date(),
 			sleep,
 			tasks: { listAll: () => taskService.listFor({ kind: "event" }) },
 			turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
@@ -367,7 +396,10 @@ export async function startLunaApplication(
 				logger.log(
 					"info",
 					"conversation.message_accepted",
-					{ conversationScope: JSON.stringify(event.scope) },
+					{
+						conversationScope: JSON.stringify(event.scope),
+						conversationSession: createDiscordConversationSession(event.scope).key,
+					},
 					{ authorId: event.message.author.id, messageId: event.message.id },
 					event.message,
 				);
@@ -396,6 +428,24 @@ export async function startLunaApplication(
 			onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
 		});
 		startupCleanups.push(async () => await httpServer.close());
+		const dashboardServer = await startDashboardServer({
+			dashboard: new DashboardService({
+				now: () => new Date(),
+				sources: {
+					activity: () => recentLogs.list(),
+					agent: () => supervisor.status(),
+					automation: () => automation.snapshot(),
+					conversations: () => coordinator.snapshot(),
+					events: () => executor.snapshot(),
+					tasks: () => taskService.snapshot(),
+				},
+				startedAt,
+			}),
+			hostname: environment.dashboardHost,
+			port: environment.dashboardPort,
+			onError: (error) => logger.log("error", "dashboard.server_failed", {}, { error }),
+		});
+		startupCleanups.push(async () => await dashboardServer.close());
 		options.startupSignal?.throwIfAborted();
 		logger.log("info", "application.started");
 		let shutdownPromise: Promise<void> | undefined;
@@ -410,6 +460,7 @@ export async function startLunaApplication(
 						automation,
 						clientDestroy: async () => await client.destroy(),
 						conversation: coordinator,
+						dashboardClose: () => dashboardServer.close(),
 						gateway: {
 							stop: () => {
 								gateway.stop();
@@ -447,6 +498,7 @@ export async function shutdownApplication(input: {
 	automation: Pick<AutomationService, "drain" | "stopIntake">;
 	clientDestroy(): Promise<void>;
 	conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
+	dashboardClose(): Promise<void>;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
 	httpClose(): Promise<void>;
@@ -483,6 +535,7 @@ export async function shutdownApplication(input: {
 		[
 			runCleanup(() => input.httpFailPending()),
 			input.httpClose(),
+			input.dashboardClose(),
 			runCleanup(() => input.typingRelease()),
 			input.mcpClose(),
 			input.clientDestroy(),

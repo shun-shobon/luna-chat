@@ -24,7 +24,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
   - Docker Engine および Docker Compose（Docker実行時）
   - Git（日次整理のコミット履歴を残す場合）
 
-※ Windows、Web UI、HTTPヘルスチェックエンドポイント等は提供していません。
+※ Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイント等は提供していません。
 
 ## 事前準備（Codexの認証）
 
@@ -49,14 +49,16 @@ docker compose run --rm luna-chat codex login status
 
 ## 環境変数
 
-| 変数名              | 必須   | デフォルト値 | 説明                                                                        |
-| ------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN` | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。                  |
-| `LUNA_HOME`         | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                    |
-| `LOG_LEVEL`         | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。               |
-| `LUNA_HTTP_HOST`    | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。 |
-| `LUNA_HTTP_PORT`    | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。            |
-| `TZ`                | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。    |
+| 変数名                | 必須   | デフォルト値 | 説明                                                                        |
+| --------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`   | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。                  |
+| `LUNA_HOME`           | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                    |
+| `LOG_LEVEL`           | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。               |
+| `LUNA_HTTP_HOST`      | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。 |
+| `LUNA_HTTP_PORT`      | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。            |
+| `LUNA_DASHBOARD_HOST` | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。            |
+| `LUNA_DASHBOARD_PORT` | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。      |
+| `TZ`                  | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。    |
 
 ※ `LOG_LEVEL` を `debug` または `trace` に設定すると、メッセージ本文やプロンプト、ツール引数などが標準出力に出力されます。既知のトークン等はマスクされますが、平文に含まれる機密情報の完全な除去は保証されません。
 
@@ -186,6 +188,18 @@ curl -i http://127.0.0.1:3000/events \
   -H 'Content-Type: application/json' \
   -d '{"execution":"conversation","response_mode":"async","session_id":"home-automation","event":{"type":"sensor.changed.v1","data":{"value":25}}}'
 ```
+
+## ダッシュボード
+
+`http://127.0.0.1:3001/` を開くと、Lunaのいまの状態を確認できます（3秒ごとに自動更新、閲覧のみ）。
+
+- 会話セッションごとのフェーズ（考え中・行動中・待機中など）と経過時間、未処理の入力
+- 実行中のハートビート・スケジュール・日次整理などのイベント実行
+- タスクボード（実行枠、各タスクの指示・報告・追加指示）
+- 次のハートビート・日次整理・スケジュールの発火予定
+- 最近の出来事（受信メッセージやEffectの本文を含むログ）
+
+認証はありません。会話本文やタスクの内容が表示されるため、`LUNA_DASHBOARD_HOST=0.0.0.0` でLANへ公開する場合は、そのネットワーク内の全員が閲覧できることに注意してください。Docker Composeではホストのループバックにのみ公開します。
 
 ## 記憶と自律運用
 

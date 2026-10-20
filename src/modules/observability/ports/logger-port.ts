@@ -5,6 +5,7 @@ export type LogContext = Readonly<{
 	conversationScope?: string | undefined;
 	conversationSession?: string | undefined;
 	effectIndex?: number | undefined;
+	eventId?: string | undefined;
 	jobId?: string | undefined;
 	requestId?: string | number | undefined;
 	taskId?: string | undefined;
@@ -12,6 +13,16 @@ export type LogContext = Readonly<{
 	toolCallId?: string | undefined;
 	turnId?: string | undefined;
 	typingLeaseId?: string | undefined;
+}>;
+
+export type RecentLogRecord = Readonly<{
+	seq: number;
+	timestamp: string;
+	level: LogLevel;
+	event: string;
+	context: LogContext;
+	details: string | null;
+	payload: string | null;
 }>;
 
 export interface LoggerPort {

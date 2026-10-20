@@ -21,6 +21,7 @@ import {
 } from "../domain/task";
 import type {
 	Task,
+	TaskBoardStatus,
 	TaskMessage,
 	TaskOrigin,
 	TaskReport,
@@ -35,6 +36,7 @@ const MAX_ATTEMPTS = 5;
 const MAX_OUTPUT_ERRORS = 2;
 const SNAPSHOT_RECENT_MS = 86_400_000;
 const SNAPSHOT_LIMIT = 20;
+const BOARD_LIMIT = 50;
 
 type TaskSession = Extract<TaskOrigin, { kind: "conversation" }>["session"];
 
@@ -219,17 +221,28 @@ export class TaskService {
 	}
 
 	listFor(viewer: TaskViewer): readonly JsonObject[] {
+		return this.#recentTasks()
+			.filter((task) => isVisibleTo(task, viewer))
+			.slice(0, SNAPSHOT_LIMIT)
+			.map(summarizeTask);
+	}
+
+	snapshot(): TaskBoardStatus {
+		return {
+			maxConcurrent: this.dependencies.maxConcurrent,
+			running: this.#runs.size,
+			tasks: this.#recentTasks().slice(0, BOARD_LIMIT),
+		};
+	}
+
+	#recentTasks(): Task[] {
 		const nowMs = this.dependencies.now().getTime();
 		return [...this.#tasks.values()]
 			.filter(
 				(task) =>
-					isVisibleTo(task, viewer) &&
-					(!isTerminalStatus(task.status) ||
-						nowMs - Date.parse(task.updatedAt) < SNAPSHOT_RECENT_MS),
+					!isTerminalStatus(task.status) || nowMs - Date.parse(task.updatedAt) < SNAPSHOT_RECENT_MS,
 			)
-			.toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-			.slice(0, SNAPSHOT_LIMIT)
-			.map(summarizeTask);
+			.toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 	}
 
 	#pump(): void {

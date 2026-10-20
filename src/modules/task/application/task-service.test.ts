@@ -99,6 +99,39 @@ describe("TaskService", () => {
 		expect(harness.turns[1]?.input).toMatchObject({ task: { id: second.id } });
 	});
 
+	it("ボードには実行枠の使用数と直近のtaskを出す", async () => {
+		const harness = await createHarness({
+			maxConcurrent: 1,
+			tasks: [
+				storedTask({ id: "old", status: "completed", updatedAt: "2026-10-17T23:59:59.000Z" }),
+			],
+		});
+		const asking = await harness.service.create(channelOrigin, input("ask"));
+		await harness.waitForTurns(1);
+		await harness.complete(0, [report("question", "どちらにする？")]);
+		await vi.waitFor(() => expect(harness.latest(asking.id).status).toBe("waiting_input"));
+		const working = await harness.service.create(channelOrigin, input("work"));
+		await harness.waitForTurns(2);
+		const waiting = await harness.service.create(channelOrigin, input("wait"));
+
+		const board = harness.service.snapshot();
+
+		expect(board).toMatchObject({ maxConcurrent: 1, running: 1 });
+		const views = board.tasks.map(({ id, status }) => ({ id, status }));
+		expect(views).toHaveLength(3);
+		expect(views).toEqual(
+			expect.arrayContaining([
+				{ id: waiting.id, status: "queued" },
+				{ id: working.id, status: "running" },
+				{ id: asking.id, status: "waiting_input" },
+			]),
+		);
+		expect(board.tasks.find((task) => task.id === asking.id)).toMatchObject({
+			instructions: "askの指示",
+			reports: [{ kind: "question", summary: "どちらにする？" }],
+		});
+	});
+
 	it("progressは配送せず、milestoneは配送して作業を続ける", async () => {
 		const harness = await createHarness();
 		const task = await harness.service.create(channelOrigin, input("long"));

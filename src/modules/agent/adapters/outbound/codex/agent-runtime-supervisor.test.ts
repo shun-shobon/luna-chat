@@ -125,6 +125,54 @@ describe("AgentRuntimeSupervisor", () => {
 		expect(failures).toEqual([failure]);
 	});
 
+	it("起動前、接続中、障害後の再起動中、close後の状態を返す", async () => {
+		let reportFailure: ((error: Error) => void) | undefined;
+		const restartDelay = Promise.withResolvers<void>();
+		const startRuntime = vi
+			.fn<StartRuntime>()
+			.mockImplementationOnce(async (_signal, onFailure) => {
+				reportFailure = onFailure;
+				return createRuntime();
+			})
+			.mockResolvedValueOnce(createRuntime());
+		const supervisor = createSupervisor(
+			{ initialDelayMs: 0, limit: 3, maxDelayMs: 1_000, windowMs: 10_000 },
+			startRuntime,
+			{ delay: async () => await restartDelay.promise },
+		);
+		expect(supervisor.status()).toEqual({
+			lastFailure: null,
+			restartLimit: 3,
+			restartsInWindow: 0,
+			state: "starting",
+		});
+		await supervisor.start();
+		expect(supervisor.status().state).toBe("ready");
+
+		reportFailure?.(new Error("connection lost"));
+		expect(supervisor.status()).toEqual({
+			lastFailure: { at: new Date(1_000).toISOString(), message: "connection lost" },
+			restartLimit: 3,
+			restartsInWindow: 1,
+			state: "restarting",
+		});
+		restartDelay.resolve();
+		await vi.waitFor(() => expect(supervisor.status().state).toBe("ready"));
+
+		await supervisor.close();
+		expect(supervisor.status().state).toBe("closed");
+	});
+
+	it("再起動上限を超えたらfatalを返す", async () => {
+		const supervisor = createSupervisor(
+			{ initialDelayMs: 0, limit: 1, maxDelayMs: 1_000, windowMs: 10_000 },
+			vi.fn<StartRuntime>().mockRejectedValue(new Error("always fails")),
+		);
+
+		await expect(supervisor.start()).rejects.toBeInstanceOf(AgentRuntimeRestartLimitError);
+		expect(supervisor.status()).toMatchObject({ restartsInWindow: 1, state: "fatal" });
+	});
+
 	it("旧runtimeのclose完了後にreplacementを起動する", async () => {
 		let reportFailure: ((error: Error) => void) | undefined;
 		const closing = Promise.withResolvers<void>();

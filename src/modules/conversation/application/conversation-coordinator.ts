@@ -16,6 +16,12 @@ import type {
 	AcceptedConversationEvent,
 	ConversationSession,
 } from "../domain/conversation-session";
+import type {
+	ConversationModelSettings,
+	ConversationPhase,
+	ConversationStatus,
+	ConversationTurnPurpose,
+} from "../domain/conversation-status";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 
@@ -39,8 +45,6 @@ type ConversationDependencies = Readonly<{
 	onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
 	tasks: ConversationTaskBoardPort;
 }>;
-
-export type ConversationModelSettings = Readonly<{ model: string; effort: string }>;
 
 type ScheduledTimeout = Readonly<{ cancel(): void }>;
 
@@ -91,6 +95,10 @@ export class ConversationCoordinator {
 		await Promise.all([...this.#actors.values()].map(async (actor) => await actor.abort()));
 	}
 
+	snapshot(): readonly ConversationStatus[] {
+		return [...this.#actors.values()].flatMap((actor) => actor.status() ?? []);
+	}
+
 	hasSession(sessionKey: string): boolean {
 		return this.#actors.get(sessionKey)?.hasSession ?? false;
 	}
@@ -110,24 +118,10 @@ export class ConversationCoordinator {
 	}
 }
 
-type Phase =
-	| "collecting"
-	| "opening"
-	| "starting"
-	| "turn"
-	| "retry_wait"
-	| "effects"
-	| "orphaned_effects"
-	| "idle"
-	| "archiving"
-	| "closed";
-
-type TurnPurpose = "conversation" | "session_memory";
-
 type ActiveThread = {
 	readonly id: string;
 	readonly ownerId: string;
-	purpose: TurnPurpose;
+	purpose: ConversationTurnPurpose;
 	retries: number;
 	turnId: string | undefined;
 };
@@ -160,7 +154,9 @@ type Command =
 	| Readonly<{ kind: "connection_lost"; error: unknown }>;
 
 class ConversationActor {
-	#phase: Phase = "collecting";
+	#phase: ConversationPhase = "collecting";
+	#phaseSince: Date;
+	#idleDeadlineAt: Date | undefined;
 	#mailbox = Promise.resolve();
 	#openingBatch: LunaEvent[] = [];
 	#queue: LunaEvent[] = [];
@@ -189,7 +185,35 @@ class ConversationActor {
 		private readonly dependencies: ConversationDependencies,
 		private readonly options: ConversationCoordinatorOptions,
 		private readonly onClosed: () => void,
-	) {}
+	) {
+		this.#phaseSince = dependencies.now();
+	}
+
+	status(): ConversationStatus | undefined {
+		if (this.#phase === "closed") return undefined;
+		const thread = this.#thread;
+		return {
+			context: this.session.context,
+			idleDeadlineAt:
+				this.#phase === "idle" && this.#idleTimer !== undefined
+					? (this.#idleDeadlineAt?.toISOString() ?? null)
+					: null,
+			key: this.session.key,
+			modelSettings: this.#modelSettings ?? null,
+			phase: this.#phase,
+			phaseSince: this.#phaseSince.toISOString(),
+			purpose: thread?.purpose ?? null,
+			queuedEvents:
+				this.#openingBatch.length +
+				this.#queue.length +
+				this.#steerQueue.length +
+				(this.#steerActive === undefined ? 0 : 1),
+			retries: thread?.retries ?? 0,
+			source: this.session.source,
+			threadId: thread?.id ?? null,
+			turnId: thread?.turnId ?? null,
+		};
+	}
 
 	accept(event: LunaEvent): void {
 		this.#sessionStarted = true;
@@ -269,7 +293,7 @@ class ConversationActor {
 					this.#thread === undefined &&
 					this.#queue.length === 0
 				) {
-					this.#phase = "idle";
+					this.#enter("idle");
 					this.#resetIdleTimer();
 				} else if (this.#phase === "idle") {
 					this.#resetIdleTimer();
@@ -344,7 +368,7 @@ class ConversationActor {
 			case "turn_started": {
 				const thread = this.#thread;
 				if (!this.#matches(command.token, "starting") || thread === undefined) return;
-				this.#phase = "turn";
+				this.#enter("turn");
 				thread.turnId = command.turn.turnId;
 				this.#logEvent("conversation.turn_started", {
 					threadId: thread.id,
@@ -434,7 +458,7 @@ class ConversationActor {
 				const ownerId = this.#thread?.ownerId;
 				this.#thread = undefined;
 				if (this.#phase === "effects" || this.#phase === "orphaned_effects") {
-					this.#phase = "orphaned_effects";
+					this.#enter("orphaned_effects");
 				} else {
 					if (ownerId !== undefined) void this.#releaseEffects(ownerId);
 					this.#operationToken += 1;
@@ -510,7 +534,7 @@ class ConversationActor {
 			return;
 		}
 
-		this.#phase = "opening";
+		this.#enter("opening");
 		this.#openingBatch = [...batch];
 		const beforeEvent = batch[0];
 		if (beforeEvent === undefined) throw new Error("Conversation batch must not be empty");
@@ -544,9 +568,9 @@ class ConversationActor {
 			);
 	}
 
-	#startTurn(thread: ActiveThread, input: string, purpose: TurnPurpose): void {
+	#startTurn(thread: ActiveThread, input: string, purpose: ConversationTurnPurpose): void {
 		const token = ++this.#operationToken;
-		this.#phase = "starting";
+		this.#enter("starting");
 		thread.purpose = purpose;
 		void this.dependencies.agent
 			.startTurn(thread.id, {
@@ -598,7 +622,7 @@ class ConversationActor {
 			const delay = this.options.turnRetryDelaysMs[thread.retries];
 			if (result.retryable && delay !== undefined) {
 				thread.retries += 1;
-				this.#phase = "retry_wait";
+				this.#enter("retry_wait");
 				const token = ++this.#operationToken;
 				scheduleTimeout(
 					() => this.#post({ kind: "retry_turn", token, errorMessage: failure }),
@@ -619,7 +643,7 @@ class ConversationActor {
 			return;
 		}
 		const token = this.#operationToken;
-		this.#phase = "effects";
+		this.#enter("effects");
 		this.#logEvent(
 			"conversation.effects_started",
 			{ threadId: thread.id, turnId },
@@ -684,7 +708,7 @@ class ConversationActor {
 		}
 		if (this.#queue.length > 0) this.#beginCollecting(true);
 		else {
-			this.#phase = "idle";
+			this.#enter("idle");
 			this.#resetIdleTimer();
 		}
 	}
@@ -703,6 +727,7 @@ class ConversationActor {
 		if (this.#shutdownRequested) return;
 		const token = ++this.#idleToken;
 		this.#idleTimer?.cancel();
+		this.#idleDeadlineAt = new Date(this.dependencies.now().getTime() + this.options.sessionIdleMs);
 		this.#idleTimer = scheduleTimeout(
 			() => this.#post({ kind: "idle", token }),
 			this.options.sessionIdleMs,
@@ -710,7 +735,7 @@ class ConversationActor {
 	}
 
 	#beginCollecting(immediate: boolean): void {
-		this.#phase = "collecting";
+		this.#enter("collecting");
 		this.#debounceReady = immediate;
 		if (immediate) this.#tryBeginBatch();
 		else this.#scheduleDebounce();
@@ -725,7 +750,7 @@ class ConversationActor {
 			return;
 		}
 		const token = ++this.#operationToken;
-		this.#phase = "archiving";
+		this.#enter("archiving");
 		void (async () => {
 			await this.#releaseEffects(thread.ownerId);
 			await this.dependencies.agent.archiveThread(thread.id);
@@ -746,7 +771,7 @@ class ConversationActor {
 		else this.#settleActive(false);
 		this.#logError(error, "agent/connection");
 		if (this.#phase === "effects") {
-			this.#phase = "orphaned_effects";
+			this.#enter("orphaned_effects");
 			this.#thread = undefined;
 			return;
 		}
@@ -808,14 +833,19 @@ class ConversationActor {
 		);
 	}
 
-	#matches(token: number, phase: Phase): boolean {
+	#enter(phase: ConversationPhase): void {
+		this.#phase = phase;
+		this.#phaseSince = this.dependencies.now();
+	}
+
+	#matches(token: number, phase: ConversationPhase): boolean {
 		return token === this.#operationToken && this.#phase === phase;
 	}
 
 	#close(): void {
 		if (this.#phase === "closed") return;
 		this.#settleActive(false);
-		this.#phase = "closed";
+		this.#enter("closed");
 		this.#clearTimers();
 		this.onClosed();
 		for (const resolve of this.#shutdownWaiters.splice(0)) resolve();

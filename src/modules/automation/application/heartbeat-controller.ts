@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
+import type { HeartbeatStatus } from "../ports/automation-status";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { ActiveExecutionSet } from "./active-execution-set";
 
@@ -17,6 +18,7 @@ export class HeartbeatController {
 	readonly #workspace: AutomationWorkspacePort;
 
 	#accepting = false;
+	#nextFireAt: Date | undefined;
 	#timer: AutomationTimerHandle | undefined;
 
 	constructor(input: {
@@ -51,6 +53,11 @@ export class HeartbeatController {
 		this.#accepting = false;
 		this.#timer?.cancel();
 		this.#timer = undefined;
+		this.#nextFireAt = undefined;
+	}
+
+	snapshot(): HeartbeatStatus {
+		return { enabled: this.#enabled, nextFireAt: this.#nextFireAt?.toISOString() ?? null };
 	}
 
 	async drain(): Promise<void> {
@@ -62,8 +69,11 @@ export class HeartbeatController {
 			return;
 		}
 
-		this.#timer = this.#clock.setTimer(this.#nextDelayMs(), () => {
+		const delayMs = this.#nextDelayMs();
+		this.#nextFireAt = new Date(this.#clock.now().getTime() + delayMs);
+		this.#timer = this.#clock.setTimer(delayMs, () => {
 			this.#timer = undefined;
+			this.#nextFireAt = undefined;
 			const execution = this.#runOnce().finally(() => {
 				this.#scheduleNext();
 			});

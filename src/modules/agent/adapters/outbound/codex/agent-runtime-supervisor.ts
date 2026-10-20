@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type {
 	AgentRuntimePort,
+	AgentRuntimeStatus,
 	AgentThreadInput,
 	AgentTurnRequest,
 	StartedAgentTurn,
@@ -46,6 +47,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	readonly #closeController = new AbortController();
 	#closed = false;
 	#fatalError: Error | undefined;
+	#lastFailure: Readonly<{ at: number; message: string }> | undefined;
 	#runtime: SupervisedAgentRuntime | undefined;
 	#runtimeClosePromise: Promise<void> | undefined;
 
@@ -54,6 +56,31 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 		this.#dependencies = dependencies;
 		this.#now = dependencies.now ?? Date.now;
 		this.#delay = dependencies.delay ?? defaultDelay;
+	}
+
+	public status(): AgentRuntimeStatus {
+		const now = this.#now();
+		return {
+			lastFailure:
+				this.#lastFailure === undefined
+					? null
+					: {
+							at: new Date(this.#lastFailure.at).toISOString(),
+							message: this.#lastFailure.message,
+						},
+			restartLimit: this.#policy.limit,
+			restartsInWindow: this.#restartTimestamps.filter(
+				(timestamp) => now - timestamp < this.#policy.windowMs,
+			).length,
+			state: this.#state(),
+		};
+	}
+
+	#state(): AgentRuntimeStatus["state"] {
+		if (this.#closed) return "closed";
+		if (this.#fatalError !== undefined) return "fatal";
+		if (this.#runtime !== undefined) return "ready";
+		return this.#lastFailure === undefined ? "starting" : "restarting";
 	}
 
 	public async archiveThread(threadId: ThreadId): Promise<void> {
@@ -185,6 +212,7 @@ export class AgentRuntimeSupervisor implements AgentRuntimePort {
 	#registerRestart(cause: Error): number | undefined {
 		this.#dependencies.onFailure(cause);
 		const now = this.#now();
+		this.#lastFailure = { at: now, message: cause.message };
 		let oldestRestart = this.#restartTimestamps[0];
 		while (oldestRestart !== undefined && now - oldestRestart >= this.#policy.windowMs) {
 			this.#restartTimestamps.shift();

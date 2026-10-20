@@ -1,14 +1,9 @@
-import { serve } from "@hono/node-server";
-import type { ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 
+import { listenHono } from "../../../shared/hono-server";
+import type { HonoServerHandle } from "../../../shared/hono-server";
 import type { HttpEventService } from "../application/http-event-service";
 import { httpEventRequestSchema } from "../domain/http-event";
-
-export type HttpEventServerHandle = Readonly<{
-	port: number;
-	close(): Promise<void>;
-}>;
 
 export async function startHttpEventServer(
 	input: Readonly<{
@@ -17,7 +12,7 @@ export async function startHttpEventServer(
 		service: HttpEventService;
 		onError(error: Error): void;
 	}>,
-): Promise<HttpEventServerHandle> {
+): Promise<HonoServerHandle> {
 	const app = new Hono();
 	app.onError((error, context) => {
 		input.onError(error);
@@ -51,30 +46,5 @@ export async function startHttpEventServer(
 		});
 	});
 
-	const server = await new Promise<{ server: ServerType; port: number }>((resolve, reject) => {
-		let started = false;
-		const running = serve(
-			{ fetch: app.fetch, hostname: input.hostname, port: input.port },
-			(info) => {
-				started = true;
-				resolve({ server: running, port: info.port });
-			},
-		);
-		running.on("error", (error: Error) => {
-			if (started) input.onError(error);
-			else reject(error);
-		});
-	});
-
-	return {
-		port: server.port,
-		close: async () => {
-			await new Promise<void>((resolve, reject) => {
-				server.server.close((error) => {
-					if (error) reject(error);
-					else resolve();
-				});
-			});
-		},
-	};
+	return await listenHono(app, input);
 }
