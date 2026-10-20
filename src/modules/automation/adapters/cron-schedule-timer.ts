@@ -15,6 +15,7 @@ export class CronScheduleTimer implements AutomationScheduleTimerPort {
 		});
 
 		return {
+			nextRunAt: () => (job.isActive ? job.nextDate().toJSDate() : null),
 			stop: () => {
 				void job.stop();
 			},

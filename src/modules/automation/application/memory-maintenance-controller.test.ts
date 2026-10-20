@@ -35,6 +35,22 @@ describe("MemoryMaintenanceController", () => {
 		});
 	});
 
+	it("開始後は次回発火時刻を返し、停止後は返さない", () => {
+		const controller = new MemoryMaintenanceController({
+			clock: createClock(new Date(2026, 7, 1, 4, 0, 0)),
+			cron: "0 4 * * *",
+			enabled: true,
+			executor: createExecutor(),
+			scheduleTimer: new FakeScheduleTimer(),
+		});
+
+		expect(controller.snapshot()).toEqual({ cron: "0 4 * * *", enabled: true, nextFireAt: null });
+		controller.start();
+		expect(controller.snapshot().nextFireAt).toBe("2026-01-02T04:00:00.000Z");
+		controller.stopIntake();
+		expect(controller.snapshot().nextFireAt).toBeNull();
+	});
+
 	it("先行実行の完了を待たず、次のtickも並行実行する", async () => {
 		const scheduleTimer = new FakeScheduleTimer();
 		const first = createDeferred<void>();
@@ -111,7 +127,7 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 		if (typeof cronTime !== "string") throw new Error("Unexpected one-shot schedule");
 		this.cron = cronTime;
 		this.#onTick = onTick;
-		return { stop: this.stop };
+		return { nextRunAt: () => new Date("2026-01-02T04:00:00.000Z"), stop: this.stop };
 	}
 
 	async fire(): Promise<void> {

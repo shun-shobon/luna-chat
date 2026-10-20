@@ -29,6 +29,9 @@ describe("application composition lifecycle", () => {
 					calls.push("conversation.abort");
 				}),
 			},
+			dashboardClose: async () => {
+				calls.push("dashboard.close");
+			},
 			gateway: {
 				stop: vi.fn(() => {
 					calls.push("gateway.stop");
@@ -82,6 +85,7 @@ describe("application composition lifecycle", () => {
 				"tasks.drain",
 				"http.failPending",
 				"http.close",
+				"dashboard.close",
 				"typing.release",
 				"mcp.close",
 				"client.destroy",

@@ -55,6 +55,57 @@ describe("ConversationCoordinator", () => {
 		expect(onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], false);
 	});
 
+	it("セッションのフェーズと開始時刻、待機件数、idle期限を一覧し、閉じたら外す", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-23T00:00:00.000Z"));
+		const completion = deferred<AgentTurnResult>();
+		const runtime = createRuntime([completion.promise]);
+		const coordinator = createCoordinator(runtime.port, { now: () => new Date() });
+
+		coordinator.configure(session, { model: "gpt-6-sol", effort: "medium" });
+		coordinator.accept({ session, event: event("100", "2026-07-23T00:00:00.000Z") });
+		await flushPromises();
+		expect(coordinator.snapshot()).toEqual([
+			{
+				context: session.context,
+				idleDeadlineAt: null,
+				key: session.key,
+				modelSettings: { model: "gpt-6-sol", effort: "medium" },
+				phase: "collecting",
+				phaseSince: "2026-07-23T00:00:00.000Z",
+				purpose: null,
+				queuedEvents: 1,
+				retries: 0,
+				source: session.source,
+				threadId: null,
+				turnId: null,
+			},
+		]);
+
+		await vi.advanceTimersByTimeAsync(100);
+		await flushPromises();
+		expect(coordinator.snapshot()).toMatchObject([
+			{
+				phase: "turn",
+				phaseSince: "2026-07-23T00:00:00.100Z",
+				purpose: "conversation",
+				queuedEvents: 0,
+				threadId: "thread-1",
+				turnId: "turn-1",
+			},
+		]);
+
+		completion.resolve(completed([]));
+		await flushPromises();
+		expect(coordinator.snapshot()).toMatchObject([
+			{ phase: "idle", idleDeadlineAt: "2026-07-23T00:00:01.100Z", turnId: null },
+		]);
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		await flushPromises();
+		expect(coordinator.snapshot()).toEqual([]);
+	});
+
 	it("設定コマンドでsessionを作り、投稿がなければidle期限で閉じる", async () => {
 		vi.useFakeTimers();
 		const runtime = createRuntime();

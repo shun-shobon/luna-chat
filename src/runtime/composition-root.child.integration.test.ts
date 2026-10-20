@@ -83,6 +83,10 @@ vi.mock("../modules/http/adapters/http-event-server", () => ({
 	startHttpEventServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3000 })),
 }));
 
+vi.mock("../modules/dashboard/adapters/dashboard-server", () => ({
+	startDashboardServer: vi.fn(async () => ({ close: vi.fn(async () => undefined), port: 3001 })),
+}));
+
 vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
 	ChokidarScheduleWatcher: class {
 		async start(): Promise<void> {}
@@ -92,8 +96,8 @@ vi.mock("../modules/automation/adapters/chokidar-schedule-watcher", () => ({
 
 vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	CronScheduleTimer: class {
-		schedule(): { stop(): void } {
-			return { stop() {} };
+		schedule(): { nextRunAt(): Date | null; stop(): void } {
+			return { nextRunAt: () => null, stop() {} };
 		}
 	},
 }));

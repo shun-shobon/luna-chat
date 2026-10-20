@@ -46,6 +46,35 @@ describe("HeartbeatController", () => {
 		});
 	});
 
+	it("予約中は次回発火時刻を返し、実行中と停止後は返さない", async () => {
+		const clock = new FakeClock();
+		const completion = createDeferred<void>();
+		const controller = new HeartbeatController({
+			clock,
+			enabled: true,
+			executor: createExecutor(async () => {
+				await completion.promise;
+				return { status: "completed" };
+			}),
+			logger: createLogger(),
+			nextDelayMs: () => 60_000,
+			workspace: createWorkspace(),
+		});
+
+		controller.start();
+		expect(controller.snapshot()).toEqual({
+			enabled: true,
+			nextFireAt: "2026-01-01T00:01:00.000Z",
+		});
+		const tick = clock.fireNext();
+		expect(controller.snapshot().nextFireAt).toBeNull();
+		completion.resolve();
+		await tick;
+		await vi.waitFor(() => expect(controller.snapshot().nextFireAt).not.toBeNull());
+		controller.stopIntake();
+		expect(controller.snapshot().nextFireAt).toBeNull();
+	});
+
 	it("checklistまたはagendaの読込失敗を記録し、次回を予約する", async () => {
 		const clock = new FakeClock();
 		const logger = createLogger();

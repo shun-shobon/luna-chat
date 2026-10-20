@@ -2,22 +2,30 @@ import { z } from "zod";
 
 import type { LogLevel } from "../modules/observability/ports/logger-port";
 
+const hostSchema = z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1");
+const portSchema = z
+	.string()
+	.regex(/^\d+$/u)
+	.transform(Number)
+	.pipe(z.number().int().min(1).max(65_535));
+
 const RuntimeEnvironmentSchema = z.object({
 	DISCORD_BOT_TOKEN: z.string().refine((value) => value.trim().length > 0, "must not be blank"),
 	LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
-	LUNA_HTTP_HOST: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
-	LUNA_HTTP_PORT: z
-		.string()
-		.regex(/^\d+$/u)
-		.transform(Number)
-		.pipe(z.number().int().min(1).max(65_535))
-		.default(3000),
+	LUNA_DASHBOARD_HOST: hostSchema,
+	LUNA_DASHBOARD_PORT: portSchema.default(3001),
+	LUNA_HTTP_HOST: hostSchema,
+	LUNA_HTTP_PORT: portSchema.default(3000),
 	LUNA_HOME: z.string().optional(),
 });
 
+type ListenHost = z.infer<typeof hostSchema>;
+
 type RuntimeEnvironment = Readonly<{
+	dashboardHost: ListenHost;
+	dashboardPort: number;
 	discordBotToken: string;
-	httpHost: "127.0.0.1" | "0.0.0.0";
+	httpHost: ListenHost;
 	httpPort: number;
 	logLevel: LogLevel;
 	lunaHome?: string | undefined;
@@ -38,6 +46,8 @@ export function readRuntimeEnvironment(environment: NodeJS.ProcessEnv): RuntimeE
 		);
 	}
 	return {
+		dashboardHost: result.data.LUNA_DASHBOARD_HOST,
+		dashboardPort: result.data.LUNA_DASHBOARD_PORT,
 		discordBotToken: result.data.DISCORD_BOT_TOKEN,
 		httpHost: result.data.LUNA_HTTP_HOST,
 		httpPort: result.data.LUNA_HTTP_PORT,

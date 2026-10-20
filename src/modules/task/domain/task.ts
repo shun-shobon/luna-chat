@@ -71,6 +71,12 @@ export type TaskReport = Task["reports"][number];
 export type TaskReportKind = z.infer<typeof taskReportKindSchema>;
 export type TaskMessage = Task["messages"][number];
 
+export type TaskBoardStatus = Readonly<{
+	maxConcurrent: number;
+	running: number;
+	tasks: readonly Task[];
+}>;
+
 export type TaskViewer =
 	| Readonly<{ kind: "conversation"; sessionKey: string }>
 	| Readonly<{ kind: "event" }>;

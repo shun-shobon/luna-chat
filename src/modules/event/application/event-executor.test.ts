@@ -127,7 +127,7 @@ describe("EventExecutor", () => {
 		expect(harness.log).toHaveBeenCalledWith(
 			"warn",
 			"event.turn_retry_scheduled",
-			{ threadId: "thread-1" },
+			{ eventId: "sensor-event-1", threadId: "thread-1" },
 			{ error: "Selected model is at capacity.", retries: 1 },
 		);
 	});
@@ -159,9 +159,86 @@ describe("EventExecutor", () => {
 		expect(harness.log).toHaveBeenCalledWith(
 			"error",
 			"event.execution_failed",
-			{ threadId: "thread-1" },
+			{ eventId: "sensor-event-1", threadId: "thread-1" },
 			{ error: failure, eventSource: "test/sensor", eventType: "test.sensor.changed.v1" },
 		);
+	});
+
+	it("実行中のイベントをフェーズ付きで一覧し、完了後に外す", async () => {
+		const opened = createDeferred<string>();
+		const turn = createDeferred<AgentTurnResult>();
+		const effectResults = createDeferred<readonly EffectResult[]>();
+		const harness = createHarness([]);
+		harness.openThread.mockImplementationOnce(async () => await opened.promise);
+		harness.startTurn.mockImplementationOnce(async () => ({
+			turnId: "turn-1",
+			completion: turn.promise,
+		}));
+		harness.executeEffects.mockImplementationOnce(async () => await effectResults.promise);
+		const execution = harness.executor.execute(event);
+		const status = {
+			eventId: "sensor-event-1",
+			eventSource: "test/sensor",
+			eventType: "test.sensor.changed.v1",
+			startedAt: "2026-08-09T03:00:01.000Z",
+			subject: "sensor.temperature",
+		};
+
+		await vi.waitFor(() => expect(harness.openThread).toHaveBeenCalledOnce());
+		expect(harness.executor.snapshot()).toEqual([{ ...status, phase: "opening", threadId: null }]);
+		opened.resolve("thread-1");
+		await vi.waitFor(() => expect(harness.startTurn).toHaveBeenCalledOnce());
+		expect(harness.executor.snapshot()).toEqual([
+			{ ...status, phase: "turn", threadId: "thread-1" },
+		]);
+		turn.resolve(completed([{ type: "fake.record", input: "changed" }]));
+		await vi.waitFor(() => expect(harness.executeEffects).toHaveBeenCalledOnce());
+		expect(harness.executor.snapshot()).toEqual([
+			{ ...status, phase: "effects", threadId: "thread-1" },
+		]);
+		effectResults.resolve([
+			{ index: 0, type: "fake.record", target: "changed", success: true, value: null },
+		]);
+
+		await expect(execution).resolves.toEqual({ status: "completed" });
+		expect(harness.executor.snapshot()).toEqual([]);
+		expect(harness.log).toHaveBeenCalledWith(
+			"info",
+			"event.effects_settled",
+			{ eventId: "sensor-event-1", threadId: "thread-1" },
+			{ effectCount: 1, failureCount: 0 },
+			expect.any(Array),
+		);
+		expect(harness.log).toHaveBeenCalledWith("info", "event.execution_completed", {
+			eventId: "sensor-event-1",
+			threadId: "thread-1",
+		});
+	});
+
+	it("再試行の待機中はretry_waitとして一覧する", async () => {
+		const retryDelay = createDeferred<void>();
+		const harness = createHarness([
+			{ status: "failed", errorMessage: "overloaded", retryable: true },
+			completed([]),
+		]);
+		harness.sleep.mockImplementationOnce(async () => await retryDelay.promise);
+		const execution = harness.executor.execute(event);
+
+		await vi.waitFor(() => expect(harness.sleep).toHaveBeenCalledOnce());
+		expect(harness.executor.snapshot()).toMatchObject([{ phase: "retry_wait" }]);
+		retryDelay.resolve();
+
+		await expect(execution).resolves.toEqual({ status: "completed" });
+		expect(harness.executor.snapshot()).toEqual([]);
+	});
+
+	it("失敗したイベントも一覧から外す", async () => {
+		const harness = createHarness([]);
+		harness.openThread.mockRejectedValueOnce(new Error("open failed"));
+
+		await harness.executor.execute(event);
+
+		expect(harness.executor.snapshot()).toEqual([]);
 	});
 
 	it("thread作成失敗時はarchiveしない", async () => {
@@ -274,17 +351,19 @@ function createHarness(turns: readonly AgentTurnResult[], calls: string[] = []) 
 	);
 	const release = vi.fn<EffectBatchPort["release"]>(async () => {});
 	const log = vi.fn<LoggerPort["log"]>();
+	const sleep = vi.fn(async (_milliseconds: number) => {});
 	const executor = new EventExecutor({
 		agent,
 		createThreadInput: async () => threadInput,
 		effectOutput,
 		effects: { execute: executeEffects, release },
 		logger: { log },
-		sleep: async () => {},
+		now: () => new Date("2026-08-09T03:00:01Z"),
+		sleep,
 		tasks: { listAll: () => [{ id: "task-1" }] },
 		turnRetryDelaysMs: [1, 2, 3],
 	});
-	return { archiveThread, executeEffects, executor, log, openThread, release, startTurn };
+	return { archiveThread, executeEffects, executor, log, openThread, release, sleep, startTurn };
 }
 
 function completed(

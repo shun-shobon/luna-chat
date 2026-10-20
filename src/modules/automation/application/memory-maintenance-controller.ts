@@ -7,6 +7,7 @@ import type {
 	AutomationScheduleTimerPort,
 	ScheduledAutomationJob,
 } from "../ports/automation-schedule-port";
+import type { MemoryMaintenanceStatus } from "../ports/automation-status";
 import { ActiveExecutionSet } from "./active-execution-set";
 
 export class MemoryMaintenanceController {
@@ -67,6 +68,14 @@ export class MemoryMaintenanceController {
 		this.#accepting = false;
 		this.#timer?.stop();
 		this.#timer = undefined;
+	}
+
+	snapshot(): MemoryMaintenanceStatus {
+		return {
+			cron: this.#cron,
+			enabled: this.#enabled,
+			nextFireAt: this.#timer?.nextRunAt()?.toISOString() ?? null,
+		};
 	}
 
 	async drain(): Promise<void> {

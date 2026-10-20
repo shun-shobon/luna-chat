@@ -42,6 +42,38 @@ describe("ScheduleController", () => {
 		expect(workspace.removeScheduleJob).toHaveBeenCalledWith("past-disabled");
 	});
 
+	it("登録済みjobの定義と次回発火時刻を一覧する", async () => {
+		const scheduleTimer = new FakeScheduleTimer();
+		const controller = createController({ scheduleTimer });
+
+		await controller.start({
+			jobs: [
+				withCheck(recurring("daily", true), "test -f flag"),
+				recurring("disabled", false),
+				oneShot("future", "2026-01-02T00:00:00.000Z", true),
+			],
+		});
+
+		expect(controller.snapshot()).toEqual([
+			{
+				check: "test -f flag",
+				cron: "0 9 * * *",
+				id: "daily",
+				kind: "recurring",
+				nextFireAt: null,
+				prompt: "prompt-daily",
+			},
+			{
+				check: null,
+				cron: null,
+				id: "future",
+				kind: "one_shot",
+				nextFireAt: "2026-01-02T00:00:00.000Z",
+				prompt: "prompt-future",
+			},
+		]);
+	});
+
 	it("登録直前に期限を過ぎたone-shotを実行せずfileから削除する", async () => {
 		const clock = new FakeClock();
 		clock.now
@@ -521,11 +553,17 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 
 	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob {
 		if (typeof cronTime === "string") {
-			const timer = { at: new Date(0), cron: cronTime, onTick, stop: vi.fn() };
+			const timer = {
+				at: new Date(0),
+				cron: cronTime,
+				nextRunAt: () => null,
+				onTick,
+				stop: vi.fn(),
+			};
 			this.recurring.push(timer);
 			return timer;
 		}
-		const timer = { at: cronTime, cron: "", onTick, stop: vi.fn() };
+		const timer = { at: cronTime, cron: "", nextRunAt: () => cronTime, onTick, stop: vi.fn() };
 		this.oneShots.push(timer);
 		return timer;
 	}

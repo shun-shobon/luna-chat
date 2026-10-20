@@ -33,6 +33,13 @@ export type AgentTurnResult =
 			status: "failed" | "interrupted";
 	  }>;
 
+export type AgentRuntimeStatus = Readonly<{
+	lastFailure: Readonly<{ at: string; message: string }> | null;
+	restartLimit: number;
+	restartsInWindow: number;
+	state: "starting" | "ready" | "restarting" | "fatal" | "closed";
+}>;
+
 export const TURN_RETRY_DELAYS_MS: readonly number[] = [15_000, 60_000, 180_000];
 
 export type StartedAgentTurn = {

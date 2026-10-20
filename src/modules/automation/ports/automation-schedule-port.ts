@@ -1,4 +1,5 @@
 export interface ScheduledAutomationJob {
+	nextRunAt(): Date | null;
 	stop(): void;
 }
 

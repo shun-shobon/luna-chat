@@ -52,11 +52,31 @@ describe("AutomationService", () => {
 		expect(retention.drain).toHaveBeenCalledTimes(1);
 		expect(schedule.drain).toHaveBeenCalledTimes(1);
 	});
+
+	it("heartbeat、memory整理、scheduleの状態をまとめて返す", () => {
+		const service = new AutomationService({
+			heartbeat: createHeartbeat({
+				snapshot: () => ({ enabled: true, nextFireAt: "2026-01-01T00:10:00.000Z" }),
+			}),
+			memoryMaintenance: createMemoryMaintenance({
+				snapshot: () => ({ cron: "0 4 * * *", enabled: false, nextFireAt: null }),
+			}),
+			retention: createRetention(),
+			schedule: createSchedule({ snapshot: () => [] }),
+		});
+
+		expect(service.snapshot()).toEqual({
+			heartbeat: { enabled: true, nextFireAt: "2026-01-01T00:10:00.000Z" },
+			memoryMaintenance: { cron: "0 4 * * *", enabled: false, nextFireAt: null },
+			schedule: [],
+		});
+	});
 });
 
 function createHeartbeat(overrides: Record<string, unknown> = {}) {
 	return {
 		drain: vi.fn(async () => undefined),
+		snapshot: () => ({ enabled: false, nextFireAt: null }),
 		start: vi.fn(),
 		stopIntake: vi.fn(),
 		...overrides,
@@ -66,6 +86,7 @@ function createHeartbeat(overrides: Record<string, unknown> = {}) {
 function createMemoryMaintenance(overrides: Record<string, unknown> = {}) {
 	return {
 		drain: vi.fn(async () => undefined),
+		snapshot: () => ({ cron: "", enabled: false, nextFireAt: null }),
 		start: vi.fn(),
 		stopIntake: vi.fn(),
 		...overrides,
@@ -84,6 +105,7 @@ function createRetention(overrides: Record<string, unknown> = {}) {
 function createSchedule(overrides: Record<string, unknown> = {}) {
 	return {
 		drain: vi.fn(async () => undefined),
+		snapshot: () => [],
 		start: vi.fn(async () => undefined),
 		stopIntake: vi.fn(async () => undefined),
 		...overrides,

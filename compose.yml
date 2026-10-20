@@ -7,8 +7,11 @@ services:
       TZ: ${TZ:-Asia/Tokyo}
       LUNA_HTTP_HOST: 0.0.0.0
       LUNA_HTTP_PORT: 3000
+      LUNA_DASHBOARD_HOST: 0.0.0.0
+      LUNA_DASHBOARD_PORT: 3001
     ports:
       - "127.0.0.1:${LUNA_HTTP_PORT:-3000}:3000"
+      - "127.0.0.1:${LUNA_DASHBOARD_PORT:-3001}:3001"
     volumes:
       - ./data:/home/node
     stop_grace_period: 600s
