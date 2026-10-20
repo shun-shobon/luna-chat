@@ -23,6 +23,8 @@ task service（作業エージェント）────────────�
       ▲  task.create / message / cancel                         ▼
       └───────────────────────────────── effect batch ─► Discord / HTTP応答 / タスク
 
+ブラウザ ─► dashboard ─► 各モジュールの snapshot / 直近ログ（読み取りのみ）
+
 Lunaプロセス内: 上記各モジュール、loopback MCP、observability、runtime
 外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout
 ```
@@ -30,6 +32,7 @@ Lunaプロセス内: 上記各モジュール、loopback MCP、observability、r
 - **Codex app-server**: Lunaの子プロセスとして起動され、全スレッドで単一プロセスを共有する。
 - **Discord MCP**: Lunaプロセス内部で `127.0.0.1` にバインドされ、Codexからのツール呼び出しを受け付ける。
 - **HTTP API**: Nativeでは `127.0.0.1` にバインドする。Docker Composeではコンテナ内の `0.0.0.0` にバインドし、ホストの `127.0.0.1` にのみポートを公開する。
+- **ダッシュボード**: HTTP APIとは別のHonoサーバーとして別ポートで待ち受ける。バインド先はHTTP APIと同じく環境変数で選ぶ。
 
 ## 3. ソースコード構成
 
@@ -49,9 +52,10 @@ src/
 │   ├── automation/      # ハートビート, スケジュール, 日次整理
 │   ├── task/            # バックグラウンドタスク, 作業エージェントの実行, 依頼元への通知
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
-│   └── observability/   # 構造化ログ, 秘匿情報マスク
+│   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
+│   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
 ├── runtime/             # コンポジションルート, エントリポイント
-├── shared/              # 機能に依存しない汎用関数・型（日付整形、JSON値）
+├── shared/              # 機能に依存しない汎用関数・型（日付整形、JSON値、Honoサーバーの起動）
 └── generated/codex/     # Codex CLIから自動生成された型定義
 ```
 
@@ -70,7 +74,8 @@ src/
 | `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定      | `startAutomation`、`stopIntake`、`drain`                                                             | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
 | `task`          | タスク状態、作業エージェントの実行枠とターンチェーン、公開範囲、通知 | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`、`connectionLost` | JSONファイルストア、`task.*` Effect                       |
 | `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視             | 初期化、プロンプト読み込み、スケジュール読み書き                                                     | ファイルシステム、`smol-toml`、Zod                        |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング                 | ロガーポート                                                                                         | 標準出力（JSON Lines）                                    |
+| `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                               | `snapshot`                                                                                           | Hono（`/`、`/api/snapshot`）                              |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持 | ロガーポート、直近ログの一覧                                                                         | 標準出力（JSON Lines）、メモリ上のリングバッファ          |
 | `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線             | プロセスエントリポイント                                                                             | シグナルハンドラー                                        |
 
 ## 5. 依存関係の方向
@@ -89,6 +94,7 @@ event        ──► agent / effect
 task         ──► agent / effect / event（型のみ）
 effect       ──► provider
 automation   ──► workspace
+dashboard    ──► agent / automation / conversation / event / task / observability（型のみ）
 all          ──► observability
 runtime      ──► 全モジュール (composition root)
 ```
@@ -256,6 +262,23 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 - 取消・シャットダウン・Codex接続断では、作業スレッドの `ownerId` で `EffectBatchPort.release` を呼び、`system.wait` を打ち切る（待機Effectは `ownerId` ごとに未完了の待機を保持し、`release` で失敗させる）。シャットダウンはこれと `turn/interrupt` で作業ループを終わらせ、ループ・配送・保存の完了を待つ。
 - 作業ループは終了報告の後にfollow-upを行わない。接続断で中断した場合だけ `running` を `queued` へ戻し、旧接続のスレッドは `parked` へ登録もアーカイブもしない。
 
+## 11.2 状態の可視化（ダッシュボード）
+
+```text
+ConversationCoordinator.snapshot ─┐
+EventExecutor.snapshot ───────────┤
+TaskService.snapshot ─────────────┤
+AutomationService.snapshot ───────┼─► DashboardService.snapshot ─► GET /api/snapshot ─► ページ（3秒ごとに取得）
+AgentRuntimeSupervisor.status ────┤
+RecentLogBuffer.list ─────────────┘
+```
+
+- 各モジュールはアプリケーション層に読み取り専用の `snapshot`（Supervisorは `status`）を持ち、状態の型はdomain/ports層に置く。`DashboardSourcePort` はそれらを呼ぶ関数の集まりで、コンポジションルートが配線する。状態の変更通知の仕組みは持たず、取得のたびにメモリ上の状態を読む。
+- 会話アクターはフェーズを変えるたびに開始時刻を記録する（`#enter`）。EventExecutorは実行中のイベントとフェーズを保持し、完了・失敗で外す。
+- ハートビートは次のタイマーを仕掛けた時点の予定時刻を保持する。日次整理とスケジュールの次回時刻は `ScheduledAutomationJob.nextRunAt`（cronライブラリの `nextDate`）から求める。
+- 直近の出来事は、標準出力のロガーと同じ呼び出しを受ける `RecentLogBuffer` が保持する。標準出力と違い `LOG_LEVEL` に関係なくinfo以上を本文付きで残すため、ログレベルを上げずに会話の中身を追える。秘匿フィールドのマスクは標準出力と同じ直列化を使う。
+- ページは単一のHTML文字列（`dashboard-page.ts`）で、外部ライブラリを使わない。表示する文字列はすべて `textContent` で入れ、Discordの本文をHTMLとして解釈しない。
+
 ## 12. 起動とシャットダウンシーケンス
 
 ### 起動 (Startup)
@@ -268,7 +291,7 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 6. Discordへの接続ログイン
 7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
 8. 過去のアーカイブ済みスレッドのクリーンアップをバックグラウンドで開始（1件数秒かかるため起動を待たせない）
-9. Gateway受信、HTTP API、ハートビート、日次整理、cron監視の開始
+9. Gateway受信、HTTP API、ダッシュボード、ハートビート、日次整理、cron監視の開始
 
 ### 終了 (Shutdown)
 
@@ -277,7 +300,7 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中のターンチェーンがすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したスレッドをアーカイブ
-6. 待機中HTTPリクエストの完了を確認し、HTTPサーバー、タイピングリース、ファイル監視、MCP、Discord接続、Codexプロセスを停止
+6. 待機中HTTPリクエストの完了を確認し、HTTPサーバー、ダッシュボード、タイピングリース、ファイル監視、MCP、Discord接続、Codexプロセスを停止
 7. ログをフラッシュして終了
 
 ## 13. テスト方針
