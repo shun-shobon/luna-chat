@@ -1,6 +1,6 @@
 # Luna
 
-Lunaは、DiscordとローカルHTTP APIをインターフェースとしてCodexを自律稼働させる個人用のワークスペースエージェントです。入力を共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
+Lunaは、DiscordとローカルHTTP APIをインターフェースとして、ChatGPTのモデルを使うエージェントを自律稼働させる個人用のワークスペースエージェントです。エージェントの実行には [pi](https://github.com/earendil-works/pi) を使います。入力を共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
 
 ## セキュリティに関する重要事項
 
@@ -20,38 +20,38 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - Runtime: Node.js `24.21.0`, pnpm `12.7.0`
 - その他:
   - Discord Bot Token（Message Content、Guild/DM Messages、Typing 等の各種Intentが必要）
-  - PATH上にインストールされた `codex` コマンド（native実行時）
+  - ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
   - Docker Engine および Docker Compose（Docker実行時）
   - Git（日次整理のコミット履歴を残す場合）
 
 ※ Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイント等は提供していません。
 
-## 事前準備（Codexの認証）
+## 事前準備（ChatGPTへのログイン）
 
-初回起動前に、Luna専用のディレクトリでCodexの認証を完了させておく必要があります。
+初回起動前に、ChatGPTへログインして資格情報を `LUNA_HOME/auth/credentials.json` に保存しておく必要があります。デバイスコード方式なので、表示されたURLを任意の端末のブラウザで開き、コードを入力してください。
 
 ### Native環境の場合
 
 ```sh
-mkdir -p "$HOME/.luna/codex"
-CODEX_HOME="$HOME/.luna/codex" codex login
-CODEX_HOME="$HOME/.luna/codex" codex login status
+pnpm run build
+pnpm exec luna-chat login
 ```
 
 ### Docker環境の場合
 
-ヘッドレス環境ではデバイス認証を利用できます。事前にホスト側の `./data` がコンテナにマウントされる設定を確認してください。
+事前にホスト側の `./data` がコンテナにマウントされる設定を確認してください。
 
 ```sh
-docker compose run --rm luna-chat codex login --device-auth
-docker compose run --rm luna-chat codex login status
+docker compose run --rm luna-chat node dist/index.mjs login
 ```
+
+資格情報の更新に失敗した場合は、ダッシュボードに「ChatGPT 再ログインが必要」と表示されます。同じ手順で再ログインしてください。
 
 ## 環境変数
 
 | 変数名                | 必須   | デフォルト値 | 説明                                                                        |
 | --------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`   | はい   | なし         | Discord Botのトークン。Codexの子プロセスには渡されません。                  |
+| `DISCORD_BOT_TOKEN`   | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。          |
 | `LUNA_HOME`           | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                    |
 | `LOG_LEVEL`           | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。               |
 | `LUNA_HTTP_HOST`      | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。 |
@@ -69,7 +69,9 @@ docker compose run --rm luna-chat codex login status
 ```text
 ~/.luna/
 ├── config.toml
-├── codex/                 # 専用CODEX_HOME（認証情報・スレッド保存先）
+├── auth/                  # ChatGPTの資格情報（credentials.json）
+├── sessions/              # エージェントのセッションの記録（日付ごと）
+├── state/                 # 使用枠など、実行中に書き出す状態（usage.json）
 └── workspace/
     ├── LUNA.md            # エージェントの人格や会話方針
     ├── MEMORY.md          # 長期記憶
@@ -111,15 +113,15 @@ cron = "0 21 * * *"
 prompt = "今日の会話を確認して、必要ならDiscordへ要約を送る"
 
 [[jobs]]
-id = "codex-release-watch"
+id = "release-watch"
 enabled = true
 kind = "recurring"
 cron = "*/30 * * * *"
-check = "./scripts/check-codex-release.sh"
+check = "./scripts/check-release.sh"
 prompt = "data.check_output にある新しいリリースを要約し、Discordへ報告する"
 ```
 
-定期ジョブの `check` には、発火時にCodexより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があればその内容を `check_output` としてプロンプトとともに実行し、出力が空、または失敗・タイムアウト（120秒）した場合はCodexを起動しません。詳細は [SPEC.md](./docs/SPEC.md#131-事前判定コマンド-check) を参照してください。
+定期ジョブの `check` には、発火時にエージェントより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があればその内容を `check_output` としてプロンプトとともに実行し、出力が空、または失敗・タイムアウト（120秒）した場合はエージェントを起動しません。詳細は [SPEC.md](./docs/SPEC.md#131-事前判定コマンド-check) を参照してください。
 
 ## セットアップと起動
 
@@ -128,8 +130,8 @@ prompt = "data.check_output にある新しいリリースを要約し、Discord
 ```sh
 mise install
 pnpm install --frozen-lockfile
-pnpm run gen
 pnpm run build
+pnpm exec luna-chat login   # 初回のみ
 DISCORD_BOT_TOKEN=... pnpm start
 ```
 
@@ -178,8 +180,8 @@ curl -i http://127.0.0.1:3000/events \
 
 - `execution` は独立した実行の `one_shot`、または `session_id` が同じ入力で会話を共有する `conversation` を指定します。
 - `response_mode` は受付後すぐ `202` と `request_id` を返す `async`、または処理完了まで待つ `wait` を指定します。両方の実行方式で選べます。`async` の結果を後から取得するAPIはありません。
-- `event.type` は空でない文字列、`event.data` は任意のJSON値です。LunaがイベントIDと時刻を付け、Codexには `event.data.payload` として渡します。
-- `wait` の場合、瑠菜が `http.respond` Effectで `request_id`、HTTPステータス、JSON本文を指定すると、その内容を処理完了後に返します。指定がなければ `204`、処理失敗なら `500` です。
+- `event.type` は空でない文字列、`event.data` は任意のJSON値です。LunaがイベントIDと時刻を付け、エージェントには `event.data.payload` として渡します。
+- `wait` の場合、エージェントが `http_respond` ツールで `request_id`、HTTPステータス、JSON本文を指定すると、その内容を処理完了後に返します。指定がなければ `204`、処理失敗なら `500` です。
 
 会話を継続する場合は `execution` を `conversation` にし、同じ `session_id` を送ります。会話は通常のアイドル期限後に終了します。
 
@@ -193,22 +195,22 @@ curl -i http://127.0.0.1:3000/events \
 
 `http://127.0.0.1:3001/` を開くと、Lunaのいまの状態を確認できます（3秒ごとに自動更新、閲覧のみ）。
 
-- 会話セッションごとのフェーズ（考え中・行動中・待機中など）と経過時間、未処理の入力
+- ChatGPTの認証状態と使用枠
+- 会話セッションごとのフェーズ（考え中・待機中など）と経過時間、未処理の入力
 - 実行中のハートビート・スケジュール・日次整理などのイベント実行
 - タスクボード（実行枠、各タスクの指示・報告・追加指示）
 - 次のハートビート・日次整理・スケジュールの発火予定
-- 最近の出来事（受信メッセージやEffectの本文を含むログ）
+- 最近の出来事（受信メッセージやツールの入力・結果を含むログ）
 
 認証はありません。会話本文やタスクの内容が表示されるため、`LUNA_DASHBOARD_HOST=0.0.0.0` でLANへ公開する場合は、そのネットワーク内の全員が閲覧できることに注意してください。Docker Composeではホストのループバックにのみ公開します。
 
 ## 記憶と自律運用
 
-- **セッション記憶保存**: 会話が30分間途切れてアイドル状態になると、Codexが会話内容を要約し、`memory/YYYY-MM-DD.md` に追記保存します。
-- **日次整理**: 指定したcron時刻（デフォルト午前4時）に専用スレッドが起動し、前回以降の日次ログや `MEMORY.md`、ワークスペースを見直し、`MEMORY.md` を16000文字以内の中核記憶に保ちつつ詳細を `memory/topics/` へ整理します。Gitが利用可能な場合は、ローカルにコミットを作成します。
+- **セッション記憶保存**: 会話が30分間途切れてアイドル状態になると、エージェントが会話内容を要約し、`memory/YYYY-MM-DD.md` に追記保存します。
+- **日次整理**: 指定したcron時刻（デフォルト午前4時）に専用のセッションが起動し、前回以降の日次ログや `MEMORY.md`、ワークスペースを見直し、`MEMORY.md` を16000文字以内の中核記憶に保ちつつ詳細を `memory/topics/` へ整理します。Gitが利用可能な場合は、ローカルにコミットを作成します。
 - **ハートビート**: 一定間隔（ランダムなインターバル）ごとに `HEARTBEAT.md` と `AGENDA.md` を読み込み、チェックリストを処理したうえで、アジェンダから再開条件を満たした項目を1つ進めます。長い一手はバックグラウンドタスクへ委任します。
-- **スケジュール実行**: `cron.toml` に定義されたジョブに基づき、指定時刻にプロンプトを実行します。
-- **スケジュール実行**: `cron.toml` に定義されたジョブに基づき、指定時刻にプロンプトを実行します。定期ジョブは `check` コマンドで変化があった時だけCodexを起動できます。
-- **バックグラウンドタスク**: 長い調査や制作は、会話中のLunaが `task.create` で作業エージェントへ委任します。会話は止まらず、作業エージェントの節目・質問・結果は依頼元の会話へ届きます。タスクは `LUNA_HOME/tasks/` に保存され、同時実行数は `[tasks].max_concurrent`（デフォルト2）で設定します。
+- **スケジュール実行**: `cron.toml` に定義されたジョブに基づき、指定時刻にプロンプトを実行します。定期ジョブは `check` コマンドで変化があった時だけエージェントを起動できます。
+- **バックグラウンドタスク**: 長い調査や制作は、会話中のLunaが `task_create` で作業エージェントへ委任します。会話は止まらず、作業エージェントの節目・質問・結果は依頼元の会話へ届きます。タスクは `LUNA_HOME/tasks/` に保存され、同時実行数は `[tasks].max_concurrent`（デフォルト2）で設定します。
 
 ## ログとプロセス管理
 
@@ -219,7 +221,6 @@ SIGINTまたはSIGTERMを受信すると、新規メッセージの受付を停�
 ## 開発とテスト
 
 ```sh
-pnpm run gen          # Codex CLIから型を生成
 pnpm run format:check # フォーマット確認
 pnpm run lint         # 静的解析
 pnpm run knip         # 未使用コード検出
