@@ -23,6 +23,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
   - ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
   - Docker Engine および Docker Compose（Docker実行時）
   - Git（日次整理のコミット履歴を残す場合）
+  - ripgrep（エージェントが記憶やワークスペースの検索に使う）
 
 ※ Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイント等は提供していません。
 

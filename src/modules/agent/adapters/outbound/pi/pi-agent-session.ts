@@ -447,12 +447,24 @@ export class PiAgentSession implements AgentSession {
 	}
 
 	#recordEvent(event: AgentEvent): void {
-		if (event.type === "message_end") {
-			this.#transcript.append({
-				type: "message",
-				at: this.#input.now().toISOString(),
-				message: event.message,
-			});
+		if (event.type !== "message_end") {
+			return;
+		}
+		this.#transcript.append({
+			type: "message",
+			at: this.#input.now().toISOString(),
+			message: event.message,
+		});
+		// pi-ai は WebSocket から SSE への切り替えなど、成功した応答の裏で起きた障害を diagnostics にだけ残す。
+		if (event.message.role === "assistant") {
+			for (const diagnostic of event.message.diagnostics ?? []) {
+				this.#logger.log("warn", "agent.pi.provider_diagnostic", undefined, {
+					details: diagnostic.details,
+					error: diagnostic.error?.message,
+					sessionId: this.id,
+					type: diagnostic.type,
+				});
+			}
 		}
 	}
 

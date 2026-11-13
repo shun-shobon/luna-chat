@@ -442,6 +442,33 @@ describe("エラーと再試行", () => {
 		});
 	});
 
+	it("成功した応答に付いた提供元の診断情報を warn で記録する", async () => {
+		const { runtime, faux, logger } = await setup();
+		faux.setResponses([
+			() => ({
+				...fauxAssistantMessage("ok"),
+				diagnostics: [
+					{
+						type: "provider_transport_failure",
+						timestamp: NOW.getTime(),
+						error: { name: "Error", message: "WebSocket error", stack: "Error: WebSocket error" },
+						details: { configuredTransport: "auto", fallbackTransport: "sse" },
+					},
+				],
+			}),
+		]);
+		const session = runtime.open(spec());
+
+		await expect(session.run([input("始めて")])).resolves.toMatchObject({ status: "completed" });
+
+		expect(logger.log).toHaveBeenCalledWith("warn", "agent.pi.provider_diagnostic", undefined, {
+			details: { configuredTransport: "auto", fallbackTransport: "sse" },
+			error: "WebSocket error",
+			sessionId: session.id,
+			type: "provider_transport_failure",
+		});
+	});
+
 	it("SSE の 429 は再試行せず usage_limit を返す", async () => {
 		const { runtime, faux } = await setup();
 		faux.setResponses([
