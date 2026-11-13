@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 import { ChannelType } from "discord.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -102,6 +102,7 @@ vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	},
 }));
 
+const templatesDir = resolve(import.meta.dirname, "../../templates");
 const temporaryDirectories: string[] = [];
 const originalEnvironment = { ...process.env };
 
@@ -140,7 +141,7 @@ describe("composition root child integration", () => {
 				.join(delimiter),
 		};
 
-		const application = await startLunaApplication();
+		const application = await startLunaApplication({ templatesDir });
 		fakes.emit("messageCreate", discordMessage());
 		await vi.waitFor(
 			async () => {

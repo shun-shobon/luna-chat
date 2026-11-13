@@ -1,3 +1,6 @@
+#!/usr/bin/env node
+import { resolve } from "node:path";
+
 import { startLunaApplication } from "./runtime/composition-root";
 
 type LunaApplication = Awaited<ReturnType<typeof startLunaApplication>>;
@@ -25,12 +28,14 @@ process.once("SIGINT", handleSignal);
 process.once("SIGTERM", handleSignal);
 
 async function start(): Promise<void> {
-	application = await startLunaApplication({ startupSignal: startupAbortController.signal }).catch(
-		(error: unknown) => {
-			if (startupAbortController.signal.aborted) return undefined;
-			throw error;
-		},
-	);
+	application = await startLunaApplication({
+		startupSignal: startupAbortController.signal,
+		// src/index.ts と dist/index.mjs のどちらから起動しても同じ階層にある。
+		templatesDir: resolve(import.meta.dirname, "../templates"),
+	}).catch((error: unknown) => {
+		if (startupAbortController.signal.aborted) return undefined;
+		throw error;
+	});
 	void application?.fatal
 		.then(async () => await stop(1, true))
 		.catch(() => {
@@ -38,8 +43,7 @@ async function start(): Promise<void> {
 		});
 }
 
-// oxlint-disable-next-line unicorn/prefer-top-level-await -- SEA 用に CJS へバンドルするためトップレベル await を使えない
-void start().catch((error: unknown) => {
+await start().catch((error: unknown) => {
 	console.error(error);
 	process.exitCode = 1;
 });

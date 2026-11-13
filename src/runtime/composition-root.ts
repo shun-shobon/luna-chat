@@ -101,12 +101,15 @@ interface LunaApplication {
 }
 
 export async function startLunaApplication(
-	options: Readonly<{ startupSignal?: AbortSignal }> = {},
+	options: Readonly<{ startupSignal?: AbortSignal; templatesDir: string }>,
 ): Promise<LunaApplication> {
 	options.startupSignal?.throwIfAborted();
 	const startedAt = new Date();
 	const environment = readRuntimeEnvironment(process.env);
-	const workspace = await initializeWorkspace({ lunaHome: environment.lunaHome });
+	const workspace = await initializeWorkspace({
+		lunaHome: environment.lunaHome,
+		templatesDir: options.templatesDir,
+	});
 	const allowedChannels = new AllowedChannelSettings(
 		workspace.configPath,
 		workspace.config.discord.allowedChannelIds,
