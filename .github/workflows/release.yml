@@ -117,72 +117,8 @@ jobs:
           push-to-registry: true
           create-storage-record: false
 
-  sea:
-    needs: draft
-    if: needs.draft.outputs.ready == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - runner: macos-15-intel
-            platform: macos
-            arch: amd64
-          - runner: macos-15
-            platform: macos
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ needs.draft.outputs.commit }}
-
-      - name: Setup | Development environment
-        uses: $/.github/actions/setup
-
-      - name: Setup | Generate Code
-        run: pnpm run gen
-
-      - name: Build | SEA
-        run: pnpm run build
-
-      - name: Build | Package SEA
-        env:
-          PLATFORM: ${{ matrix.platform }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          asset="luna-chat-${PLATFORM}-${ARCH}.tar.gz"
-          tar -czf "$asset" -C dist luna-chat
-
-      - name: Run | Attest SEA Asset
-        uses: actions/attest@v4.2.2
-        with:
-          subject-path: luna-chat-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
-
-      - name: Run | Upload SEA Asset
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ needs.draft.outputs.tag }}
-          PLATFORM: ${{ matrix.platform }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          asset="luna-chat-${PLATFORM}-${ARCH}.tar.gz"
-          gh release upload "$RELEASE_TAG" "$asset" --clobber
-
   release:
-    needs: [draft, docker, sea]
+    needs: [draft, docker]
     if: needs.draft.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5

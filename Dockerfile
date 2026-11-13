@@ -14,7 +14,6 @@ RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
 COPY src ./src
-COPY scripts ./scripts
 COPY templates ./templates
 COPY tsconfig.json tsdown.config.ts ./
 RUN pnpm run gen
@@ -24,6 +23,7 @@ RUN mkdir -p /app/codex-runtime/node_modules/@openai /app/codex-runtime/node_mod
     cp -LR /app/node_modules/.pnpm/node_modules/@openai/codex-linux-$(node -p 'process.arch') \
       /app/codex-runtime/node_modules/@openai/codex-linux-$(node -p 'process.arch') && \
     ln -s ../@openai/codex/bin/codex.js /app/codex-runtime/node_modules/.bin/codex
+RUN pnpm prune --prod
 
 
 FROM node:24.21.0-trixie AS runtime
@@ -51,10 +51,13 @@ RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node && \
     mkdir -p /home/node/.luna && \
     chown node:node /home/node/.luna
 
-COPY --from=build /app/dist/luna-chat ./dist/luna-chat
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/templates ./templates
 COPY --from=build /app/codex-runtime ./codex-runtime
 
 USER node
 
 ENTRYPOINT ["tini", "--"]
-CMD ["./dist/luna-chat"]
+CMD ["node", "dist/index.mjs"]

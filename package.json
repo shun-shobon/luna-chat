@@ -5,9 +5,12 @@
 	"description": "luna-chat",
 	"license": "MIT",
 	"author": "NISHIZAWA Shuntaro <me@s2n.tech>",
+	"bin": {
+		"luna-chat": "./dist/index.mjs"
+	},
 	"type": "module",
 	"scripts": {
-		"build": "tsdown && node scripts/build-sea.mjs",
+		"build": "tsdown",
 		"dev": "tsx --watch src/index.ts",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
@@ -16,7 +19,7 @@
 		"knip": "knip",
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
-		"start": "./dist/luna-chat",
+		"start": "node dist/index.mjs",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
@@ -42,7 +45,6 @@
 		"oxfmt": "0.72.0",
 		"oxlint": "1.87.0",
 		"oxlint-tsgolint": "7.0.2003",
-		"postject": "1.0.0-alpha.6",
 		"tsdown": "0.23.0",
 		"tsx": "4.23.15",
 		"typescript": "7.0.2",

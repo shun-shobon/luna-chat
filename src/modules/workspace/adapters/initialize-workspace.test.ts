@@ -105,7 +105,7 @@ describe("workspace initializer adapter", () => {
 	it.each(["", "   ", "relative/path"])(
 		"相対または空の LUNA_HOME %j を拒否する",
 		async (lunaHome) => {
-			await expect(initializeWorkspace({ lunaHome })).rejects.toThrow(
+			await expect(initializeWorkspace({ lunaHome, templatesDir: "/unused" })).rejects.toThrow(
 				"LUNA_HOME must be an absolute path.",
 			);
 		},

@@ -130,7 +130,7 @@ mise install
 pnpm install --frozen-lockfile
 pnpm run gen
 pnpm run build
-DISCORD_BOT_TOKEN=... ./dist/luna-chat
+DISCORD_BOT_TOKEN=... pnpm start
 ```
 
 開発時は以下を実行します：
@@ -225,7 +225,7 @@ pnpm run lint         # 静的解析
 pnpm run knip         # 未使用コード検出
 pnpm run typecheck    # 型チェック
 pnpm run test         # テスト実行
-pnpm run build        # バイナリビルド
+pnpm run build        # dist/ へビルド
 docker compose build  # Dockerイメージビルド
 ```
 
@@ -233,7 +233,7 @@ docker compose build  # Dockerイメージビルド
 
 GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`、`minor`、`major` を選択します。[easy-release](https://github.com/shun-shobon/easy-release) が最新の安定版Gitタグを基準に次のバージョンを計算し、`package.json` の更新後に `pnpm format` を実行し、整形結果を含むPull Requestを作成します。GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしてください。
 
-準備PRをmainブランチにマージすると、リリースタグとドラフトReleaseを作成し、各OS向けSEAアセットの添付とGHCRへのDockerイメージのプッシュを実行します。すべてのビルドと証明の付与が成功した後、Dockerイメージの `latest` タグを更新してGitHub Releaseを公開します。更新対象は `.github/easy-release.json` で指定します。
+準備PRをmainブランチにマージすると、リリースタグとドラフトReleaseを作成し、GHCRへDockerイメージをプッシュします。ビルドと証明の付与が成功した後、Dockerイメージの `latest` タグを更新してGitHub Releaseを公開します。更新対象は `.github/easy-release.json` で指定します。
 
 ## ドキュメント一覧
 

@@ -320,6 +320,6 @@ RecentLogBuffer.list ─────────────┘
 
 ## 14. ビルドとリリースパイプライン
 
-- **ローカルビルド**: `pnpm run build` により、TypeScriptのコンパイルとCommonJSバンドルを行い、Node.jsのSingle Executable Application (SEA) として `dist/luna-chat` を生成する。初期テンプレートファイルはバイナリ内に埋め込まれる。
+- **ローカルビルド**: `pnpm run build` により、`src/index.ts` をESMの `dist/index.mjs` へバンドルする。依存パッケージはバンドルせず、実行時に `node_modules` から読み込む。`package.json` の `bin`（`luna-chat`）はこのファイルを指す。初期テンプレートは、エントリポイントの位置を基準にパッケージ内の `templates/` から読み込む。
 - **CI品質ゲート**: GitHub Actions上でフォーマット、リント、未使用コード検出（knip）、型チェック（typecheck）、テストを自動実行し、すべてが通過することをmainブランチへのマージ条件とする。
-- **リリースワークフロー**: `.github/workflows/release.yml` に手動実行とPRマージ後の処理を集約する。準備ジョブは共通setupでpnpmと依存関係を用意する。`shun-shobon/easy-release` の `prepare` が `.github/easy-release.json` を読み、最新の安定版Gitタグからバージョンを更新し、`updateCommand` の `pnpm format` で整形した変更をPRに含める。マージ後は `draft` が準備PRとバージョンを検証し、タグとドラフトReleaseを作成する。`ready` が `true` の場合だけ、出力された `commit` をDocker・SEAのビルドに、`tag` をイメージタグとアセットの添付先に使う。DockerはLinuxのamd64・arm64、SEAはLinux・macOSのamd64・arm64を対象とし、GitHub Artifact Attestationsを付与する。両ビルドジョブの成功後にDockerの `latest` を更新し、`publish` に `release-id`・`tag`・`commit` を渡して公開する。リリース処理は共通のconcurrencyグループで直列化する。
+- **リリースワークフロー**: `.github/workflows/release.yml` に手動実行とPRマージ後の処理を集約する。準備ジョブは共通setupでpnpmと依存関係を用意する。`shun-shobon/easy-release` の `prepare` が `.github/easy-release.json` を読み、最新の安定版Gitタグからバージョンを更新し、`updateCommand` の `pnpm format` で整形した変更をPRに含める。マージ後は `draft` が準備PRとバージョンを検証し、タグとドラフトReleaseを作成する。`ready` が `true` の場合だけ、出力された `commit` をDockerのビルドに、`tag` をイメージタグに使う。DockerはLinuxのamd64・arm64を対象とし、GitHub Artifact Attestationsを付与する。ビルドジョブの成功後にDockerの `latest` を更新し、`publish` に `release-id`・`tag`・`commit` を渡して公開する。リリース処理は共通のconcurrencyグループで直列化する。

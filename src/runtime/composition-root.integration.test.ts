@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
@@ -124,6 +126,7 @@ vi.mock("../modules/automation/adapters/cron-schedule-timer", () => ({
 	},
 }));
 
+const templatesDir = resolve(import.meta.dirname, "../../templates");
 const originalEnvironment = { ...process.env };
 
 afterEach(() => {
@@ -145,7 +148,7 @@ describe("composition root integration", () => {
 		const registry = vi.spyOn(effectRegistryModule, "createEffectRegistry");
 		const outputContract = vi.spyOn(effectOutputModule, "createEffectOutputContract");
 		const threadInputFactory = vi.spyOn(threadInputModule, "createThreadInputFactory");
-		const application = await startLunaApplication();
+		const application = await startLunaApplication({ templatesDir });
 
 		expect(fakes.client.login).toHaveBeenCalledWith("discord-token");
 		expect(fakes.client.on).toHaveBeenCalledTimes(3);
@@ -199,7 +202,7 @@ describe("composition root integration", () => {
 			login.reject(new Error("Discord login aborted"));
 		});
 		const controller = new AbortController();
-		const starting = startLunaApplication({ startupSignal: controller.signal });
+		const starting = startLunaApplication({ startupSignal: controller.signal, templatesDir });
 		await vi.waitFor(() => expect(fakes.client.login).toHaveBeenCalledOnce());
 
 		controller.abort();
@@ -221,7 +224,7 @@ describe("composition root integration", () => {
 		const eventLost = vi.spyOn(EventExecutor.prototype, "connectionLost");
 		const abort = vi.spyOn(ConversationCoordinator.prototype, "abort");
 		const drain = vi.spyOn(ConversationCoordinator.prototype, "drain");
-		const application = await startLunaApplication();
+		const application = await startLunaApplication({ templatesDir });
 		const failure = new Error("connection lost");
 
 		fakes.runtime.failure?.(failure);
