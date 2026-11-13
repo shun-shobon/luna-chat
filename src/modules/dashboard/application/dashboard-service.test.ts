@@ -7,7 +7,7 @@ describe("DashboardService", () => {
 	it("各モジュールの現在の状態を取得時刻と起動時刻付きでまとめる", () => {
 		const sources: DashboardSourcePort = {
 			activity: () => [],
-			agent: () => ({ lastFailure: null, restartLimit: 5, restartsInWindow: 0, state: "ready" }),
+			agent: () => ({ auth: "ready", lastFailure: null, sessions: [], usage: null }),
 			automation: () => ({
 				heartbeat: { enabled: true, nextFireAt: null },
 				memoryMaintenance: { cron: "0 4 * * *", enabled: true, nextFireAt: null },
@@ -25,7 +25,7 @@ describe("DashboardService", () => {
 
 		expect(service.snapshot()).toEqual({
 			activity: [],
-			agent: { lastFailure: null, restartLimit: 5, restartsInWindow: 0, state: "ready" },
+			agent: { auth: "ready", lastFailure: null, sessions: [], usage: null },
 			automation: {
 				heartbeat: { enabled: true, nextFireAt: null },
 				memoryMaintenance: { cron: "0 4 * * *", enabled: true, nextFireAt: null },

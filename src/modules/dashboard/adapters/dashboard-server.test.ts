@@ -53,7 +53,7 @@ describe("dashboard server", () => {
 
 const snapshot: DashboardSnapshot = {
 	activity: [],
-	agent: { lastFailure: null, restartLimit: 5, restartsInWindow: 0, state: "ready" },
+	agent: { auth: "ready", lastFailure: null, sessions: [], usage: null },
 	automation: {
 		heartbeat: { enabled: true, nextFireAt: "2026-10-20T00:10:00.000Z" },
 		memoryMaintenance: { cron: "0 4 * * *", enabled: true, nextFireAt: null },

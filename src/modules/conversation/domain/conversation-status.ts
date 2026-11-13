@@ -3,30 +3,25 @@ import type { JsonValue } from "../../../shared/json";
 export type ConversationPhase =
 	| "collecting"
 	| "opening"
-	| "starting"
-	| "turn"
+	| "running"
 	| "retry_wait"
-	| "effects"
-	| "orphaned_effects"
+	| "compacting"
 	| "idle"
-	| "archiving"
+	| "closing"
 	| "closed";
 
-export type ConversationTurnPurpose = "conversation" | "session_memory";
-
-export type ConversationModelSettings = Readonly<{ model: string; effort: string }>;
+export type ConversationRunPurpose = "conversation" | "session_memory";
 
 export type ConversationStatus = Readonly<{
 	context: JsonValue;
 	idleDeadlineAt: string | null;
 	key: string;
-	modelSettings: ConversationModelSettings | null;
+	modelSettings: Readonly<{ provider: string; model: string; thinking: string }> | null;
 	phase: Exclude<ConversationPhase, "closed">;
 	phaseSince: string;
-	purpose: ConversationTurnPurpose | null;
+	purpose: ConversationRunPurpose | null;
 	queuedEvents: number;
 	retries: number;
+	sessionId: string | null;
 	source: string;
-	threadId: string | null;
-	turnId: string | null;
 }>;

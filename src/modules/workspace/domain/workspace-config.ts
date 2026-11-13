@@ -1,12 +1,12 @@
+type ThinkingSetting = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export type ModelSetting = Readonly<{ provider: string; model: string; thinking: ThinkingSetting }>;
+
 export type WorkspaceConfig = {
 	agent: {
-		restartFailureLimit: number;
-		restartInitialDelayMs: number;
-		restartMaxDelayMs: number;
-		restartWindowMs: number;
-		rpcTimeoutMs: number;
-		threadCleanupIntervalMs: number;
-		threadRetentionMs: number;
+		requestTimeoutMs: number;
+		transcriptCleanupIntervalMs: number;
+		transcriptRetentionMs: number;
 	};
 	discord: {
 		allowDm: boolean;
@@ -25,20 +25,28 @@ export type WorkspaceConfig = {
 		enabled: boolean;
 		maintenanceCron: string;
 	};
+	models: {
+		compaction: ModelSetting;
+		conversation: ModelSetting;
+		event: ModelSetting;
+		worker: ModelSetting;
+	};
 	tasks: {
 		maxConcurrent: number;
 	};
 };
 
+const DEFAULT_MODEL: ModelSetting = {
+	provider: "openai-codex",
+	model: "gpt-6.1-sol",
+	thinking: "medium",
+};
+
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 	agent: {
-		restartFailureLimit: 5,
-		restartInitialDelayMs: 1_000,
-		restartMaxDelayMs: 30_000,
-		restartWindowMs: 300_000,
-		rpcTimeoutMs: 30_000,
-		threadCleanupIntervalMs: 86_400_000,
-		threadRetentionMs: 604_800_000,
+		requestTimeoutMs: 300_000,
+		transcriptCleanupIntervalMs: 86_400_000,
+		transcriptRetentionMs: 604_800_000,
 	},
 	discord: {
 		allowDm: true,
@@ -56,6 +64,12 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 	memory: {
 		enabled: true,
 		maintenanceCron: "0 4 * * *",
+	},
+	models: {
+		compaction: { provider: "openai-codex", model: "gpt-6.1-terra", thinking: "low" },
+		conversation: DEFAULT_MODEL,
+		event: DEFAULT_MODEL,
+		worker: DEFAULT_MODEL,
 	},
 	tasks: {
 		maxConcurrent: 2,

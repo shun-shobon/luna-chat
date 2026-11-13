@@ -1,4 +1,4 @@
-import type { AgentRuntimeStatus } from "../../agent/ports/outbound/agent-runtime-port";
+import type { AgentRuntimeStatus } from "../../agent/ports/outbound/agent-session-port";
 import type { AutomationStatus } from "../../automation/ports/automation-status";
 import type { ConversationStatus } from "../../conversation/domain/conversation-status";
 import type { EventExecutionStatus } from "../../event/ports/event-execution-port";

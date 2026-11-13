@@ -26,7 +26,6 @@ describe("workspace initializer adapter", () => {
 		const initialized = await initializeWorkspace({ lunaHome, templatesDir });
 
 		expect(initialized).toEqual({
-			codexHomeDir: resolve(lunaHome, "codex"),
 			config: DEFAULT_WORKSPACE_CONFIG,
 			configPath: resolve(lunaHome, "config.toml"),
 			cronPath: resolve(lunaHome, "workspace", "cron.toml"),

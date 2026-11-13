@@ -57,20 +57,49 @@ max_interval_ms = 2000
 		});
 	});
 
+	it("modelsは provider/model を分けて読み、省略した項目だけデフォルト値を補う", () => {
+		expect(
+			parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
+[agent]
+request_timeout_ms = 60000
+
+[models.conversation]
+model = "anthropic/claude-opus-5/2026"
+thinking = "high"
+
+[models.worker]
+thinking = "xhigh"
+`),
+		).toEqual({
+			...DEFAULT_WORKSPACE_CONFIG,
+			agent: { ...DEFAULT_WORKSPACE_CONFIG.agent, requestTimeoutMs: 60_000 },
+			models: {
+				...DEFAULT_WORKSPACE_CONFIG.models,
+				conversation: { provider: "anthropic", model: "claude-opus-5/2026", thinking: "high" },
+				worker: { ...DEFAULT_WORKSPACE_CONFIG.models.worker, thinking: "xhigh" },
+			},
+		});
+	});
+
 	it.each([
 		["unknown top-level key", "unexpected = true"],
 		["unknown nested key", "[discord]\nunexpected = true"],
 		["non-snowflake channel id", '[discord]\nallowed_channel_ids = ["channel"]'],
 		["heartbeat interval inversion", "[heartbeat]\nmin_interval_ms = 2000\nmax_interval_ms = 1000"],
-		[
-			"restart delay inversion",
-			"[agent]\nrestart_initial_delay_ms = 2000\nrestart_max_delay_ms = 1000",
-		],
+		["removed Codex agent key", "[agent]\nrpc_timeout_ms = 1000"],
+		["removed thread retention key", "[agent]\nthread_retention_ms = 1000"],
+		["model without provider", '[models.event]\nmodel = "gpt-6.1-sol"'],
+		["model with whitespace", '[models.event]\nmodel = "openai-codex/gpt 6"'],
+		["unknown thinking level", '[models.event]\nthinking = "max"'],
+		["unknown model role", '[models.summary]\nmodel = "openai-codex/gpt-6.1-sol"'],
+		["unknown model key", '[models.event]\neffort = "high"'],
 		["negative history limit", "[discord]\ninitial_history_limit = -1"],
 		["zero duration", "[discord]\ndebounce_ms = 0"],
 		["zero task concurrency", "[tasks]\nmax_concurrent = 0"],
-		["unsafe integer", "[agent]\nrpc_timeout_ms = 9007199254740992"],
+		["unsafe integer", "[agent]\ntranscript_retention_ms = 9007199254740992"],
 		["timer duration above Node.js limit", "[discord]\nsession_idle_ms = 2147483648"],
+		["request timeout above Node.js limit", "[agent]\nrequest_timeout_ms = 2147483648"],
+		["zero transcript cleanup interval", "[agent]\ntranscript_cleanup_interval_ms = 0"],
 		["invalid memory cron", '[memory]\nenabled = true\nmaintenance_cron = "0 0 4 * * *"'],
 	])("%s を拒否する", (_title, source) => {
 		expect(() =>
@@ -88,7 +117,8 @@ max_interval_ms = 2000
 		const source = serializeWorkspaceConfig(DEFAULT_WORKSPACE_CONFIG);
 
 		expect(source).toContain("allowed_channel_ids = []");
-		expect(source).toContain("thread_retention_ms = 604800000");
+		expect(source).toContain("transcript_retention_ms = 604800000");
+		expect(source).toContain('model = "openai-codex/gpt-6.1-terra"');
 		expect(source).toContain('maintenance_cron = "0 4 * * *"');
 		expect(parseWorkspaceConfig(source)).toEqual(DEFAULT_WORKSPACE_CONFIG);
 	});
