@@ -7,7 +7,7 @@ import type { EventExecutionPort } from "../../event/ports/event-execution-port"
 import { HttpEventService } from "../application/http-event-service";
 import { HttpResponseRegistry } from "../application/http-response-registry";
 import { startHttpEventServer } from "./http-event-server";
-import { createHttpResponseEffectProvider } from "./http-response-effect-provider";
+import { createHttpResponseToolProvider } from "./http-response-tool-provider";
 
 const servers: HonoServerHandle[] = [];
 
@@ -62,19 +62,16 @@ describe("HTTP event server", () => {
 			event: { type: "question.received.v1", data: { question: "hello" } },
 		});
 		await vi.waitFor(() => expect(event).toBeDefined());
-		const provider = createHttpResponseEffectProvider(registry);
-		const effect = provider.definitions[0];
-		if (event === undefined || effect === undefined) throw new Error("Missing event or effect");
+		const tool = createHttpResponseToolProvider(registry).definitions[0];
+		if (event === undefined || tool === undefined) throw new Error("Missing event or tool");
 		const requestId = event.id;
-		const request = effect.parse({
-			request_id: requestId,
-			status: 201,
-			body_json: '{"answer":"world"}',
-		});
-		await request.run({
+		const execution = {
 			ownerId: "owner-1",
 			origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
-		});
+			signal: new AbortController().signal,
+		} as const;
+		const input = { request_id: requestId, status: 201, body_json: '{"answer":"world"}' };
+		await tool.invoke(input, execution);
 		let responded = false;
 		void waiting.then(() => {
 			responded = true;
@@ -88,15 +85,10 @@ describe("HTTP event server", () => {
 		const response = await waiting;
 		expect(response.status).toBe(201);
 		expect(await response.json()).toEqual({ answer: "world" });
-		expect(() => effect.parse({ request_id: requestId, status: 200, body_json: "{" })).toThrow(
-			SyntaxError,
-		);
 		await expect(
-			request.run({
-				ownerId: "owner-1",
-				origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
-			}),
-		).rejects.toThrow("not waiting");
+			tool.invoke({ request_id: requestId, status: 200, body_json: "{" }, execution),
+		).rejects.toThrow(SyntaxError);
+		await expect(tool.invoke(input, execution)).rejects.toThrow("not waiting");
 	});
 
 	it("会話セッションの複数リクエストをIDごとに返し、返答なしは204とする", async () => {

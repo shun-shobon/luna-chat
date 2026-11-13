@@ -1,26 +1,25 @@
 import { formatLocalDate } from "../../../shared/local-date";
 import type {
-	AgentRuntimePort,
-	AgentThreadInput,
-	AgentTurnResult,
-	StartedAgentTurn,
-} from "../../agent/ports/outbound/agent-runtime-port";
-import { requiresEffectFollowUp } from "../../effect/domain/effect";
-import type { EffectRequest, EffectResult } from "../../effect/domain/effect";
-import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
-import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
-import { parseEffectOutputs } from "../../effect/ports/effect-output-contract";
+	AgentInputMessage,
+	AgentRunResult,
+	ModelSelection,
+} from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
+import { toEventMessage } from "../../event/ports/event-message";
 import type { LogContext, LoggerPort } from "../../observability/ports/logger-port";
+import { describeRunFailure } from "../../tool/ports/agent-session-factory-port";
+import type {
+	OpenAgentSession,
+	OpenedAgentSession,
+} from "../../tool/ports/agent-session-factory-port";
 import type {
 	AcceptedConversationEvent,
 	ConversationSession,
 } from "../domain/conversation-session";
 import type {
-	ConversationModelSettings,
 	ConversationPhase,
+	ConversationRunPurpose,
 	ConversationStatus,
-	ConversationTurnPurpose,
 } from "../domain/conversation-status";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
 import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
@@ -30,19 +29,16 @@ type ConversationCoordinatorOptions = Readonly<{
 	initialHistoryLimit: number;
 	sessionMemoryEnabled: boolean;
 	sessionIdleMs: number;
-	turnRetryDelaysMs: readonly number[];
 	typingIdleMs: number;
 }>;
 
 type ConversationDependencies = Readonly<{
-	agent: AgentRuntimePort;
-	createThreadInput: () => Promise<AgentThreadInput & { executionOwnerId: string }>;
-	effectOutput: EffectOutputContract;
-	effects: EffectBatchPort;
 	history: ConversationHistoryPort;
 	logger: LoggerPort;
 	now: () => Date;
 	onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
+	openSession: OpenAgentSession;
+	releaseTools: (ownerId: string) => Promise<void>;
 	tasks: ConversationTaskBoardPort;
 }>;
 
@@ -63,7 +59,7 @@ export class ConversationCoordinator {
 		return true;
 	}
 
-	configure(session: ConversationSession, settings: ConversationModelSettings): boolean {
+	configure(session: ConversationSession, settings: ModelSelection): boolean {
 		if (!this.#accepting) return false;
 		return this.#actorFor(session).configure(settings);
 	}
@@ -90,21 +86,12 @@ export class ConversationCoordinator {
 		await Promise.all([...this.#actors.values()].map(async (actor) => await actor.shutdown()));
 	}
 
-	async abort(): Promise<void> {
-		this.stopIntake();
-		await Promise.all([...this.#actors.values()].map(async (actor) => await actor.abort()));
-	}
-
 	snapshot(): readonly ConversationStatus[] {
 		return [...this.#actors.values()].flatMap((actor) => actor.status() ?? []);
 	}
 
 	hasSession(sessionKey: string): boolean {
 		return this.#actors.get(sessionKey)?.hasSession ?? false;
-	}
-
-	connectionLost(error: unknown): void {
-		for (const actor of this.#actors.values()) actor.connectionLost(error);
 	}
 
 	#actorFor(session: ConversationSession): ConversationActor {
@@ -118,16 +105,8 @@ export class ConversationCoordinator {
 	}
 }
 
-type ActiveThread = {
-	readonly id: string;
-	readonly ownerId: string;
-	purpose: ConversationTurnPurpose;
-	retries: number;
-	turnId: string | undefined;
-};
-
 type Command =
-	| Readonly<{ kind: "configure"; settings: ConversationModelSettings }>
+	| Readonly<{ kind: "configure"; settings: ModelSelection }>
 	| Readonly<{ kind: "end" }>
 	| Readonly<{ kind: "accept"; event: LunaEvent }>
 	| Readonly<{ kind: "typing"; userId: string }>
@@ -135,23 +114,16 @@ type Command =
 	| Readonly<{ kind: "debounce"; token: number }>
 	| Readonly<{ kind: "idle"; token: number }>
 	| Readonly<{
-			kind: "thread_ready";
+			kind: "session_ready";
 			token: number;
-			threadId: string;
-			executionOwnerId: string;
+			opened: OpenedAgentSession;
 			history: readonly LunaEvent[];
 			batch: readonly LunaEvent[];
 	  }>
 	| Readonly<{ kind: "operation_failed"; token: number; operation: string; error: unknown }>
-	| Readonly<{ kind: "turn_started"; token: number; turn: StartedAgentTurn }>
-	| Readonly<{ kind: "turn_finished"; token: number; result: AgentTurnResult }>
-	| Readonly<{ kind: "retry_turn"; token: number; errorMessage: string }>
-	| Readonly<{ kind: "steer_finished"; token: number; event: LunaEvent; error?: unknown }>
-	| Readonly<{ kind: "effects_finished"; token: number; results: readonly EffectResult[] }>
-	| Readonly<{ kind: "archive_finished"; token: number; error?: unknown }>
-	| Readonly<{ kind: "shutdown"; resolve: () => void }>
-	| Readonly<{ kind: "abort"; resolve: () => void }>
-	| Readonly<{ kind: "connection_lost"; error: unknown }>;
+	| Readonly<{ kind: "run_finished"; token: number; result: AgentRunResult }>
+	| Readonly<{ kind: "close_finished"; token: number }>
+	| Readonly<{ kind: "shutdown"; resolve: () => void }>;
 
 class ConversationActor {
 	#phase: ConversationPhase = "collecting";
@@ -160,10 +132,8 @@ class ConversationActor {
 	#mailbox = Promise.resolve();
 	#openingBatch: LunaEvent[] = [];
 	#queue: LunaEvent[] = [];
-	#steerQueue: LunaEvent[] = [];
-	#steerActive: LunaEvent | undefined;
-	#thread: ActiveThread | undefined;
-	#turnCompletion: AgentTurnResult | undefined;
+	#opened: OpenedAgentSession | undefined;
+	#purpose: ConversationRunPurpose | undefined;
 	#debounceReady = false;
 	#debounceToken = 0;
 	#idleToken = 0;
@@ -177,7 +147,7 @@ class ConversationActor {
 	#sessionStarted = false;
 	#endRequested = false;
 	#endPending = false;
-	#modelSettings: ConversationModelSettings | undefined;
+	#modelSettings: ModelSelection | undefined;
 	readonly #activeEventIds = new Set<string>();
 
 	constructor(
@@ -191,7 +161,11 @@ class ConversationActor {
 
 	status(): ConversationStatus | undefined {
 		if (this.#phase === "closed") return undefined;
-		const thread = this.#thread;
+		const agent = this.#opened?.session.status();
+		const phase =
+			this.#phase === "running" && (agent?.phase === "retry_wait" || agent?.phase === "compacting")
+				? agent.phase
+				: this.#phase;
 		return {
 			context: this.session.context,
 			idleDeadlineAt:
@@ -200,18 +174,13 @@ class ConversationActor {
 					: null,
 			key: this.session.key,
 			modelSettings: this.#modelSettings ?? null,
-			phase: this.#phase,
+			phase,
 			phaseSince: this.#phaseSince.toISOString(),
-			purpose: thread?.purpose ?? null,
-			queuedEvents:
-				this.#openingBatch.length +
-				this.#queue.length +
-				this.#steerQueue.length +
-				(this.#steerActive === undefined ? 0 : 1),
-			retries: thread?.retries ?? 0,
+			purpose: this.#purpose ?? null,
+			queuedEvents: this.#openingBatch.length + this.#queue.length,
+			retries: agent?.retries ?? 0,
+			sessionId: agent?.id ?? null,
 			source: this.session.source,
-			threadId: thread?.id ?? null,
-			turnId: thread?.turnId ?? null,
 		};
 	}
 
@@ -220,13 +189,12 @@ class ConversationActor {
 		this.#post({ kind: "accept", event });
 	}
 
-	configure(settings: ConversationModelSettings): boolean {
+	configure(settings: ModelSelection): boolean {
 		if (
-			this.#phase === "archiving" ||
+			this.#phase === "closing" ||
 			this.#phase === "closed" ||
-			this.#phase === "orphaned_effects" ||
 			this.#endPending ||
-			this.#thread?.purpose === "session_memory"
+			this.#purpose === "session_memory"
 		)
 			return false;
 		this.#sessionStarted = true;
@@ -247,21 +215,10 @@ class ConversationActor {
 		this.#post({ kind: "typing", userId });
 	}
 
-	connectionLost(error: unknown): void {
-		this.#post({ kind: "connection_lost", error });
-	}
-
 	async shutdown(): Promise<void> {
 		if (this.#phase === "closed") return;
 		await new Promise<void>((resolve) => {
 			this.#post({ kind: "shutdown", resolve });
-		});
-	}
-
-	async abort(): Promise<void> {
-		if (this.#phase === "closed") return;
-		await new Promise<void>((resolve) => {
-			this.#post({ kind: "abort", resolve });
 		});
 	}
 
@@ -271,26 +228,28 @@ class ConversationActor {
 				this.#handle(command);
 			} catch (error: unknown) {
 				this.#logError(error, "actor/mailbox");
-				this.#close();
+				if (this.#opened !== undefined) this.#closeStale(this.#opened);
+				this.#finishClose();
 			}
 		});
 	}
 
 	#handle(command: Command): void {
-		if (command.kind === "thread_ready" && !this.#matches(command.token, "opening")) {
-			this.#archiveStaleThread(command.threadId);
+		if (command.kind === "session_ready" && !this.#matches(command.token, "opening")) {
+			this.#closeStale(command.opened);
 			return;
 		}
 		if (this.#phase === "closed") {
-			if (command.kind === "shutdown" || command.kind === "abort") command.resolve();
+			if (command.kind === "shutdown") command.resolve();
 			return;
 		}
 		switch (command.kind) {
 			case "configure":
 				this.#modelSettings = command.settings;
+				this.#opened?.session.setModel(command.settings);
 				if (
 					this.#phase === "collecting" &&
-					this.#thread === undefined &&
+					this.#opened === undefined &&
 					this.#queue.length === 0
 				) {
 					this.#enter("idle");
@@ -305,7 +264,7 @@ class ConversationActor {
 				else if (this.#phase === "collecting") {
 					this.#debounceTimer?.cancel();
 					this.#debounceTimer = undefined;
-					this.#archive();
+					this.#closeSession();
 				}
 				return;
 			case "accept":
@@ -324,7 +283,7 @@ class ConversationActor {
 						!this.#sessionStarted &&
 						this.#phase === "collecting"
 					) {
-						this.#close();
+						this.#finishClose();
 					}
 				}
 				return;
@@ -340,101 +299,43 @@ class ConversationActor {
 				this.#idleTimer = undefined;
 				if (this.#phase === "idle") this.#preserveSessionMemory();
 				return;
-			case "thread_ready":
+			case "session_ready":
 				this.#openingBatch = [];
-				this.#thread = {
-					id: command.threadId,
-					ownerId: command.executionOwnerId,
-					purpose: "conversation",
-					retries: 0,
-					turnId: undefined,
-				};
+				this.#opened = command.opened;
 				this.#logEvent(
-					"conversation.thread_opened",
-					{ threadId: command.threadId },
-					{ eventCount: command.batch.length, historyCount: command.history.length },
+					"conversation.session_opened",
+					{},
+					{
+						eventCount: command.batch.length,
+						historyCount: command.history.length,
+						sessionId: command.opened.session.id,
+					},
 				);
-				this.#startTurn(
-					this.#thread,
-					this.#conversationInput(command.history, command.batch),
+				this.#startRun(
+					[
+						...(command.history.length === 0
+							? []
+							: [{ kind: "history", text: JSON.stringify(command.history) }]),
+						...this.#batchMessages(command.batch),
+					],
 					"conversation",
 				);
 				return;
 			case "operation_failed":
 				if (command.token !== this.#operationToken) return;
 				this.#logError(command.error, command.operation);
-				this.#archive();
-				return;
-			case "turn_started": {
-				const thread = this.#thread;
-				if (!this.#matches(command.token, "starting") || thread === undefined) return;
-				this.#enter("turn");
-				thread.turnId = command.turn.turnId;
-				this.#logEvent("conversation.turn_started", {
-					threadId: thread.id,
-					turnId: command.turn.turnId,
-				});
-				if (thread.purpose === "conversation" && !this.#endRequested) {
-					this.#steerQueue.push(...this.#queue);
-					this.#queue = [];
-				}
 				this.#openingBatch = [];
-				this.#kickSteer();
-				void command.turn.completion.then(
-					(result) => this.#post({ kind: "turn_finished", token: command.token, result }),
-					(error: unknown) =>
-						this.#post({
-							kind: "turn_finished",
-							token: command.token,
-							result: { status: "failed", errorMessage: errorMessage(error), retryable: false },
-						}),
-				);
+				this.#settleActive(false);
+				this.#closeSession();
 				return;
-			}
-			case "turn_finished":
-				if (!this.#matches(command.token, "turn")) return;
-				this.#turnCompletion = command.result;
-				this.#logEvent(
-					"conversation.turn_completed",
-					{ threadId: this.#thread?.id, turnId: this.#thread?.turnId },
-					{ status: command.result.status },
-					command.result,
-				);
-				this.#finishTurnAfterSteering();
+			case "run_finished":
+				if (command.token !== this.#operationToken || this.#phase !== "running") return;
+				this.#handleRunFinished(command.result);
 				return;
-			case "retry_turn":
-				if (!this.#matches(command.token, "retry_wait") || this.#thread === undefined) return;
-				this.#startTurn(
-					this.#thread,
-					JSON.stringify({ source: "turn_retry", error: command.errorMessage }),
-					this.#thread.purpose,
-				);
-				return;
-			case "steer_finished":
-				if (command.token !== this.#operationToken) return;
-				this.#steerActive = undefined;
-				if (command.error !== undefined) {
-					this.#logError(command.error, "turn/steer");
-					this.#queue.push(command.event);
-				} else this.#activeEventIds.add(command.event.id);
-				this.#kickSteer();
-				this.#finishTurnAfterSteering();
-				return;
-			case "effects_finished":
-				if (command.token !== this.#operationToken) return;
-				this.#handleEffectResults(command.results);
-				return;
-			case "archive_finished":
-				if (!this.#matches(command.token, "archiving")) return;
-				if (command.error !== undefined) {
-					this.#logError(command.error, "thread/archive");
-				}
-				this.#resetThread();
-				this.#logEvent(
-					"conversation.thread_archived",
-					{},
-					{ success: command.error === undefined },
-				);
+			case "close_finished":
+				if (!this.#matches(command.token, "closing")) return;
+				this.#resetSession();
+				this.#logEvent("conversation.session_closed", {});
 				this.#continueOrClose();
 				return;
 			case "shutdown":
@@ -445,47 +346,22 @@ class ConversationActor {
 				else if (this.#phase === "collecting") {
 					this.#debounceReady = true;
 					if (this.#queue.length > 0) this.#tryBeginBatch();
-					else this.#archive();
+					else this.#closeSession();
 				}
-				return;
-			case "abort": {
-				this.#shutdownWaiters.push(command.resolve);
-				this.#shutdownRequested = true;
-				this.#queue = [];
-				this.#steerQueue = [];
-				this.#steerActive = undefined;
-				this.#clearTypingTimers();
-				const ownerId = this.#thread?.ownerId;
-				this.#thread = undefined;
-				if (this.#phase === "effects" || this.#phase === "orphaned_effects") {
-					this.#enter("orphaned_effects");
-				} else {
-					if (ownerId !== undefined) void this.#releaseEffects(ownerId);
-					this.#operationToken += 1;
-					this.#close();
-				}
-				return;
-			}
-			case "connection_lost":
-				this.#handleConnectionLost(command.error);
 		}
 	}
 
 	#handleAccept(event: LunaEvent): void {
-		if (
-			this.#endRequested ||
-			this.#thread?.purpose === "session_memory" ||
-			this.#phase === "archiving"
-		) {
+		if (this.#endRequested || this.#purpose === "session_memory" || this.#phase === "closing") {
 			this.#queue.push(event);
 			return;
 		}
 		this.#idleToken += 1;
 		this.#idleTimer?.cancel();
 		this.#idleTimer = undefined;
-		if (this.#phase === "turn") {
-			this.#steerQueue.push(event);
-			this.#kickSteer();
+		if (this.#phase === "running" && this.#opened !== undefined) {
+			this.#activeEventIds.add(event.id);
+			this.#opened.session.steer(toEventMessage(event));
 			return;
 		}
 		this.#queue.push(event);
@@ -496,8 +372,7 @@ class ConversationActor {
 	#handleTyping(userId: string): void {
 		const token = (this.#typingTokens.get(userId) ?? 0) + 1;
 		this.#typingTokens.set(userId, token);
-		const currentTimer = this.#typingTimers.get(userId);
-		currentTimer?.cancel();
+		this.#typingTimers.get(userId)?.cancel();
 		this.#typingTimers.set(
 			userId,
 			scheduleTimeout(
@@ -528,12 +403,12 @@ class ConversationActor {
 		}
 		const batch = this.#queue.splice(0).toSorted(compareEvents);
 		for (const event of batch) this.#activeEventIds.add(event.id);
-		const token = ++this.#operationToken;
-		if (this.#thread !== undefined) {
-			this.#startTurn(this.#thread, this.#conversationInput([], batch), "conversation");
+		if (this.#opened !== undefined) {
+			this.#startRun(this.#batchMessages(batch), "conversation");
 			return;
 		}
 
+		const token = ++this.#operationToken;
 		this.#enter("opening");
 		this.#openingBatch = [...batch];
 		const beforeEvent = batch[0];
@@ -545,161 +420,65 @@ class ConversationActor {
 					this.#logError(error, "history/fetch");
 					return [];
 				}),
-			this.dependencies.createThreadInput(),
+			this.dependencies.openSession(
+				{ kind: "conversation", session: this.session },
+				this.#modelSettings,
+			),
 		])
-			.then(async ([history, input]) => {
-				if (!this.#matches(token, "opening")) return;
-				const threadId = await this.dependencies.agent.openThread(input);
+			.then(([history, opened]) => {
 				const batchIds = new Set(batch.map((event) => event.id));
-				const deduplicatedHistory = history
-					.filter((event) => !batchIds.has(event.id))
-					.toSorted(compareEvents);
 				this.#post({
-					kind: "thread_ready",
+					kind: "session_ready",
 					token,
-					threadId,
-					executionOwnerId: input.executionOwnerId,
-					history: deduplicatedHistory,
+					opened,
+					history: history.filter((event) => !batchIds.has(event.id)).toSorted(compareEvents),
 					batch,
 				});
 			})
 			.catch((error: unknown) =>
-				this.#post({ kind: "operation_failed", token, operation: "thread/open", error }),
+				this.#post({ kind: "operation_failed", token, operation: "session/open", error }),
 			);
 	}
 
-	#startTurn(thread: ActiveThread, input: string, purpose: ConversationTurnPurpose): void {
+	#batchMessages(batch: readonly LunaEvent[]): readonly AgentInputMessage[] {
+		return [
+			...batch.map(toEventMessage),
+			{ kind: "task_board", text: JSON.stringify(this.dependencies.tasks.listFor(this.session)) },
+		];
+	}
+
+	#startRun(messages: readonly AgentInputMessage[], purpose: ConversationRunPurpose): void {
+		const opened = this.#opened;
+		if (opened === undefined) throw new Error("Conversation run requires an open session");
 		const token = ++this.#operationToken;
-		this.#enter("starting");
-		thread.purpose = purpose;
-		void this.dependencies.agent
-			.startTurn(thread.id, {
-				input,
-				outputSchema: this.dependencies.effectOutput.jsonSchema,
-				...this.#modelSettings,
-			})
-			.then(
-				(turn) => this.#post({ kind: "turn_started", token, turn }),
-				(error: unknown) =>
-					this.#post({ kind: "operation_failed", token, operation: "turn/start", error }),
-			);
+		this.#purpose = purpose;
+		this.#enter("running");
+		this.#logEvent("conversation.run_started", {}, { purpose, sessionId: opened.session.id });
+		opened.session.run(messages).then(
+			(result) => this.#post({ kind: "run_finished", token, result }),
+			(error: unknown) =>
+				this.#post({ kind: "operation_failed", token, operation: "session/run", error }),
+		);
 	}
 
-	#kickSteer(): void {
-		const thread = this.#thread;
-		if (this.#phase !== "turn" || this.#steerActive !== undefined || thread?.turnId === undefined)
-			return;
-		const event = this.#steerQueue.shift();
-		if (event === undefined) return;
-		const token = this.#operationToken;
-		this.#steerActive = event;
-		void this.dependencies.agent
-			.steerTurn(thread.id, thread.turnId, this.#conversationInput([], [event]))
-			.then(
-				() => this.#post({ kind: "steer_finished", token, event }),
-				(error: unknown) => this.#post({ kind: "steer_finished", token, event, error }),
-			);
-	}
-
-	#finishTurnAfterSteering(): void {
-		const thread = this.#thread;
-		if (
-			this.#phase !== "turn" ||
-			thread === undefined ||
-			this.#turnCompletion === undefined ||
-			this.#steerActive !== undefined ||
-			this.#steerQueue.length > 0
-		) {
-			return;
-		}
-		const result = this.#turnCompletion;
-		this.#turnCompletion = undefined;
-		const { ownerId, turnId } = thread;
-		thread.turnId = undefined;
+	#handleRunFinished(result: AgentRunResult): void {
+		const opened = this.#opened;
+		if (opened !== undefined) void this.#releaseTools(opened.ownerId);
+		this.#logEvent(
+			"conversation.run_finished",
+			{},
+			{ purpose: this.#purpose, sessionId: opened?.session.id, status: result.status },
+			result,
+		);
 		if (result.status !== "completed") {
-			const failure = result.errorMessage ?? `Agent turn ended with status: ${result.status}`;
-			this.#logError(new Error(failure), "turn/completion");
-			const delay = this.options.turnRetryDelaysMs[thread.retries];
-			if (result.retryable && delay !== undefined) {
-				thread.retries += 1;
-				this.#enter("retry_wait");
-				const token = ++this.#operationToken;
-				scheduleTimeout(
-					() => this.#post({ kind: "retry_turn", token, errorMessage: failure }),
-					delay,
-				);
-				return;
-			}
-			this.#archive();
-			return;
-		}
-		thread.retries = 0;
-		let effects: readonly EffectRequest[];
-		try {
-			effects = parseEffectOutputs(this.dependencies.effectOutput, result.outputTexts).effects;
-		} catch (error: unknown) {
-			this.#logError(error, "effects/parse");
-			this.#archive();
-			return;
-		}
-		const token = this.#operationToken;
-		this.#enter("effects");
-		this.#logEvent(
-			"conversation.effects_started",
-			{ threadId: thread.id, turnId },
-			{ effectCount: effects.length },
-			effects,
-		);
-		void (async () => {
-			try {
-				const results = await this.dependencies.effects.execute(effects, {
-					ownerId,
-					origin: { kind: "conversation", session: this.session },
-				});
-				await this.#releaseEffects(ownerId);
-				this.#post({ kind: "effects_finished", token, results });
-			} catch (error: unknown) {
-				await this.#releaseEffects(ownerId);
-				this.#post({ kind: "operation_failed", token, operation: "effects/execute", error });
-			}
-		})();
-	}
-
-	#handleEffectResults(results: readonly EffectResult[]): void {
-		for (const result of results) {
-			this.#logEvent(
-				"conversation.effect_settled",
-				{ effectIndex: result.index, threadId: this.#thread?.id },
-				{ effectType: result.type, success: result.success, target: result.target },
-			);
-		}
-		this.#logEvent(
-			"conversation.effects_settled",
-			{ threadId: this.#thread?.id },
-			{
-				effectCount: results.length,
-				failureCount: results.filter((result) => !result.success).length,
-			},
-			results,
-		);
-		if (this.#phase === "orphaned_effects") {
+			this.#logError(new Error(describeRunFailure(result)), "session/run");
 			this.#settleActive(false);
-			this.#continueOrClose();
-			return;
-		}
-		const thread = this.#thread;
-		if (this.#phase !== "effects" || thread === undefined) return;
-		if (requiresEffectFollowUp(results)) {
-			this.#startTurn(
-				thread,
-				JSON.stringify({ source: "effect_results", results }),
-				thread.purpose,
-			);
+			this.#closeSession();
 			return;
 		}
 		this.#settleActive(true);
-		if (thread.purpose === "session_memory") {
-			this.#archive();
+		if (this.#purpose === "session_memory") {
+			this.#closeSession();
 			return;
 		}
 		if (this.#shutdownRequested || this.#endRequested) {
@@ -714,13 +493,12 @@ class ConversationActor {
 	}
 
 	#preserveSessionMemory(): void {
-		const thread = this.#thread;
-		if (thread === undefined || !this.options.sessionMemoryEnabled) {
-			this.#archive();
+		if (this.#opened === undefined || !this.options.sessionMemoryEnabled) {
+			this.#closeSession();
 			return;
 		}
 		const date = formatLocalDate(this.dependencies.now());
-		this.#startTurn(thread, JSON.stringify({ source: "session_memory", date }), "session_memory");
+		this.#startRun([{ kind: "session_end", text: JSON.stringify({ date }) }], "session_memory");
 	}
 
 	#resetIdleTimer(): void {
@@ -741,64 +519,36 @@ class ConversationActor {
 		else this.#scheduleDebounce();
 	}
 
-	#archive(): void {
+	#closeSession(): void {
 		this.#settleActive(false);
-		const thread = this.#thread;
-		if (thread === undefined) {
-			this.#resetThread();
+		const opened = this.#opened;
+		if (opened === undefined) {
+			this.#resetSession();
 			this.#continueOrClose();
 			return;
 		}
 		const token = ++this.#operationToken;
-		this.#enter("archiving");
+		this.#enter("closing");
 		void (async () => {
-			await this.#releaseEffects(thread.ownerId);
-			await this.dependencies.agent.archiveThread(thread.id);
-		})().then(
-			() => this.#post({ kind: "archive_finished", token }),
-			(error: unknown) => this.#post({ kind: "archive_finished", token, error }),
-		);
+			await this.#releaseTools(opened.ownerId);
+			await opened.session.close().catch((error: unknown) => {
+				this.#logError(error, "session/close");
+			});
+		})().then(() => this.#post({ kind: "close_finished", token }));
 	}
 
-	#archiveStaleThread(threadId: string): void {
-		void this.dependencies.agent.archiveThread(threadId).catch((error: unknown) => {
-			this.#logError(error, "thread/archive");
+	#closeStale(opened: OpenedAgentSession): void {
+		void (async () => {
+			await this.#releaseTools(opened.ownerId);
+			await opened.session.close();
+		})().catch((error: unknown) => {
+			this.#logError(error, "session/close");
 		});
 	}
 
-	#handleConnectionLost(error: unknown): void {
-		if (this.#phase === "opening") this.#activeEventIds.clear();
-		else this.#settleActive(false);
-		this.#logError(error, "agent/connection");
-		if (this.#phase === "effects") {
-			this.#enter("orphaned_effects");
-			this.#thread = undefined;
-			return;
-		}
-		if (this.#phase === "opening") this.#queue.push(...this.#openingBatch);
-		this.#openingBatch = [];
-		this.#queue.push(...this.#steerQueue);
-		this.#steerActive = undefined;
-		this.#steerQueue = [];
-		const ownerId = this.#thread?.ownerId;
-		this.#resetThread();
-		this.#operationToken += 1;
-		if (ownerId !== undefined) void this.#releaseEffects(ownerId);
-		this.#continueOrClose();
-	}
-
-	#conversationInput(history: readonly LunaEvent[], events: readonly LunaEvent[]): string {
-		return JSON.stringify({
-			source: "conversation",
-			session: { key: this.session.key, source: this.session.source },
-			history,
-			events,
-			tasks: this.dependencies.tasks.listFor(this.session),
-		});
-	}
-
-	#resetThread(): void {
-		this.#thread = undefined;
+	#resetSession(): void {
+		this.#opened = undefined;
+		this.#purpose = undefined;
 		this.#modelSettings = undefined;
 		this.#endRequested = false;
 		this.#endPending = false;
@@ -806,7 +556,7 @@ class ConversationActor {
 
 	#continueOrClose(): void {
 		if (this.#queue.length > 0) this.#beginCollecting(true);
-		else this.#close();
+		else this.#finishClose();
 	}
 
 	#logError(error: unknown, operation: string): void {
@@ -842,7 +592,7 @@ class ConversationActor {
 		return token === this.#operationToken && this.#phase === phase;
 	}
 
-	#close(): void {
+	#finishClose(): void {
 		if (this.#phase === "closed") return;
 		this.#settleActive(false);
 		this.#enter("closed");
@@ -865,11 +615,11 @@ class ConversationActor {
 		this.#typingTokens.clear();
 	}
 
-	async #releaseEffects(ownerId: string): Promise<void> {
+	async #releaseTools(ownerId: string): Promise<void> {
 		try {
-			await this.dependencies.effects.release(ownerId);
+			await this.dependencies.releaseTools(ownerId);
 		} catch (error: unknown) {
-			this.#logError(error, "effects/release");
+			this.#logError(error, "tools/release");
 		}
 	}
 
@@ -885,10 +635,6 @@ function compareEvents(left: LunaEvent, right: LunaEvent): number {
 	const timestamp = Date.parse(left.occurredAt) - Date.parse(right.occurredAt);
 	if (timestamp !== 0) return timestamp;
 	return left.id.localeCompare(right.id);
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function scheduleTimeout(callback: () => void, milliseconds: number): ScheduledTimeout {

@@ -21,9 +21,6 @@ jobs:
       - name: Setup | Development environment
         uses: $/.github/actions/setup
 
-      - name: Setup | Generate Code
-        run: pnpm run gen
-
       - name: Run | Lint
         run: pnpm run lint --deny-warnings
 
@@ -37,9 +34,6 @@ jobs:
       - name: Setup | Development environment
         uses: $/.github/actions/setup
 
-      - name: Setup | Generate Code
-        run: pnpm run gen
-
       - name: Run | Format
         run: pnpm run format:check
 
@@ -52,9 +46,6 @@ jobs:
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
-
-      - name: Setup | Generate Code
-        run: pnpm run gen
 
       - name: Run | Knip
         run: pnpm run knip
@@ -72,9 +63,6 @@ jobs:
       - name: Setup | Development environment
         uses: $/.github/actions/setup
 
-      - name: Setup | Generate Code
-        run: pnpm run gen
-
       - name: Run | Typecheck
         run: pnpm run typecheck
 
@@ -87,9 +75,6 @@ jobs:
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
-
-      - name: Setup | Generate Code
-        run: pnpm run gen
 
       - name: Run | Test
         run: pnpm run test

@@ -5,38 +5,38 @@ import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { DEFAULT_WORKSPACE_CONFIG } from "../domain/workspace-config";
-import type { WorkspaceConfig } from "../domain/workspace-config";
+import type { ModelSetting, WorkspaceConfig } from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);
 // Node.jsのsetTimeoutは2^31-1msを超えると1msに丸めるため、タイマーに渡す値はここで上限を課す。
 const MAXIMUM_TIMER_MS = 2_147_483_647;
 const positiveTimerMs = positiveSafeInteger.max(MAXIMUM_TIMER_MS);
-const nonNegativeTimerMs = nonNegativeSafeInteger.max(MAXIMUM_TIMER_MS);
 const discordSnowflake = z.string().regex(/^\d+$/u);
+const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const modelIdSchema = z.string().regex(/^[^/\s]+\/[^\s]+$/u, "model must be provider/model");
+
+function modelSettingSchema(fallback: ModelSetting) {
+	return z
+		.strictObject({
+			model: modelIdSchema.default(`${fallback.provider}/${fallback.model}`),
+			thinking: thinkingSchema.default(fallback.thinking),
+		})
+		.prefault({});
+}
 
 const WorkspaceConfigTomlSchema = z
 	.strictObject({
 		agent: z
 			.strictObject({
-				restart_failure_limit: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.restartFailureLimit,
+				request_timeout_ms: positiveTimerMs.default(
+					DEFAULT_WORKSPACE_CONFIG.agent.requestTimeoutMs,
 				),
-				restart_initial_delay_ms: nonNegativeTimerMs.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.restartInitialDelayMs,
+				transcript_cleanup_interval_ms: positiveTimerMs.default(
+					DEFAULT_WORKSPACE_CONFIG.agent.transcriptCleanupIntervalMs,
 				),
-				restart_max_delay_ms: nonNegativeTimerMs.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.restartMaxDelayMs,
-				),
-				restart_window_ms: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.restartWindowMs,
-				),
-				rpc_timeout_ms: positiveTimerMs.default(DEFAULT_WORKSPACE_CONFIG.agent.rpcTimeoutMs),
-				thread_cleanup_interval_ms: positiveTimerMs.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.threadCleanupIntervalMs,
-				),
-				thread_retention_ms: positiveSafeInteger.default(
-					DEFAULT_WORKSPACE_CONFIG.agent.threadRetentionMs,
+				transcript_retention_ms: positiveSafeInteger.default(
+					DEFAULT_WORKSPACE_CONFIG.agent.transcriptRetentionMs,
 				),
 			})
 			.prefault({}),
@@ -67,6 +67,14 @@ const WorkspaceConfigTomlSchema = z
 				message: "memory.maintenance_cron must be a valid five-field cron expression.",
 			}),
 		}),
+		models: z
+			.strictObject({
+				compaction: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.compaction),
+				conversation: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.conversation),
+				event: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.event),
+				worker: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.worker),
+			})
+			.prefault({}),
 		tasks: z
 			.strictObject({
 				max_concurrent: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.tasks.maxConcurrent),
@@ -79,14 +87,6 @@ const WorkspaceConfigTomlSchema = z
 				code: "custom",
 				message: "heartbeat.min_interval_ms must be less than or equal to max_interval_ms.",
 				path: ["heartbeat", "min_interval_ms"],
-			});
-		}
-		if (config.agent.restart_initial_delay_ms > config.agent.restart_max_delay_ms) {
-			context.addIssue({
-				code: "custom",
-				message:
-					"agent.restart_initial_delay_ms must be less than or equal to restart_max_delay_ms.",
-				path: ["agent", "restart_initial_delay_ms"],
 			});
 		}
 	});
@@ -138,13 +138,9 @@ export async function createWorkspaceConfigFile(configPath: string): Promise<voi
 function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 	return {
 		agent: {
-			restartFailureLimit: config.agent.restart_failure_limit,
-			restartInitialDelayMs: config.agent.restart_initial_delay_ms,
-			restartMaxDelayMs: config.agent.restart_max_delay_ms,
-			restartWindowMs: config.agent.restart_window_ms,
-			rpcTimeoutMs: config.agent.rpc_timeout_ms,
-			threadCleanupIntervalMs: config.agent.thread_cleanup_interval_ms,
-			threadRetentionMs: config.agent.thread_retention_ms,
+			requestTimeoutMs: config.agent.request_timeout_ms,
+			transcriptCleanupIntervalMs: config.agent.transcript_cleanup_interval_ms,
+			transcriptRetentionMs: config.agent.transcript_retention_ms,
 		},
 		discord: {
 			allowDm: config.discord.allow_dm,
@@ -163,6 +159,12 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 			enabled: config.memory.enabled,
 			maintenanceCron: config.memory.maintenance_cron,
 		},
+		models: {
+			compaction: toModelSetting(config.models.compaction),
+			conversation: toModelSetting(config.models.conversation),
+			event: toModelSetting(config.models.event),
+			worker: toModelSetting(config.models.worker),
+		},
 		tasks: {
 			maxConcurrent: config.tasks.max_concurrent,
 		},
@@ -172,13 +174,9 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 	return {
 		agent: {
-			restart_failure_limit: config.agent.restartFailureLimit,
-			restart_initial_delay_ms: config.agent.restartInitialDelayMs,
-			restart_max_delay_ms: config.agent.restartMaxDelayMs,
-			restart_window_ms: config.agent.restartWindowMs,
-			rpc_timeout_ms: config.agent.rpcTimeoutMs,
-			thread_cleanup_interval_ms: config.agent.threadCleanupIntervalMs,
-			thread_retention_ms: config.agent.threadRetentionMs,
+			request_timeout_ms: config.agent.requestTimeoutMs,
+			transcript_cleanup_interval_ms: config.agent.transcriptCleanupIntervalMs,
+			transcript_retention_ms: config.agent.transcriptRetentionMs,
 		},
 		discord: {
 			allowed_channel_ids: [...config.discord.allowedChannelIds],
@@ -197,8 +195,27 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 			enabled: config.memory.enabled,
 			maintenance_cron: config.memory.maintenanceCron,
 		},
+		models: {
+			compaction: toModelSettingToml(config.models.compaction),
+			conversation: toModelSettingToml(config.models.conversation),
+			event: toModelSettingToml(config.models.event),
+			worker: toModelSettingToml(config.models.worker),
+		},
 		tasks: {
 			max_concurrent: config.tasks.maxConcurrent,
 		},
 	};
+}
+
+function toModelSetting(setting: WorkspaceConfigToml["models"]["event"]): ModelSetting {
+	const separator = setting.model.indexOf("/");
+	return {
+		provider: setting.model.slice(0, separator),
+		model: setting.model.slice(separator + 1),
+		thinking: setting.thinking,
+	};
+}
+
+function toModelSettingToml(setting: ModelSetting): WorkspaceConfigToml["models"]["event"] {
+	return { model: `${setting.provider}/${setting.model}`, thinking: setting.thinking };
 }

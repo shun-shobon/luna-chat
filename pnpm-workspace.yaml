@@ -1,12 +1,13 @@
-minimumReleaseAge: 1440
+minimumReleaseAge: 4320
 
 minimumReleaseAgeExclude:
-  - "@openai/codex"
   - "@shun-shobon/oxfmt-config"
   - "@shun-shobon/oxlint-config"
 
 allowBuilds:
   esbuild: true
+  "@google/genai": false
+  protobufjs: false
 
 saveExact: true
 

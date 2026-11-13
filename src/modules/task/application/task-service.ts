@@ -1,15 +1,13 @@
 import type { JsonObject } from "../../../shared/json";
-import type {
-	AgentRuntimePort,
-	AgentThreadInput,
-} from "../../agent/ports/outbound/agent-runtime-port";
-import { requiresEffectFollowUp } from "../../effect/domain/effect";
-import type { EffectOrigin, EffectOutput } from "../../effect/domain/effect";
-import type { EffectBatchPort } from "../../effect/ports/effect-batch-port";
-import type { EffectOutputContract } from "../../effect/ports/effect-output-contract";
-import { parseEffectOutputs } from "../../effect/ports/effect-output-contract";
+import type { AgentInputMessage } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { LoggerPort } from "../../observability/ports/logger-port";
+import type { ToolOrigin } from "../../tool/domain/tool";
+import { describeRunFailure } from "../../tool/ports/agent-session-factory-port";
+import type {
+	OpenAgentSession,
+	OpenedAgentSession,
+} from "../../tool/ports/agent-session-factory-port";
 import {
 	describeOrigin,
 	isNotifiedReport,
@@ -33,7 +31,6 @@ import type { TaskDeliveryPort } from "../ports/task-delivery-port";
 import type { TaskStorePort } from "../ports/task-store-port";
 
 const MAX_ATTEMPTS = 5;
-const MAX_OUTPUT_ERRORS = 2;
 const SNAPSHOT_RECENT_MS = 86_400_000;
 const SNAPSHOT_LIMIT = 20;
 const BOARD_LIMIT = 50;
@@ -41,32 +38,22 @@ const BOARD_LIMIT = 50;
 type TaskSession = Extract<TaskOrigin, { kind: "conversation" }>["session"];
 
 type TaskServiceDependencies = Readonly<{
-	agent: AgentRuntimePort;
 	createId: () => string;
-	createThreadInput: () => Promise<AgentThreadInput & { executionOwnerId: string }>;
 	delivery: TaskDeliveryPort;
-	effectOutput: EffectOutputContract;
-	effects: EffectBatchPort;
 	isPrivateSession: (session: TaskSession) => boolean;
 	logger: LoggerPort;
 	maxConcurrent: number;
 	now: () => Date;
-	sleep: (milliseconds: number) => Promise<void>;
+	openSession: OpenAgentSession;
+	releaseTools: (ownerId: string) => Promise<void>;
 	store: TaskStorePort;
-	turnRetryDelaysMs: readonly number[];
 }>;
 
-type WorkerThread = Readonly<{ id: string; ownerId: string }>;
-
 type ActiveRun = {
-	readonly generation: number;
 	nudged: boolean;
-	outputErrors: number;
-	retries: number;
-	steering: boolean;
+	opened: OpenedAgentSession | undefined;
+	running: boolean;
 	stopReason: "cancelled" | "shutdown" | undefined;
-	thread: WorkerThread | undefined;
-	turnId: string | undefined;
 };
 
 class TaskError extends Error {
@@ -78,12 +65,11 @@ class TaskError extends Error {
 
 export class TaskService {
 	readonly #background = new Set<Promise<void>>();
-	readonly #parked = new Map<string, WorkerThread>();
+	readonly #parked = new Map<string, OpenedAgentSession>();
 	readonly #runs = new Map<string, ActiveRun>();
 	readonly #tasks = new Map<string, Task>();
 	readonly #writes = new Map<string, Promise<void>>();
 	#accepting = false;
-	#generation = 0;
 
 	constructor(private readonly dependencies: TaskServiceDependencies) {}
 
@@ -114,22 +100,13 @@ export class TaskService {
 		this.stopIntake();
 		const parked = [...this.#parked.values()];
 		this.#parked.clear();
-		await Promise.allSettled(parked.map(async (thread) => await this.#closeThread(thread)));
+		await Promise.allSettled(parked.map(async (opened) => await this.#closeSession(opened)));
 		while (this.#background.size > 0) await Promise.allSettled(this.#background);
 		while (this.#writes.size > 0) await Promise.allSettled(this.#writes.values());
 	}
 
-	connectionLost(): void {
-		this.#generation += 1;
-		this.#parked.clear();
-		// 旧接続のturnは失敗するが、system.waitは接続と無関係に続き実行枠を占有するため打ち切る。
-		for (const run of this.#runs.values()) {
-			if (run.thread !== undefined) void this.#releaseEffects(run.thread.ownerId);
-		}
-	}
-
 	async create(
-		origin: EffectOrigin,
+		origin: ToolOrigin,
 		input: Readonly<{ title: string; instructions: string }>,
 	): Promise<Task> {
 		if (!this.#accepting) throw new TaskError("Task intake is stopped");
@@ -156,7 +133,7 @@ export class TaskService {
 		return task;
 	}
 
-	async message(origin: EffectOrigin, taskId: string, text: string): Promise<TaskStatus> {
+	async message(origin: ToolOrigin, taskId: string, text: string): Promise<TaskStatus> {
 		const task = this.#openTaskFor(origin, taskId);
 		this.#update(taskId, {
 			messages: [
@@ -170,8 +147,10 @@ export class TaskService {
 			],
 		});
 		const run = this.#runs.get(taskId);
-		if (run !== undefined && !this.#parked.has(taskId)) this.#kickSteer(taskId, run);
-		else if (task.status === "waiting_input") {
+		// 質問を報告した直後に届いた返答は、実行の終わりに未配送として拾い直して続きを渡す。
+		if (run?.running === true && run.opened !== undefined && task.status === "running") {
+			run.opened.session.steer(this.#messagesInput(taskId));
+		} else if (task.status === "waiting_input") {
 			this.#update(taskId, { status: "queued" });
 			this.#pump();
 		}
@@ -179,7 +158,7 @@ export class TaskService {
 		return this.#require(taskId).status;
 	}
 
-	async cancel(origin: EffectOrigin, taskId: string, reason: string | null): Promise<TaskStatus> {
+	async cancel(origin: ToolOrigin, taskId: string, reason: string | null): Promise<TaskStatus> {
 		this.#openTaskFor(origin, taskId);
 		this.#update(taskId, { status: "cancelled", outcome: reason });
 		const run = this.#runs.get(taskId);
@@ -190,14 +169,14 @@ export class TaskService {
 		const parked = this.#parked.get(taskId);
 		if (parked !== undefined) {
 			this.#parked.delete(taskId);
-			this.#track(this.#closeThread(parked));
+			this.#track(this.#closeSession(parked));
 		}
 		await this.#persist(taskId);
 		return "cancelled";
 	}
 
 	async report(
-		origin: EffectOrigin,
+		origin: ToolOrigin,
 		input: Readonly<{ kind: TaskReportKind; summary: string; artifacts: readonly string[] }>,
 	): Promise<Readonly<{ seq: number; status: TaskStatus }>> {
 		if (origin.kind !== "task") throw new TaskError("Only a task worker can report");
@@ -253,14 +232,10 @@ export class TaskService {
 		for (const task of queued) {
 			if (this.#runs.size >= this.dependencies.maxConcurrent) return;
 			const run: ActiveRun = {
-				generation: this.#generation,
 				nudged: false,
-				outputErrors: 0,
-				retries: 0,
-				steering: false,
+				opened: this.#parked.get(task.id),
+				running: false,
 				stopReason: undefined,
-				thread: this.#parked.get(task.id),
-				turnId: undefined,
 			};
 			this.#parked.delete(task.id);
 			this.#runs.set(task.id, run);
@@ -269,7 +244,7 @@ export class TaskService {
 	}
 
 	async #drive(taskId: string, run: ActiveRun): Promise<void> {
-		const resumed = run.thread !== undefined;
+		const resumed = run.opened !== undefined;
 		try {
 			const task = this.#update(taskId, {
 				status: "running",
@@ -279,127 +254,61 @@ export class TaskService {
 				this.#fail(taskId, `Task was interrupted ${String(MAX_ATTEMPTS)} times.`);
 				return;
 			}
-			const thread = run.thread ?? (await this.#openThread(run));
-			let input: string | undefined = resumed
-				? this.#messagesInput(taskId)
-				: this.#taskInput(taskId);
-			while (input !== undefined) input = await this.#runTurn(taskId, run, thread, input);
+			const opened = run.opened ?? (await this.dependencies.openSession({ kind: "task", taskId }));
+			run.opened = opened;
+			if (isStopped(run)) return;
+			let messages: readonly AgentInputMessage[] | undefined = [
+				resumed ? this.#messagesInput(taskId) : this.#assignmentInput(taskId),
+			];
+			while (messages !== undefined) messages = await this.#runOnce(taskId, run, opened, messages);
 		} catch (error: unknown) {
 			if (isStopped(run)) return;
-			if (run.generation !== this.#generation) {
-				this.dependencies.logger.log("warn", "task.run_interrupted", { taskId }, { error });
-				if (this.#require(taskId).status === "running") this.#update(taskId, { status: "queued" });
-				return;
-			}
 			this.dependencies.logger.log("error", "task.run_failed", { taskId }, { error });
 			this.#fail(taskId, error instanceof Error ? error.message : String(error));
 		} finally {
 			this.#runs.delete(taskId);
-			// 旧接続のthreadは新しいapp-serverでは閉じられないため、EventExecutorと同じく残す。
-			if (run.thread !== undefined && run.generation === this.#generation) {
-				await this.#closeThread(run.thread);
-			}
+			if (run.opened !== undefined) await this.#closeSession(run.opened);
 			this.#pump();
 		}
 	}
 
-	// 次のturnの入力を返す。undefinedならこのrunを終える。
-	async #runTurn(
+	// 次の実行の入力を返す。undefinedならこの実行を終える。
+	async #runOnce(
 		taskId: string,
 		run: ActiveRun,
-		thread: WorkerThread,
-		input: string,
-	): Promise<string | undefined> {
-		this.#assertCurrent(run);
-		const started = await this.dependencies.agent.startTurn(thread.id, {
-			input,
-			outputSchema: this.dependencies.effectOutput.jsonSchema,
+		opened: OpenedAgentSession,
+		messages: readonly AgentInputMessage[],
+	): Promise<readonly AgentInputMessage[] | undefined> {
+		run.running = true;
+		const result = await opened.session.run(messages).finally(() => {
+			run.running = false;
 		});
-		run.turnId = started.turnId;
-		if (isStopped(run)) this.#stop(run);
-		this.#kickSteer(taskId, run);
-		const result = await started.completion;
-		run.turnId = undefined;
 		if (isStopped(run)) return undefined;
-		if (result.status !== "completed") {
-			const failure = result.errorMessage ?? `Task turn ${result.status}`;
-			const delay = this.dependencies.turnRetryDelaysMs[run.retries];
-			if (!result.retryable || delay === undefined) throw new Error(failure);
-			run.retries += 1;
-			this.dependencies.logger.log(
-				"warn",
-				"task.turn_retry_scheduled",
-				{ taskId },
-				{ error: failure, retries: run.retries },
-			);
-			await this.dependencies.sleep(delay);
-			if (isStopped(run)) return undefined;
-			return JSON.stringify({ source: "turn_retry", task_id: taskId, error: failure });
-		}
-		run.retries = 0;
-		let output: EffectOutput;
-		try {
-			output = parseEffectOutputs(this.dependencies.effectOutput, result.outputTexts);
-		} catch (error: unknown) {
-			if (run.outputErrors >= MAX_OUTPUT_ERRORS) throw error;
-			run.outputErrors += 1;
-			return JSON.stringify({
-				source: "output_error",
-				task_id: taskId,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-		run.outputErrors = 0;
-		const results = await this.dependencies.effects.execute(output.effects, {
-			ownerId: thread.ownerId,
-			origin: { kind: "task", taskId },
-		});
-		await this.#releaseEffects(thread.ownerId);
-		if (isStopped(run)) return undefined;
+		if (result.status !== "completed") throw new Error(describeRunFailure(result));
 		const current = this.#require(taskId);
 		if (isTerminalStatus(current.status)) return undefined;
-		if (current.status === "running" && requiresEffectFollowUp(results)) {
-			return JSON.stringify({ source: "effect_results", results });
-		}
 		if (current.messages.some((message) => message.deliveredAt == null)) {
 			this.#update(taskId, { status: "running" });
-			return this.#messagesInput(taskId);
+			return [this.#messagesInput(taskId)];
 		}
 		if (current.status === "waiting_input") {
-			if (run.generation === this.#generation) {
-				this.#parked.set(taskId, thread);
-				run.thread = undefined;
-			}
+			this.#parked.set(taskId, opened);
+			run.opened = undefined;
 			return undefined;
 		}
 		if (!run.nudged) {
 			run.nudged = true;
-			return JSON.stringify({ source: "task_check", task_id: taskId });
+			return [{ kind: "task_check", text: JSON.stringify({ task_id: taskId }) }];
 		}
 		this.#fail(taskId, "Worker ended without a result, question, or failure report.");
 		return undefined;
 	}
 
-	async #openThread(run: ActiveRun): Promise<WorkerThread> {
-		const input = await this.dependencies.createThreadInput();
-		this.#assertCurrent(run);
-		const id = await this.dependencies.agent.openThread(input);
-		run.thread = { id, ownerId: input.executionOwnerId };
-		this.#assertCurrent(run);
-		return run.thread;
-	}
-
-	#assertCurrent(run: ActiveRun): void {
-		if (run.generation !== this.#generation) {
-			throw new Error("Codex connection was lost during the task");
-		}
-	}
-
-	#taskInput(taskId: string): string {
+	#assignmentInput(taskId: string): AgentInputMessage {
 		const task = this.#markMessagesDelivered(taskId);
-		return JSON.stringify({
-			source: "task",
-			task: {
+		return {
+			kind: "task_assignment",
+			text: JSON.stringify({
 				id: task.id,
 				title: task.title,
 				instructions: task.instructions,
@@ -407,45 +316,18 @@ export class TaskService {
 				created_at: task.createdAt,
 				attempt: task.attempts,
 				previous_reports: task.reports.map(toReportJson),
-			},
-			messages: task.messages.map(toMessageJson),
-		});
+				messages: task.messages.map(toMessageJson),
+			}),
+		};
 	}
 
-	#messagesInput(taskId: string): string {
+	#messagesInput(taskId: string): AgentInputMessage {
 		const pending = this.#require(taskId).messages.filter((message) => message.deliveredAt == null);
 		this.#markMessagesDelivered(taskId);
-		return JSON.stringify({
-			source: "task_messages",
-			task_id: taskId,
-			messages: pending.map(toMessageJson),
-		});
-	}
-
-	#kickSteer(taskId: string, run: ActiveRun): void {
-		const turnId = run.turnId;
-		const thread = run.thread;
-		if (turnId === undefined || thread === undefined || run.steering) return;
-		const pending = this.#require(taskId).messages.filter((message) => message.deliveredAt == null);
-		if (pending.length === 0) return;
-		run.steering = true;
-		const input = JSON.stringify({
-			source: "task_messages",
-			task_id: taskId,
-			messages: pending.map(toMessageJson),
-		});
-		void this.dependencies.agent.steerTurn(thread.id, turnId, input).then(
-			() => {
-				run.steering = false;
-				this.#markMessagesDelivered(taskId, new Set(pending.map((message) => message.id)));
-				if (run.turnId === turnId) this.#kickSteer(taskId, run);
-			},
-			(error: unknown) => {
-				// 同じturnへ再送しても拒否が続くため、未配送のmessageはchain終了後の次turnで渡す。
-				run.steering = false;
-				this.dependencies.logger.log("info", "task.steer_skipped", { taskId }, { error });
-			},
-		);
+		return {
+			kind: "task_message",
+			text: JSON.stringify({ task_id: taskId, messages: pending.map(toMessageJson) }),
+		};
 	}
 
 	#markMessagesDelivered(taskId: string, ids?: ReadonlySet<string>): Task {
@@ -519,35 +401,26 @@ export class TaskService {
 	}
 
 	#stop(run: ActiveRun): void {
-		const thread = run.thread;
-		if (thread === undefined) return;
-		void this.#releaseEffects(thread.ownerId);
-		const turnId = run.turnId;
-		if (turnId === undefined) return;
-		void this.dependencies.agent.interruptTurn(thread.id, turnId).catch((error: unknown) => {
-			this.dependencies.logger.log("warn", "task.interrupt_failed", {}, { error });
+		const opened = run.opened;
+		if (opened === undefined) return;
+		void this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
+			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+		});
+		void opened.session.abort().catch((error: unknown) => {
+			this.dependencies.logger.log("warn", "task.abort_failed", {}, { error });
 		});
 	}
 
-	async #closeThread(thread: WorkerThread): Promise<void> {
-		await this.#releaseEffects(thread.ownerId);
-		await this.dependencies.agent.archiveThread(thread.id).catch((error: unknown) => {
-			this.dependencies.logger.log(
-				"error",
-				"task.thread_archive_failed",
-				{ threadId: thread.id },
-				{ error },
-			);
+	async #closeSession(opened: OpenedAgentSession): Promise<void> {
+		await this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
+			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+		});
+		await opened.session.close().catch((error: unknown) => {
+			this.dependencies.logger.log("error", "task.session_close_failed", {}, { error });
 		});
 	}
 
-	async #releaseEffects(ownerId: string): Promise<void> {
-		await this.dependencies.effects.release(ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.effects_release_failed", {}, { error });
-		});
-	}
-
-	#openTaskFor(origin: EffectOrigin, taskId: string): Task {
+	#openTaskFor(origin: ToolOrigin, taskId: string): Task {
 		const task = this.#tasks.get(taskId);
 		const viewer: TaskViewer | undefined =
 			origin.kind === "conversation"

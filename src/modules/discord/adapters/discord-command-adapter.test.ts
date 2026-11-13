@@ -1,21 +1,29 @@
 import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
+import type { AgentModel, AgentRuntimePort } from "../../agent/ports/outbound/agent-session-port";
 import type { ConversationCoordinator } from "../../conversation/application/conversation-coordinator";
 import { DiscordCommandAdapter } from "./discord-command-adapter";
 import type { DiscordCommandClient } from "./discord-command-adapter";
 
-const models = [
+const models: readonly AgentModel[] = [
 	{
+		provider: "openai-codex",
 		model: "gpt-6-sol",
 		displayName: "GPT-6 Sol",
-		supportedReasoningEfforts: ["low", "medium", "high"],
+		supportedThinkingLevels: ["low", "medium", "high"],
 	},
 	{
+		provider: "openai-codex",
 		model: "gpt-6-astra",
 		displayName: "GPT-6 Astra",
-		supportedReasoningEfforts: ["high", "xhigh"],
+		supportedThinkingLevels: ["high", "xhigh"],
+	},
+	{
+		provider: "anthropic",
+		model: "gpt-6-astra",
+		displayName: "Proxy Astra",
+		supportedThinkingLevels: ["low"],
 	},
 ];
 
@@ -43,7 +51,7 @@ function createHarness(input: { allowedChannelIds?: string[]; sessionExists?: bo
 		configure: vi.fn<ConversationCoordinator["configure"]>(() => true),
 		endSession: vi.fn<ConversationCoordinator["endSession"]>(() => true),
 	};
-	const agent = { listModels: vi.fn<AgentRuntimePort["listModels"]>(async () => models) };
+	const agent = { listModels: vi.fn<AgentRuntimePort["listModels"]>(() => models) };
 	const ids = new Set(input.allowedChannelIds ?? ["300"]);
 	const allowedChannels = {
 		ids,
@@ -120,7 +128,10 @@ describe("DiscordCommandAdapter", () => {
 		const harness = createHarness();
 		await harness.adapter.start();
 		expect(harness.client.register).toHaveBeenCalledOnce();
-		const interaction = commandInteraction("model", { model: "gpt-6-astra", effort: "xhigh" });
+		const interaction = commandInteraction("model", {
+			model: "openai-codex/gpt-6-astra",
+			effort: "xhigh",
+		});
 		harness.client.emit(interaction);
 		await vi.waitFor(() => expect(interaction.editReply).toHaveBeenCalledOnce());
 		expect(harness.conversation.configure).toHaveBeenCalledWith(
@@ -129,7 +140,7 @@ describe("DiscordCommandAdapter", () => {
 				source: "discord/main",
 				context: { kind: "guild_channel", guildId: "200", channelId: "300" },
 			},
-			{ model: "gpt-6-astra", effort: "xhigh" },
+			{ provider: "openai-codex", model: "gpt-6-astra", thinking: "xhigh" },
 		);
 		harness.adapter.stop();
 		expect(harness.client.listener).toBeUndefined();
@@ -138,22 +149,28 @@ describe("DiscordCommandAdapter", () => {
 	it("非対応の組み合わせと対象外channelを拒否する", async () => {
 		const harness = createHarness();
 		await harness.adapter.start();
-		const invalid = commandInteraction("model", { model: "gpt-6-astra", effort: "low" });
-		harness.client.emit(invalid);
-		await vi.waitFor(() => expect(invalid.editReply).toHaveBeenCalledOnce());
-		expect(invalid.editReply).toHaveBeenCalledWith(
-			"モデルと推論強度の組み合わせが利用できません。",
-		);
+		for (const [model, effort] of [
+			["openai-codex/gpt-6-astra", "low"],
+			["gpt-6-astra", "high"],
+			["openai-codex/gpt-6-terra", "high"],
+		] as const) {
+			const invalid = commandInteraction("model", { model, effort });
+			harness.client.emit(invalid);
+			await vi.waitFor(() => expect(invalid.editReply).toHaveBeenCalledOnce());
+			expect(invalid.editReply).toHaveBeenCalledWith(
+				"モデルと推論強度の組み合わせが利用できません。",
+			);
+		}
 		expect(harness.conversation.configure).not.toHaveBeenCalled();
 
 		const outside = commandInteraction("model", {
-			model: "gpt-6-sol",
+			model: "openai-codex/gpt-6-sol",
 			effort: "medium",
 			channelId: "999",
 		});
 		harness.client.emit(outside);
 		await vi.waitFor(() => expect(outside.editReply).toHaveBeenCalledOnce());
-		expect(harness.agent.listModels).toHaveBeenCalledOnce();
+		expect(harness.agent.listModels).toHaveBeenCalledTimes(3);
 		expect(harness.conversation.configure).not.toHaveBeenCalled();
 	});
 
@@ -161,14 +178,14 @@ describe("DiscordCommandAdapter", () => {
 		const harness = createHarness();
 		await harness.adapter.start();
 		const modelInteraction = {
-			...commandInteraction("model", { model: "gpt-6-astra", effort: "xhigh" }),
+			...commandInteraction("model", { model: "openai-codex/gpt-6-astra", effort: "xhigh" }),
 			isAutocomplete: () => true,
 			isChatInputCommand: () => false,
 			options: {
 				getSubcommand: () => "model",
 				getSubcommandGroup: () => null,
-				getFocused: () => ({ name: "model", value: "astra" }),
-				getString: () => "gpt-6-astra",
+				getFocused: () => ({ name: "model", value: "openai-codex/" }),
+				getString: () => "openai-codex/gpt-6-astra",
 			},
 			respond: vi.fn(async () => undefined),
 			responded: false,
@@ -176,7 +193,8 @@ describe("DiscordCommandAdapter", () => {
 		harness.client.emit(modelInteraction);
 		await vi.waitFor(() => expect(modelInteraction.respond).toHaveBeenCalledOnce());
 		expect(modelInteraction.respond).toHaveBeenCalledWith([
-			{ name: "GPT-6 Astra", value: "gpt-6-astra" },
+			{ name: "GPT-6 Sol", value: "openai-codex/gpt-6-sol" },
+			{ name: "GPT-6 Astra", value: "openai-codex/gpt-6-astra" },
 		]);
 
 		const effortInteraction = {
@@ -185,7 +203,7 @@ describe("DiscordCommandAdapter", () => {
 				getSubcommand: () => "model",
 				getSubcommandGroup: () => null,
 				getFocused: () => ({ name: "effort", value: "x" }),
-				getString: () => "gpt-6-astra",
+				getString: () => "openai-codex/gpt-6-astra",
 			},
 			respond: vi.fn(async () => undefined),
 		};
@@ -206,9 +224,14 @@ describe("DiscordCommandAdapter", () => {
 
 	it("モデル取得例外を利用者に返し、sessionを変更しない", async () => {
 		const harness = createHarness();
-		harness.agent.listModels.mockRejectedValueOnce(new Error("offline"));
+		harness.agent.listModels.mockImplementationOnce(() => {
+			throw new Error("offline");
+		});
 		await harness.adapter.start();
-		const interaction = commandInteraction("model", { model: "gpt-6-sol", effort: "medium" });
+		const interaction = commandInteraction("model", {
+			model: "openai-codex/gpt-6-sol",
+			effort: "medium",
+		});
 		harness.client.emit(interaction);
 		await vi.waitFor(() => expect(interaction.editReply).toHaveBeenCalledOnce());
 		expect(interaction.editReply).toHaveBeenCalledWith("コマンドの処理に失敗しました。");
@@ -227,7 +250,7 @@ describe("DiscordCommandAdapter", () => {
 
 		const model = commandInteraction("model", {
 			channelId: "999",
-			model: "gpt-6-sol",
+			model: "openai-codex/gpt-6-sol",
 			effort: "medium",
 		});
 		harness.client.emit(model);

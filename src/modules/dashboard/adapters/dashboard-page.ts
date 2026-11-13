@@ -178,20 +178,18 @@ details > summary::-webkit-details-marker { display: none; }
 
 	var PHASES = {
 		collecting: ["入力の待ち合わせ", "s-wait"],
-		opening: ["スレッド準備中", "s-busy"],
-		starting: ["ターン開始中", "s-busy"],
-		turn: ["考え中", "s-busy"],
+		opening: ["セッション準備中", "s-busy"],
+		running: ["考え中", "s-busy"],
 		retry_wait: ["再試行待ち", "s-bad"],
-		effects: ["行動中", "s-busy"],
-		orphaned_effects: ["後始末中", "s-wait"],
+		compacting: ["文脈を圧縮中", "s-busy"],
 		idle: ["待機中", "s-idle"],
-		archiving: ["終了処理中", "s-wait"]
+		closing: ["終了処理中", "s-wait"]
 	};
 	var EVENT_PHASES = {
-		opening: ["スレッド準備中", "s-busy"],
-		turn: ["考え中", "s-busy"],
+		opening: ["セッション準備中", "s-busy"],
+		running: ["考え中", "s-busy"],
 		retry_wait: ["再試行待ち", "s-bad"],
-		effects: ["行動中", "s-busy"]
+		compacting: ["文脈を圧縮中", "s-busy"]
 	};
 	var TASK_STATUS = {
 		running: ["作業中", "s-busy", 0],
@@ -209,11 +207,9 @@ details > summary::-webkit-details-marker { display: none; }
 		failure: ["失敗", "s-bad"]
 	};
 	var AGENT_STATE = {
-		ready: ["Codex 接続中", "s-ok"],
-		starting: ["Codex 起動中", "s-wait"],
-		restarting: ["Codex 再起動中", "s-bad"],
-		fatal: ["Codex 停止（再起動上限）", "s-bad"],
-		closed: ["Codex 終了", "s-idle"]
+		ready: ["ChatGPT 認証済み", "s-ok"],
+		auth_required: ["ChatGPT 再ログインが必要", "s-bad"],
+		missing: ["ChatGPT 未ログイン", "s-bad"]
 	};
 	var EVENT_TYPES = {
 		"system.heartbeat.fired.v1": "ハートビート",
@@ -226,32 +222,19 @@ details > summary::-webkit-details-marker { display: none; }
 		"application.shutdown_started": "終了開始",
 		"application.shutdown_completed": "終了完了",
 		"conversation.message_accepted": "メッセージ受信",
-		"conversation.thread_opened": "会話スレッドを開始",
-		"conversation.turn_started": "会話のターン開始",
-		"conversation.turn_completed": "会話のターン完了",
-		"conversation.effects_started": "会話で行動開始",
-		"conversation.effect_settled": "行動の結果",
-		"conversation.effects_settled": "会話の行動が完了",
-		"conversation.thread_archived": "会話セッション終了",
+		"conversation.session_opened": "会話セッションを開始",
+		"conversation.run_started": "会話の実行開始",
+		"conversation.run_finished": "会話の実行完了",
+		"conversation.session_closed": "会話セッション終了",
 		"conversation.operation_failed": "会話の処理に失敗",
 		"event.execution_started": "イベント実行開始",
-		"event.effects_started": "イベントで行動開始",
-		"event.effects_settled": "イベントの行動が完了",
 		"event.execution_completed": "イベント実行完了",
 		"event.execution_failed": "イベント実行に失敗",
-		"event.turn_retry_scheduled": "イベントのターン再試行",
-		"task.turn_retry_scheduled": "タスクのターン再試行",
 		"task.run_failed": "タスク実行に失敗",
-		"task.run_interrupted": "タスク中断",
-		"task.steer_skipped": "タスクへの追加指示を次のターンへ",
 		"task.delivery_failed": "タスク報告の配送に失敗",
 		"task.delivery_rejected": "タスク報告の配送を拒否",
-		"discord.mcp_tool_started": "Discordツール呼び出し",
-		"discord.mcp_tool_completed": "Discordツール完了",
-		"discord.mcp_tool_failed": "Discordツール失敗",
-		"agent.connection_failed": "Codex接続障害",
-		"agent.restart_budget_exceeded": "Codex再起動上限",
-		"agent.rpc_failed": "Codex RPCエラー",
+		"tool.succeeded": "ツール実行",
+		"tool.failed": "ツール失敗",
 		"automation.schedule.check_skipped": "スケジュールのcheckで見送り",
 		"automation.schedule.check_failed": "スケジュールのcheck失敗"
 	};
@@ -366,7 +349,7 @@ details > summary::-webkit-details-marker { display: none; }
 	}
 
 	function renderHeader(s) {
-		var agent = AGENT_STATE[s.agent.state] || [s.agent.state, "s-idle"];
+		var agent = AGENT_STATE[s.agent.auth] || [s.agent.auth, "s-idle"];
 		var el = document.getElementById("agent-badge");
 		el.className = "badge " + agent[1];
 		el.textContent = agent[0];
@@ -376,7 +359,7 @@ details > summary::-webkit-details-marker { display: none; }
 
 	function renderHeadline(s) {
 		var parts = [];
-		if (s.agent.state !== "ready") parts.push((AGENT_STATE[s.agent.state] || [s.agent.state])[0] + "のため、新しい思考を始められません");
+		if (s.agent.auth !== "ready") parts.push((AGENT_STATE[s.agent.auth] || [s.agent.auth])[0] + "のため、新しい思考を始められません");
 		var thinking = s.conversations.filter(function (c) { return isActivePhase(c.phase); });
 		var memory = thinking.filter(function (c) { return c.purpose === "session_memory"; });
 		if (thinking.length - memory.length > 0) parts.push((thinking.length - memory.length) + "件の会話に応答中");
@@ -407,8 +390,15 @@ details > summary::-webkit-details-marker { display: none; }
 			kpi("イベント実行中", String(s.events.length), s.events.length > 0 ? truncate(s.events.map(eventLabel).join("・"), 40) : "なし"),
 			kpi("タスク実行枠", s.tasks.running + " / " + s.tasks.maxConcurrent, "未完了 " + openTasks + "件"),
 			kpi("次のハートビート", heartbeat.nextFireAt ? until(heartbeat.nextFireAt) : (heartbeat.enabled ? "実行中" : "無効"), heartbeat.nextFireAt ? clock(heartbeat.nextFireAt) : ""),
-			kpi("エラー（1時間）", String(errors), "Codex再起動 " + s.agent.restartsInWindow + " / " + s.agent.restartLimit)
+			kpi("エラー（1時間）", String(errors), ""),
+			usageKpi(s.agent.usage)
 		]);
+	}
+	function usageKpi(usage) {
+		var limit = usage && usage.limits.length > 0 ? usage.limits[0] : null;
+		var primary = limit ? limit.primary : null;
+		if (!primary) return kpi("使用枠", "不明", usage ? "取得 " + clock(usage.fetchedAt) : "未取得");
+		return kpi("使用枠", Math.round(primary.usedPercent) + "%", primary.resetsAt ? "リセット " + clock(primary.resetsAt) : "");
 	}
 	function kpi(label, value, sub) {
 		return h("div", { class: "kpi" }, h("div", { class: "label", text: label }), h("div", { class: "value" }, value), h("div", { class: "sub", text: sub }));
@@ -425,14 +415,14 @@ details > summary::-webkit-details-marker { display: none; }
 			if (c.queuedEvents > 0) facts.push(fact("未処理", c.queuedEvents + "件"));
 			if (c.retries > 0) facts.push(fact("再試行", c.retries + "回目"));
 			if (c.idleDeadlineAt) facts.push(h("span", null, "終了まで ", h("b", null, until(c.idleDeadlineAt))));
-			if (c.modelSettings) facts.push(fact("モデル", c.modelSettings.model + " / " + c.modelSettings.effort));
+			if (c.modelSettings) facts.push(fact("モデル", c.modelSettings.model + " / " + c.modelSettings.thinking));
 			return h("div", { class: "card" },
 				h("div", { class: "top" },
 					h("span", { class: "title", text: sessionLabel(c.key, c.context) }),
 					badge(phase, phase[1] === "s-busy"),
 					h("button", { class: "link", text: "出来事を見る", onclick: function () { setSession(c.key); } })),
 				h("div", { class: "facts" }, facts),
-				h("div", { class: "mono", text: c.key + (c.threadId ? " · thread " + c.threadId : "") + (c.turnId ? " · turn " + c.turnId : "") }));
+				h("div", { class: "mono", text: c.key + (c.sessionId ? " · session " + c.sessionId : "") }));
 		}));
 	}
 
@@ -443,7 +433,7 @@ details > summary::-webkit-details-marker { display: none; }
 			return h("div", { class: "card" },
 				h("div", { class: "top" }, h("span", { class: "title", text: eventLabel(e) }), badge(phase, phase[1] === "s-busy")),
 				h("div", { class: "facts" }, h("span", null, "経過 ", h("b", null, since(e.startedAt))), fact("開始", clock(e.startedAt))),
-				h("div", { class: "mono", text: e.eventType + " · " + e.eventId + (e.threadId ? " · thread " + e.threadId : "") }));
+				h("div", { class: "mono", text: e.eventType + " · " + e.eventId + (e.sessionId ? " · session " + e.sessionId : "") }));
 		}));
 	}
 

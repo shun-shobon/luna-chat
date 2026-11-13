@@ -14,8 +14,6 @@
 		"dev": "tsx --watch src/index.ts",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
-		"gen": "pnpm run /^gen:.*$/",
-		"gen:app-server": "codex app-server generate-ts --out src/generated/codex",
 		"knip": "knip",
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
@@ -24,9 +22,10 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@hono/mcp": "0.3.2",
+		"@earendil-works/pi-agent-core": "1.5.2",
+		"@earendil-works/pi-ai": "1.5.2",
+		"@earendil-works/pi-coding-agent": "1.5.2",
 		"@hono/node-server": "2.1.1",
-		"@modelcontextprotocol/sdk": "1.30.1",
 		"chokidar": "5.0.0",
 		"cron": "4.4.0",
 		"discord.js": "14.27.0",
@@ -35,7 +34,6 @@
 		"zod": "4.6.5"
 	},
 	"devDependencies": {
-		"@openai/codex": "0.157.1",
 		"@shun-shobon/oxfmt-config": "7.0.0",
 		"@shun-shobon/oxlint-config": "7.0.0",
 		"@tsconfig/node-lts": "24.0.1",

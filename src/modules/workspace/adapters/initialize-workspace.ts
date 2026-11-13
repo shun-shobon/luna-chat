@@ -18,7 +18,6 @@ const INITIAL_WORKSPACE_FILES = [
 ] as const;
 
 type InitializedWorkspace = {
-	codexHomeDir: string;
 	config: WorkspaceConfig;
 	configPath: string;
 	cronPath: string;
@@ -41,7 +40,6 @@ export async function initializeWorkspace(input: {
 }): Promise<InitializedWorkspace> {
 	const lunaHomeDir = resolveLunaHome(input.lunaHome);
 	const workspaceDir = resolve(lunaHomeDir, "workspace");
-	const codexHomeDir = resolve(lunaHomeDir, "codex");
 	const tasksDir = resolve(lunaHomeDir, "tasks");
 	const templatesDir = resolve(input.templatesDir);
 	const configPath = resolve(lunaHomeDir, "config.toml");
@@ -50,7 +48,6 @@ export async function initializeWorkspace(input: {
 	try {
 		await Promise.all([
 			mkdir(workspaceDir, { recursive: true }),
-			mkdir(codexHomeDir, { recursive: true }),
 			mkdir(tasksDir, { recursive: true }),
 		]);
 		await createIfMissing(async () => {
@@ -71,7 +68,6 @@ export async function initializeWorkspace(input: {
 		]);
 
 		return {
-			codexHomeDir,
 			config,
 			configPath,
 			cronPath,
@@ -88,7 +84,7 @@ export async function initializeWorkspace(input: {
 	}
 }
 
-function resolveLunaHome(rawLunaHome: string | undefined): string {
+export function resolveLunaHome(rawLunaHome: string | undefined): string {
 	if (rawLunaHome === undefined) {
 		return resolve(homedir(), ".luna");
 	}

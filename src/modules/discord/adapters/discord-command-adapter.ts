@@ -8,7 +8,7 @@ import {
 import type { Client, Interaction } from "discord.js";
 import { z } from "zod";
 
-import type { AgentRuntimePort } from "../../agent/ports/outbound/agent-runtime-port";
+import type { AgentModel, AgentRuntimePort } from "../../agent/ports/outbound/agent-session-port";
 import type { ConversationCoordinator } from "../../conversation/application/conversation-coordinator";
 import { conversationScopeSchema } from "../domain/conversation-scope";
 import type { ConversationScope } from "../domain/conversation-scope";
@@ -36,7 +36,7 @@ const command = new SlashCommandBuilder()
 			.addStringOption((option) =>
 				option
 					.setName("model")
-					.setDescription("Codex のモデル")
+					.setDescription("使うモデル（provider/model）")
 					.setRequired(true)
 					.setAutocomplete(true),
 			)
@@ -148,25 +148,25 @@ export class DiscordCommandAdapter {
 					return;
 				}
 				const focused = interaction.options.getFocused(true);
-				const models = await this.agent.listModels();
+				const models = this.agent.listModels();
 				if (focused.name === "model") {
 					const query = focused.value.toLowerCase();
 					await interaction.respond(
 						models
 							.filter(
 								(item) =>
-									item.model.toLowerCase().includes(query) ||
+									modelId(item).toLowerCase().includes(query) ||
 									item.displayName.toLowerCase().includes(query),
 							)
 							.slice(0, 25)
-							.map((item) => ({ name: item.displayName.slice(0, 100), value: item.model })),
+							.map((item) => ({ name: item.displayName.slice(0, 100), value: modelId(item) })),
 					);
 					return;
 				}
 				const selectedModel = interaction.options.getString("model");
-				const model = models.find((item) => item.model === selectedModel);
+				const model = models.find((item) => modelId(item) === selectedModel);
 				await interaction.respond(
-					(model?.supportedReasoningEfforts ?? [])
+					(model?.supportedThinkingLevels ?? [])
 						.filter((effort) => effort.toLowerCase().includes(focused.value.toLowerCase()))
 						.slice(0, 25)
 						.map((effort) => ({ name: effort, value: effort })),
@@ -204,20 +204,26 @@ export class DiscordCommandAdapter {
 				const ended = this.conversation.endSession(session.key);
 				await interaction.editReply(
 					ended
-						? "セッションの終了を受け付けました。処理中の turn と Effect が終わった後、セッションをアーカイブします。"
+						? "セッションの終了を受け付けました。処理中の実行が終わった後、記憶を保存してセッションを閉じます。"
 						: "この場所に終了するセッションはありません。",
 				);
 				return;
 			}
 			const modelName = selectedOptionSchema.parse(interaction.options.getString("model"));
 			const effort = selectedOptionSchema.parse(interaction.options.getString("effort"));
-			const models = await this.agent.listModels();
-			const model = models.find((item) => item.model === modelName);
-			if (model === undefined || !model.supportedReasoningEfforts.includes(effort)) {
+			const model = this.agent.listModels().find((item) => modelId(item) === modelName);
+			const thinking = model?.supportedThinkingLevels.find((level) => level === effort);
+			if (model === undefined || thinking === undefined) {
 				await interaction.editReply("モデルと推論強度の組み合わせが利用できません。");
 				return;
 			}
-			if (!this.conversation.configure(session, { model: modelName, effort })) {
+			if (
+				!this.conversation.configure(session, {
+					provider: model.provider,
+					model: model.model,
+					thinking,
+				})
+			) {
 				await interaction.editReply("セッションの終了処理中です。完了後に再実行してください。");
 				return;
 			}
@@ -276,4 +282,8 @@ function resolveLocation(interaction: Interaction): {
 		}),
 		lunaIsThreadMember: false,
 	};
+}
+
+function modelId(model: AgentModel): string {
+	return `${model.provider}/${model.model}`;
 }

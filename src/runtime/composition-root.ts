@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
+import { resolve } from "node:path";
 
-import { AgentRuntimeSupervisor } from "../modules/agent/adapters/outbound/codex/agent-runtime-supervisor";
-import { CodexAgentRuntime } from "../modules/agent/adapters/outbound/codex/codex-agent-runtime";
-import { startCodexStdioProcess } from "../modules/agent/adapters/outbound/codex/codex-stdio-process";
-import { TURN_RETRY_DELAYS_MS } from "../modules/agent/ports/outbound/agent-runtime-port";
+import { fetchUsage } from "../modules/agent/adapters/outbound/pi/usage";
+import { UsagePoller } from "../modules/agent/adapters/outbound/pi/usage-poller";
 import { ChildProcessCheckRunner } from "../modules/automation/adapters/child-process-check-runner";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
@@ -16,7 +14,7 @@ import { AutomationService } from "../modules/automation/application/automation-
 import { HeartbeatController } from "../modules/automation/application/heartbeat-controller";
 import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
-import { ThreadRetentionCleaner } from "../modules/automation/application/thread-retention-cleaner";
+import { TranscriptRetentionCleaner } from "../modules/automation/application/transcript-retention-cleaner";
 import type { AutomationWorkspacePort } from "../modules/automation/ports/automation-workspace-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { startDashboardServer } from "../modules/dashboard/adapters/dashboard-server";
@@ -34,13 +32,13 @@ import {
 	DiscordGatewayAdapter,
 } from "../modules/discord/adapters/discord-gateway-adapter";
 import {
-	DISCORD_MCP_TYPING_OWNER_HEADER,
-	startDiscordMcpServer,
-} from "../modules/discord/adapters/discord-mcp-server";
-import {
 	createDiscordReadClient,
 	DiscordReadAdapter,
 } from "../modules/discord/adapters/discord-read-adapter";
+import {
+	createDiscordReadToolProvider,
+	createDiscordToolProvider,
+} from "../modules/discord/adapters/discord-tool-provider";
 import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
@@ -49,12 +47,9 @@ import {
 	isDiscordGuildSession,
 } from "../modules/discord/domain/discord-event";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
-import { createWaitEffectProvider } from "../modules/effect/adapters/wait-effect-provider";
-import { createEffectOutputContract } from "../modules/effect/application/effect-output-contract";
-import { createEffectRegistry } from "../modules/effect/application/effect-registry";
-import { createEffectBatchExecutor } from "../modules/effect/application/execute-effect-batch";
 import { EventExecutor } from "../modules/event/application/event-executor";
 import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
+import { createHttpResponseToolProvider } from "../modules/http/adapters/http-response-tool-provider";
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
@@ -63,25 +58,33 @@ import { RecentLogBuffer } from "../modules/observability/adapters/recent-log-bu
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
 import { JsonFileTaskStore } from "../modules/task/adapters/json-file-task-store";
 import {
-	createTaskBoardEffectProvider,
-	createTaskReportEffectProvider,
-} from "../modules/task/adapters/task-effect-provider";
+	createTaskBoardToolProvider,
+	createTaskReportToolProvider,
+} from "../modules/task/adapters/task-tool-provider";
 import { TaskService } from "../modules/task/application/task-service";
 import {
 	TASK_BOARD_INSTRUCTIONS,
 	TASK_WORKER_INSTRUCTIONS,
 } from "../modules/task/task-instructions";
+import { createWaitToolProvider } from "../modules/tool/adapters/wait-tool-provider";
+import { createToolSet } from "../modules/tool/application/tool-set";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
 import {
 	readWorkspaceSchedule,
 	removeWorkspaceScheduleJob,
 } from "../modules/workspace/adapters/schedule-toml";
+import { readWorkspaceSkillsPrompt } from "../modules/workspace/adapters/workspace-skills";
 import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
+import {
+	createChatGptBackend,
+	createAgentModels,
+	createPiAgentRuntime,
+	validateModelSelections,
+} from "./agent-runtime";
 import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
-import { createEffectProviders } from "./effect-providers";
 import { readRuntimeEnvironment } from "./runtime-environment";
-import { createThreadInputFactory } from "./thread-input-factory";
+import { createSessionFactory } from "./session-factory";
 
 const TYPING_REFRESH_INTERVAL_MS = 8_000;
 const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
@@ -89,15 +92,11 @@ const SCHEDULE_CHECK_TIMEOUT_MS = 120_000;
 const SCHEDULE_CHECK_KILL_GRACE_MS = 5_000;
 const RECENT_LOG_CAPACITY = 500;
 const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
-// RPCごとに出る要求・応答のログはメソッド名だけで頻度が高く、直近の出来事を押し流すため保持しない。
-const RECENT_LOG_EXCLUDED_EVENTS: ReadonlySet<string> = new Set([
-	"agent.rpc_requested",
-	"agent.rpc_completed",
-]);
+const RECENT_LOG_EXCLUDED_EVENTS: ReadonlySet<string> = new Set();
+const USAGE_POLL_INTERVAL_MS = 600_000;
 
 interface LunaApplication {
-	fatal: Promise<Error>;
-	shutdown(fatal?: boolean): Promise<void>;
+	shutdown(): Promise<void>;
 }
 
 export async function startLunaApplication(
@@ -152,111 +151,101 @@ export async function startLunaApplication(
 		report: async (...input: Parameters<TaskService["report"]>) =>
 			await requireTasks(tasks).report(...input),
 	};
-	const effectRegistry = createEffectRegistry([
-		...createEffectProviders({ actions: actionAdapter, delegation, httpResponses }),
-		createTaskBoardEffectProvider(taskBoard),
-	]);
-	const effectOutput = createEffectOutputContract(effectRegistry);
-	const effects = createEffectBatchExecutor(effectRegistry, logger);
-	const workerEffectRegistry = createEffectRegistry([
-		createTaskReportEffectProvider(taskBoard),
-		createWaitEffectProvider(),
-	]);
-	const workerEffectOutput = createEffectOutputContract(workerEffectRegistry);
-	const workerEffects = createEffectBatchExecutor(workerEffectRegistry, logger);
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
 	const discordHistory = new DiscordConversationHistory(readAdapter);
-	const mcp = await startDiscordMcpServer({
-		actions: actionAdapter,
-		onError: (error) => logger.log("error", "discord.mcp_transport_failed", {}, { error }),
-		onEvent: (event, context, details, payload) => {
-			logger.log("info", event, context, details, payload);
-		},
-		read: readAdapter,
-	});
-
-	let eventExecutor: EventExecutor | undefined;
-	const fatal = Promise.withResolvers<Error>();
-	const supervisor = new AgentRuntimeSupervisor(
-		{
-			initialDelayMs: workspace.config.agent.restartInitialDelayMs,
-			limit: workspace.config.agent.restartFailureLimit,
-			maxDelayMs: workspace.config.agent.restartMaxDelayMs,
-			windowMs: workspace.config.agent.restartWindowMs,
-		},
-		{
-			onFailure: (error) => {
-				logger.log("error", "agent.connection_failed", {}, { error });
-				conversation?.connectionLost(error);
-				eventExecutor?.connectionLost();
-				tasks?.connectionLost();
-			},
-			onFatal: (error) => {
-				logger.log("error", "agent.restart_budget_exceeded", {}, { error });
-				fatal.resolve(error);
-			},
-			startRuntime: async (signal, onFailure) =>
-				await CodexAgentRuntime.start({
-					onFailure,
-					onRpcEvent: (event, context, details, payload) => {
-						logger.log("info", event, context, details, payload);
-					},
-					openTransport: (handlers) =>
-						startCodexStdioProcess(
-							{ codexHomeDir: workspace.codexHomeDir, cwd: workspace.workspaceDir },
-							handlers,
-						),
-					rpcTimeoutMs: workspace.config.agent.rpcTimeoutMs,
-					signal,
-				}),
-		},
+	const waitTools = createWaitToolProvider();
+	const tools = createToolSet(
+		[
+			createDiscordToolProvider({ actions: actionAdapter, delegation, read: readAdapter }),
+			createHttpResponseToolProvider(httpResponses),
+			createTaskBoardToolProvider(taskBoard),
+			waitTools,
+		],
+		logger,
 	);
+	const workerTools = createToolSet(
+		[
+			createDiscordReadToolProvider(readAdapter),
+			createTaskReportToolProvider(taskBoard),
+			waitTools,
+		],
+		logger,
+	);
+	const releaseTools = async (ownerId: string): Promise<void> => {
+		await Promise.all([tools.release(ownerId), workerTools.release(ownerId)]);
+	};
+	const models = createAgentModels(workspace.lunaHomeDir);
+	const backend = createChatGptBackend(models);
+	const agent = createPiAgentRuntime({
+		backend,
+		compactionModel: workspace.config.models.compaction,
+		lunaHomeDir: workspace.lunaHomeDir,
+		logger,
+		models,
+		parentEnvironment: process.env,
+		requestTimeoutMs: workspace.config.agent.requestTimeoutMs,
+	});
+	validateModelSelections(agent, workspace.config.models);
+	const usage = new UsagePoller({
+		fetch: async (signal) => await fetchUsage(backend, signal),
+		filePath: resolve(workspace.lunaHomeDir, "state", "usage.json"),
+		intervalMs: USAGE_POLL_INTERVAL_MS,
+		logger,
+		onUsage: (snapshot) => agent.setUsage(snapshot),
+	});
+	const openSession = createSessionFactory({
+		agent,
+		profiles: {
+			conversation: {
+				developerInstructions: [
+					LUNA_DEVELOPER_INSTRUCTIONS,
+					DISCORD_CAPABILITY_INSTRUCTIONS,
+					TASK_BOARD_INSTRUCTIONS,
+				],
+				model: () => workspace.config.models.conversation,
+				tools,
+			},
+			event: {
+				developerInstructions: [
+					LUNA_DEVELOPER_INSTRUCTIONS,
+					DISCORD_CAPABILITY_INSTRUCTIONS,
+					TASK_BOARD_INSTRUCTIONS,
+				],
+				model: () => workspace.config.models.event,
+				tools,
+			},
+			worker: {
+				developerInstructions: [TASK_WORKER_INSTRUCTIONS],
+				model: () => workspace.config.models.worker,
+				tools: workerTools,
+			},
+		},
+		readSkillsPrompt: () => readWorkspaceSkillsPrompt(workspace.workspaceDir),
+		workspaceDir: workspace.workspaceDir,
+	});
 
 	const startupCleanups: Array<() => Promise<void> | void> = [
 		() => httpResponses.failAll(),
 		() => typing.releaseAll(),
 		async () => await client.destroy(),
-		async () => await supervisor.close(),
-		async () => await mcp.close(),
+		async () => await usage.stop(),
 	];
 	// abort時は待機中の起動処理を解くだけにする。ここで全て閉じるとabort後に生成されたリソースが漏れ、
-	// catchで再実行するとHTTP/MCPサーバーを二重closeするため、後始末はcatchで1回だけ行う。
+	// catchで再実行するとHTTPサーバーを二重closeするため、後始末はcatchで1回だけ行う。
 	const abortStartup = () => {
-		void Promise.allSettled([client.destroy(), supervisor.close()]).then((results) => {
+		void Promise.allSettled([client.destroy()]).then((results) => {
 			logCleanupFailures(results, logger, "application.startup_cleanup_failed");
 		});
 	};
 	options.startupSignal?.addEventListener("abort", abortStartup, { once: true });
 	try {
 		options.startupSignal?.throwIfAborted();
-		await supervisor.start();
-		options.startupSignal?.throwIfAborted();
+		usage.start();
 		await client.login(environment.discordBotToken);
 		options.startupSignal?.throwIfAborted();
 		const lunaUserId = discordIdSchema.parse(client.user?.id);
-		const createThreadInput = createThreadInputFactory({
-			buildMcpServers: (executionOwnerId) => ({
-				discord: {
-					url: mcp.url,
-					http_headers: { [DISCORD_MCP_TYPING_OWNER_HEADER]: executionOwnerId },
-				},
-			}),
-			developerInstructions: [
-				LUNA_DEVELOPER_INSTRUCTIONS,
-				DISCORD_CAPABILITY_INSTRUCTIONS,
-				TASK_BOARD_INSTRUCTIONS,
-			],
-			workspaceDir: workspace.workspaceDir,
-		});
-		const createWorkerThreadInput = createThreadInputFactory({
-			buildMcpServers: () => ({ discord: { url: mcp.readOnlyUrl } }),
-			developerInstructions: [TASK_WORKER_INSTRUCTIONS],
-			workspaceDir: workspace.workspaceDir,
-		});
 		const taskService = new TaskService({
-			agent: supervisor,
 			createId: randomUUID,
-			createThreadInput: createWorkerThreadInput,
 			delivery: {
 				deliver: (origin, event) => {
 					if (origin.kind === "conversation") {
@@ -268,25 +257,19 @@ export async function startLunaApplication(
 					return executor.execute(event).then(() => "accepted");
 				},
 			},
-			effectOutput: workerEffectOutput,
-			effects: workerEffects,
 			isPrivateSession: (session) => !isDiscordGuildSession(session),
 			logger,
 			maxConcurrent: workspace.config.tasks.maxConcurrent,
 			now: () => new Date(),
-			sleep,
+			openSession,
+			releaseTools,
 			store: new JsonFileTaskStore(workspace.tasksDir, (path, error) => {
 				logger.log("error", "task.file_invalid", {}, { error, path });
 			}),
-			turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 		});
 		tasks = taskService;
 		const coordinator = new ConversationCoordinator(
 			{
-				agent: supervisor,
-				createThreadInput,
-				effectOutput,
-				effects,
 				history: {
 					fetchBefore: async (session, beforeEvent, limit) => {
 						if (session.source === HTTP_EVENT_SOURCE) return [];
@@ -298,6 +281,8 @@ export async function startLunaApplication(
 				onBatchSettled: (eventIds, succeeded) => {
 					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
 				},
+				openSession,
+				releaseTools,
 				tasks: {
 					listFor: (session) =>
 						taskService.listFor({ kind: "conversation", sessionKey: session.key }),
@@ -308,7 +293,6 @@ export async function startLunaApplication(
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
-				turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 				typingIdleMs: workspace.config.discord.typingIdleMs,
 			},
 		);
@@ -316,17 +300,12 @@ export async function startLunaApplication(
 
 		const clock = new SystemAutomationClock();
 		const executor = new EventExecutor({
-			agent: supervisor,
-			createThreadInput,
-			effectOutput,
-			effects,
 			logger,
 			now: () => new Date(),
-			sleep,
+			openSession,
+			releaseTools,
 			tasks: { listAll: () => taskService.listFor({ kind: "event" }) },
-			turnRetryDelaysMs: TURN_RETRY_DELAYS_MS,
 		});
-		eventExecutor = executor;
 		const automationWorkspace: AutomationWorkspacePort = {
 			readHeartbeatContext: async () => await readHeartbeatContext(workspace.workspaceDir),
 			readSchedule: async () => await readWorkspaceSchedule(workspace.cronPath),
@@ -361,12 +340,16 @@ export async function startLunaApplication(
 				executor,
 				scheduleTimer,
 			}),
-			retention: new ThreadRetentionCleaner({
-				agent: supervisor,
-				cleanupIntervalMs: workspace.config.agent.threadCleanupIntervalMs,
+			retention: new TranscriptRetentionCleaner({
+				cleanupIntervalMs: workspace.config.agent.transcriptCleanupIntervalMs,
 				clock,
 				logger,
-				retentionMs: workspace.config.agent.threadRetentionMs,
+				pruner: {
+					prune: async (now, retentionMs) => {
+						await agent.pruneTranscripts(now, retentionMs);
+					},
+				},
+				retentionMs: workspace.config.agent.transcriptRetentionMs,
 			}),
 			schedule: new ScheduleController({
 				checkRunner: new ChildProcessCheckRunner({
@@ -414,7 +397,7 @@ export async function startLunaApplication(
 		const commands = new DiscordCommandAdapter(
 			createDiscordCommandClient(client),
 			coordinator,
-			supervisor,
+			agent,
 			workspace.config.discord.allowDm,
 			allowedChannels,
 			(error) => logger.log("error", "discord.command_failed", {}, { error }),
@@ -436,7 +419,7 @@ export async function startLunaApplication(
 				now: () => new Date(),
 				sources: {
 					activity: () => recentLogs.list(),
-					agent: () => supervisor.status(),
+					agent: () => agent.status(),
 					automation: () => automation.snapshot(),
 					conversations: () => coordinator.snapshot(),
 					events: () => executor.snapshot(),
@@ -452,38 +435,28 @@ export async function startLunaApplication(
 		options.startupSignal?.throwIfAborted();
 		logger.log("info", "application.started");
 		let shutdownPromise: Promise<void> | undefined;
-		let fatalShutdownRequested = false;
 
 		const application = {
-			fatal: fatal.promise,
-			shutdown: async (isFatal = false) => {
-				if (shutdownPromise === undefined) {
-					fatalShutdownRequested = isFatal;
-					shutdownPromise = shutdownApplication({
-						automation,
-						clientDestroy: async () => await client.destroy(),
-						conversation: coordinator,
-						dashboardClose: () => dashboardServer.close(),
-						gateway: {
-							stop: () => {
-								gateway.stop();
-								commands.stop();
-							},
+			shutdown: async () => {
+				shutdownPromise ??= shutdownApplication({
+					automation,
+					clientDestroy: async () => await client.destroy(),
+					conversation: coordinator,
+					dashboardClose: () => dashboardServer.close(),
+					gateway: {
+						stop: () => {
+							gateway.stop();
+							commands.stop();
 						},
-						http: httpService,
-						httpClose: () => httpServer.close(),
-						httpFailPending: () => httpResponses.failAll(),
-						logger,
-						mcpClose: () => mcp.close(),
-						supervisorClose: () => supervisor.close(),
-						tasks: taskService,
-						typingRelease: () => typing.releaseAll(),
-						isFatal,
-					});
-				} else if (isFatal && !fatalShutdownRequested) {
-					fatalShutdownRequested = true;
-					await coordinator.abort();
-				}
+					},
+					http: httpService,
+					httpClose: () => httpServer.close(),
+					httpFailPending: () => httpResponses.failAll(),
+					logger,
+					tasks: taskService,
+					typingRelease: () => typing.releaseAll(),
+					usageStop: () => usage.stop(),
+				});
 				await shutdownPromise;
 			},
 		};
@@ -500,18 +473,16 @@ export async function startLunaApplication(
 export async function shutdownApplication(input: {
 	automation: Pick<AutomationService, "drain" | "stopIntake">;
 	clientDestroy(): Promise<void>;
-	conversation: Pick<ConversationCoordinator, "abort" | "drain" | "stopIntake">;
+	conversation: Pick<ConversationCoordinator, "drain" | "stopIntake">;
 	dashboardClose(): Promise<void>;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
 	httpClose(): Promise<void>;
 	httpFailPending(): void;
 	logger: Pick<JsonLinesLogger, "flush" | "log">;
-	mcpClose(): Promise<void>;
-	supervisorClose(): Promise<void>;
 	tasks: Pick<TaskService, "drain" | "stopIntake">;
 	typingRelease(): void;
-	isFatal: boolean;
+	usageStop(): Promise<void>;
 }): Promise<void> {
 	input.logger.log("info", "application.shutdown_started");
 	const failures: unknown[] = [];
@@ -526,12 +497,7 @@ export async function shutdownApplication(input: {
 		failures,
 	);
 	await settleCleanup(
-		[
-			input.isFatal ? input.conversation.abort() : input.conversation.drain(),
-			input.automation.drain(),
-			input.http.drain(),
-			input.tasks.drain(),
-		],
+		[input.conversation.drain(), input.automation.drain(), input.http.drain(), input.tasks.drain()],
 		failures,
 	);
 	await settleCleanup(
@@ -540,9 +506,8 @@ export async function shutdownApplication(input: {
 			input.httpClose(),
 			input.dashboardClose(),
 			runCleanup(() => input.typingRelease()),
-			input.mcpClose(),
+			input.usageStop(),
 			input.clientDestroy(),
-			input.supervisorClose(),
 		],
 		failures,
 	);

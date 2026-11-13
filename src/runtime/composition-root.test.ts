@@ -25,9 +25,6 @@ describe("application composition lifecycle", () => {
 				drain: vi.fn(async () => {
 					calls.push("conversation.drain");
 				}),
-				abort: vi.fn(async () => {
-					calls.push("conversation.abort");
-				}),
 			},
 			dashboardClose: async () => {
 				calls.push("dashboard.close");
@@ -49,15 +46,7 @@ describe("application composition lifecycle", () => {
 			httpFailPending: () => {
 				calls.push("http.failPending");
 			},
-			isFatal: false,
 			logger: { flush: vi.fn(async () => undefined), log: vi.fn() },
-			mcpClose: async () => {
-				calls.push("mcp.close");
-				throw failure;
-			},
-			supervisorClose: async () => {
-				calls.push("supervisor.close");
-			},
 			tasks: {
 				stopIntake: vi.fn(() => {
 					calls.push("tasks.stopIntake");
@@ -68,6 +57,10 @@ describe("application composition lifecycle", () => {
 			},
 			typingRelease: () => {
 				calls.push("typing.release");
+			},
+			usageStop: async () => {
+				calls.push("usage.stop");
+				throw failure;
 			},
 		});
 
@@ -87,11 +80,9 @@ describe("application composition lifecycle", () => {
 				"http.close",
 				"dashboard.close",
 				"typing.release",
-				"mcp.close",
+				"usage.stop",
 				"client.destroy",
-				"supervisor.close",
 			]),
 		);
-		expect(calls).not.toContain("conversation.abort");
 	});
 });
