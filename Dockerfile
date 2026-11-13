@@ -31,7 +31,7 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloa
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get --no-install-recommends install -y ca-certificates git sudo wget tini && \
+    apt-get --no-install-recommends install -y ca-certificates git ripgrep sudo wget tini && \
     mkdir -p -m 755 /etc/apt/keyrings && \
     wget -nv -O /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg && \
     chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
