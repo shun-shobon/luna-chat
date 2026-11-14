@@ -27,7 +27,7 @@ export class SkillUsageStore {
 
 	record(names: readonly string[], at: Date): Promise<void> {
 		if (names.length === 0) return Promise.resolve();
-		this.#chain = this.#chain.then(async () => {
+		const run = this.#chain.then(async () => {
 			const usage = await this.#read();
 			for (const name of names) {
 				usage[name] = { lastUsedAt: at.toISOString(), uses: (usage[name]?.uses ?? 0) + 1 };
@@ -37,7 +37,11 @@ export class SkillUsageStore {
 			await writeFile(temporary, `${JSON.stringify(usage, null, "\t")}\n`);
 			await rename(temporary, this.filePath);
 		});
-		return this.#chain;
+		this.#chain = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
 	}
 
 	async #read(): Promise<Record<string, { lastUsedAt: string; uses: number }>> {

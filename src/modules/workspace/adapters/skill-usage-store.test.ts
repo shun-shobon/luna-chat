@@ -53,4 +53,20 @@ describe("SkillUsageStore", () => {
 		);
 		expect(await readFile(filePath, "utf8")).toBe("{");
 	});
+
+	it("一度失敗しても、直したあとの記録は続けられる", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "luna-skill-usage-"));
+		directories.push(directory);
+		const filePath = join(directory, "skill-usage.json");
+		await writeFile(filePath, "{");
+		const store = new SkillUsageStore(filePath);
+
+		await expect(store.record(["cron"], new Date())).rejects.toThrow("JSON");
+		await rm(filePath);
+		await store.record(["cron"], new Date("2026-11-14T00:00:00.000Z"));
+
+		expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
+			cron: { lastUsedAt: "2026-11-14T00:00:00.000Z", uses: 1 },
+		});
+	});
 });
