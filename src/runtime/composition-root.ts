@@ -291,7 +291,7 @@ export async function startLunaApplication(
 				},
 			},
 			{
-				debounceMs: workspace.config.discord.debounceMs,
+				debounceMs: () => workspace.config.discord.debounceMs,
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,

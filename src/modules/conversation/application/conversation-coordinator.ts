@@ -26,7 +26,7 @@ import type { ConversationIntentPort } from "../ports/conversation-intent-port";
 import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 
 type ConversationCoordinatorOptions = Readonly<{
-	debounceMs: number;
+	debounceMs: (session: ConversationSession) => number;
 	initialHistoryLimit: number;
 	sessionMemoryEnabled: boolean;
 	sessionIdleMs: number;
@@ -391,7 +391,7 @@ class ConversationActor {
 		this.#debounceTimer?.cancel();
 		this.#debounceTimer = scheduleTimeout(
 			() => this.#post({ kind: "debounce", token }),
-			this.options.debounceMs,
+			this.options.debounceMs(this.session),
 		);
 	}
 

@@ -44,6 +44,17 @@ describe("ConversationCoordinator", () => {
 			expect(harness.coordinator.endSession(session.key)).toBe(false);
 		});
 
+		it("debounceの待機時間はセッションごとに決め、0ならすぐに実行を始める", async () => {
+			const debounceMs = vi.fn(() => 0);
+			const harness = createHarness({ debounceMs });
+
+			harness.accept("100", "2026-07-23T00:00:00.000Z");
+			await harness.advance(0);
+
+			expect(debounceMs).toHaveBeenCalledWith(session);
+			expect(harness.openSession).toHaveBeenCalledOnce();
+		});
+
 		it("debounce後にhistoryとoccurredAt・id順のbatch、task一覧を新しいセッションへ渡す", async () => {
 			const historyEvent = event("90", "2026-07-23T00:00:00.000Z");
 			const fetchBefore = vi.fn<ConversationHistoryPort["fetchBefore"]>(async () => [
@@ -669,6 +680,7 @@ function createHarness(
 		intents?: ConversationIntentPort;
 		wrapLogger?: (logger: LoggerPort) => LoggerPort;
 		sessionMemoryEnabled?: boolean;
+		debounceMs?: (session: ConversationSession) => number;
 	} = {},
 ) {
 	vi.useFakeTimers();
@@ -743,7 +755,7 @@ function createHarness(
 			tasks: { listFor },
 		},
 		{
-			debounceMs: 100,
+			debounceMs: options.debounceMs ?? (() => 100),
 			initialHistoryLimit: 20,
 			sessionIdleMs: 1_000,
 			sessionMemoryEnabled: options.sessionMemoryEnabled ?? false,
