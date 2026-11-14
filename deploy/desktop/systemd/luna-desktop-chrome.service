@@ -18,6 +18,7 @@ ExecStart=/usr/bin/google-chrome-stable \
   --password-store=basic \
   --no-first-run \
   --no-default-browser-check \
+  --hide-crash-restore-bubble \
   --start-maximized
 Restart=always
 RestartSec=5
