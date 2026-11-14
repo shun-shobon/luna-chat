@@ -2,6 +2,7 @@ import type { AgentRuntimeStatus } from "../../agent/ports/outbound/agent-sessio
 import type { AutomationStatus } from "../../automation/ports/automation-status";
 import type { ConversationStatus } from "../../conversation/domain/conversation-status";
 import type { EventExecutionStatus } from "../../event/ports/event-execution-port";
+import type { HomeAssistantStatus } from "../../home-assistant/domain/home-assistant-status";
 import type { RecentLogRecord } from "../../observability/ports/logger-port";
 import type { TaskBoardStatus } from "../../task/domain/task";
 import type { WorkspaceStatus } from "../../workspace/domain/workspace-status";
@@ -12,6 +13,7 @@ export interface DashboardSourcePort {
 	automation(): AutomationStatus;
 	conversations(): readonly ConversationStatus[];
 	events(): readonly EventExecutionStatus[];
+	homeAssistant(): HomeAssistantStatus | null;
 	tasks(): TaskBoardStatus;
 	workspace(): WorkspaceStatus;
 }

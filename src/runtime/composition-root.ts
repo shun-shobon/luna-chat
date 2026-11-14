@@ -504,6 +504,7 @@ export async function startLunaApplication(
 				sources: {
 					activity: () => recentLogs.list(),
 					agent: () => agent.status(),
+					homeAssistant: () => homeAssistant?.watcher.status() ?? null,
 					automation: () => automation.snapshot(),
 					workspace: () => trash.status(),
 					conversations: () => coordinator.snapshot(),

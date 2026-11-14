@@ -7,6 +7,7 @@ export type DashboardSnapshot = Readonly<{
 	conversations: ReturnType<DashboardSourcePort["conversations"]>;
 	events: ReturnType<DashboardSourcePort["events"]>;
 	generatedAt: string;
+	homeAssistant: ReturnType<DashboardSourcePort["homeAssistant"]>;
 	startedAt: string;
 	tasks: ReturnType<DashboardSourcePort["tasks"]>;
 	workspace: ReturnType<DashboardSourcePort["workspace"]>;
@@ -30,6 +31,7 @@ export class DashboardService {
 			conversations: sources.conversations(),
 			events: sources.events(),
 			generatedAt: now().toISOString(),
+			homeAssistant: sources.homeAssistant(),
 			startedAt: startedAt.toISOString(),
 			tasks: sources.tasks(),
 			workspace: sources.workspace(),
