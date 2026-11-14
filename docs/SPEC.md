@@ -537,7 +537,7 @@ type TaskSummary = {
 
 ### 20.6 依頼元への通知
 
-通知する報告は `luna.task.reported.v1` イベント（`source: "luna/task"`、`subject` はタスクID、`data` は `{ task: TaskSummary, report: TaskReportJson }`）として依頼元へ届ける。
+通知する報告は `luna.task.reported.v1` イベント（`source: "luna/task"`、`subject` はタスクID、`data` は `{ task: TaskSummary, instructions: string, report: TaskReportJson }`）として依頼元へ届ける。`instructions` は依頼時の指示で、結果を受け取る実行が新しいセッションでも、結果をどう扱うかが分かるようにする。
 
 - 依頼元が会話の場合は、その会話セッションへ通常の受付イベントとして渡す。セッションが終了していれば新しいセッションで受け付ける。
 - 依頼元がイベント実行の場合は、新しいワンショット実行として渡す。実行を始めた時点で配送済みとし、その実行が失敗しても再配送しない。シャットダウン時はこの実行の完了を待つ。

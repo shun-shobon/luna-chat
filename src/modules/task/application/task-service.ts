@@ -367,7 +367,12 @@ export class TaskService {
 			source: TASK_EVENT_SOURCE,
 			subject: task.id,
 			occurredAt: this.#timestamp(),
-			data: { task: summarizeTask(task), report: toReportJson(report) },
+			// 結果を受け取る実行は新しいセッションのことがあるため、結果をどう扱うかを含む依頼文も届ける。
+			data: {
+				task: summarizeTask(task),
+				instructions: task.instructions,
+				report: toReportJson(report),
+			},
 		};
 		const delivery = this.dependencies.delivery.deliver(task.origin, event).then(
 			(outcome) => {
