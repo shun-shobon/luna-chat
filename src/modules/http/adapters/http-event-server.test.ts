@@ -46,13 +46,16 @@ describe("HTTP event server", () => {
 		await service.drain();
 	});
 
-	it("ワンショット完了後にhttp.respondのJSONを返す", async () => {
+	it("ワンショットの最初の実行の完了後にhttp.respondのJSONを返し、続きの実行は待たない", async () => {
 		const completion = deferred();
+		const continuation = deferred();
 		let event: LunaEvent | undefined;
-		const { registry, url } = await start({
-			execute: async (input) => {
+		const { registry, service, url } = await start({
+			execute: async (input, hooks) => {
 				event = input;
 				await completion.promise;
+				hooks?.afterFirstRun?.({ status: "completed" });
+				await continuation.promise;
 				return { status: "completed" };
 			},
 		});
@@ -89,6 +92,16 @@ describe("HTTP event server", () => {
 			tool.invoke({ request_id: requestId, status: 200, body_json: "{" }, execution),
 		).rejects.toThrow(SyntaxError);
 		await expect(tool.invoke(input, execution)).rejects.toThrow("not waiting");
+		let drained = false;
+		const draining = service.drain().then(() => {
+			drained = true;
+		});
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, 20);
+		});
+		expect(drained).toBe(false);
+		continuation.resolve();
+		await draining;
 	});
 
 	it("会話セッションの複数リクエストをIDごとに返し、返答なしは204とする", async () => {
@@ -141,7 +154,11 @@ describe("HTTP event server", () => {
 
 	it("不正な入力と実行失敗を明確なHTTPステータスで返す", async () => {
 		const { service, url } = await start({
-			execute: async () => ({ status: "failed", error: new Error("failed") }),
+			execute: async (_event, hooks) => {
+				const result = { status: "failed", error: new Error("failed") } as const;
+				hooks?.afterFirstRun?.(result);
+				return result;
+			},
 		});
 		expect((await fetch(url, { method: "POST", body: "{}" })).status).toBe(415);
 		expect(
@@ -188,7 +205,14 @@ async function start(overrides: {
 	const registry = new HttpResponseRegistry();
 	const service = new HttpEventService({
 		conversation: { accept: overrides.accept ?? (() => true) },
-		executor: { execute: overrides.execute ?? (async () => ({ status: "completed" })) },
+		executor: {
+			execute:
+				overrides.execute ??
+				(async (_event, hooks) => {
+					hooks?.afterFirstRun?.({ status: "completed" });
+					return { status: "completed" };
+				}),
+		},
 		responses: registry,
 	});
 	const server = await startHttpEventServer({

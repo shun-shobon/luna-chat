@@ -257,9 +257,11 @@ export class ScheduleController {
 				data,
 			},
 			job.kind === "one_shot"
-				? () => {
-						this.#deleteStartedOneShot(job.id);
-						return Promise.resolve();
+				? {
+						afterRunStarted: () => {
+							this.#deleteStartedOneShot(job.id);
+							return Promise.resolve();
+						},
 					}
 				: undefined,
 		);

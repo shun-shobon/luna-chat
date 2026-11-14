@@ -17,7 +17,11 @@ import type {
 	UsageSnapshot,
 } from "../../../ports/outbound/agent-session-port";
 import { PiAgentSession, resolveModel } from "./pi-agent-session";
-import type { HarnessToolSet, PiCompactionSettings } from "./pi-agent-session";
+import type {
+	HarnessBackgroundListener,
+	HarnessToolSet,
+	PiCompactionSettings,
+} from "./pi-agent-session";
 import { toPiAgentTool } from "./pi-tool-adapter";
 import { pruneTranscripts, TranscriptWriter, transcriptFilePath } from "./pi-transcript";
 
@@ -40,6 +44,7 @@ export type HarnessToolContext = Readonly<{
 	sessionId: string;
 	scratchDir: string;
 	conversation: () => readonly Message[];
+	background: HarnessBackgroundListener;
 }>;
 
 export class PiAgentRuntime implements AgentRuntimePort {
@@ -69,6 +74,10 @@ export class PiAgentRuntime implements AgentRuntimePort {
 			sessionId: id,
 			scratchDir,
 			conversation: () => opened?.llmMessages() ?? [],
+			background: {
+				exited: (message) => opened?.onBackgroundExit(message),
+				stopped: () => opened?.onBackgroundStopped(),
+			},
 		});
 		const tools = [...spec.tools.map(toPiAgentTool), ...harness.tools];
 		const duplicated = findDuplicatedName(tools.map((tool) => tool.name));

@@ -1,23 +1,47 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
-import type { AgentTool, AgentToolResult } from "../../../ports/outbound/agent-session-port";
+import type {
+	AgentInputMessage,
+	AgentTool,
+	AgentToolResult,
+} from "../../../ports/outbound/agent-session-port";
 import { createShellTools } from "./shell-tools";
-import type { ShellTools } from "./shell-tools";
+import type { ShellTools, ShellToolsOptions } from "./shell-tools";
 
 const HEADER_PATTERN = /^Chunk ID: [0-9a-f]{6}\nWall time: \d+\.\d{4} seconds\n/u;
 
 let workspace: string;
 let shellTools: ShellTools;
+let exits: AgentInputMessage[];
+let stops: number;
 
 beforeEach(async () => {
 	workspace = await realpath(await mkdtemp(path.join(tmpdir(), "shell-tools-")));
-	shellTools = createShellTools({ cwd: workspace, env: process.env });
+	exits = [];
+	stops = 0;
+	shellTools = createTools();
 });
+
+function createTools(options: Partial<ShellToolsOptions> = {}): ShellTools {
+	return createShellTools({
+		cwd: workspace,
+		env: process.env,
+		scratchDir: path.join(workspace, "scratch"),
+		background: {
+			exited: (message) => exits.push(message),
+			stopped: () => {
+				stops += 1;
+			},
+		},
+		...options,
+	});
+}
 
 afterEach(async () => {
 	await shellTools.dispose();
@@ -138,10 +162,7 @@ describe("exec_command", () => {
 	});
 
 	it("Codexと同じ非対話向けの環境変数を上書きし、渡された環境変数は引き継ぐ", async () => {
-		const tools = createShellTools({
-			cwd: workspace,
-			env: { PATH: process.env["PATH"], FOO: "bar" },
-		});
+		const tools = createTools({ env: { PATH: process.env["PATH"], FOO: "bar" } });
 		try {
 			const result = await execCommand(
 				{ cmd: "echo $FOO $TERM $PAGER $NO_COLOR", login: false },
@@ -404,7 +425,7 @@ describe("プロセスの後始末", () => {
 	});
 
 	it("同時セッション数が上限に達したら最も長く使われていないセッションを止める", async () => {
-		const tools = createShellTools({ cwd: workspace, env: process.env, maxSessions: 2 });
+		const tools = createTools({ maxSessions: 2 });
 		try {
 			const start = (): Promise<AgentToolResult> =>
 				execCommand(
@@ -433,13 +454,188 @@ describe("プロセスの後始末", () => {
 	});
 });
 
+const startedSchema = z.object({ id: z.string(), output_path: z.string() });
+const exitSchema = z.object({
+	id: z.string(),
+	command: z.string(),
+	reason: z.enum(["exited", "timed_out"]),
+	exit_code: z.number(),
+	started_at: z.string(),
+	ended_at: z.string(),
+	output_path: z.string(),
+	output_tail: z.string(),
+});
+
+async function startBackground(
+	argumentsValue: Record<string, unknown>,
+	tools = shellTools,
+): Promise<z.infer<typeof startedSchema>> {
+	const result = await execCommand(
+		{ login: false, ...argumentsValue, run_in_background: true },
+		undefined,
+		tools,
+	);
+	expect(result.isError).toBe(false);
+	return startedSchema.parse(JSON.parse(result.text));
+}
+
+async function nextExit(index = 0): Promise<z.infer<typeof exitSchema>> {
+	await vi.waitFor(() => expect(exits).toHaveLength(index + 1), { timeout: 5_000 });
+	const message = exits[index];
+	expect(message?.kind).toBe("background_exit");
+	return exitSchema.parse(JSON.parse(message?.text ?? ""));
+}
+
+function stopBackground(id: string): Promise<AgentToolResult> {
+	return tool(shellTools, "stop_background").execute({ id }, new AbortController().signal);
+}
+
+describe("バックグラウンド実行", () => {
+	it("すぐidと出力ファイルを返し、終了したら出力の末尾と終了コードを通知する", async () => {
+		const started = await startBackground({ cmd: "echo out; sleep 0.2; echo err >&2; exit 3" });
+
+		expect(started.id).toMatch(/^bg-[0-9a-f]{8}$/u);
+		expect(started.output_path).toBe(
+			path.join(workspace, "scratch", "background", `${started.id}.log`),
+		);
+		expect(shellTools.background.count()).toBe(1);
+		const exit = await nextExit();
+
+		expect(exit).toEqual({
+			id: started.id,
+			command: "echo out; sleep 0.2; echo err >&2; exit 3",
+			reason: "exited",
+			exit_code: 3,
+			started_at: expect.any(String),
+			ended_at: expect.any(String),
+			output_path: started.output_path,
+			output_tail: "out\nerr\n",
+		});
+		await expect(readFile(started.output_path, "utf8")).resolves.toBe("out\nerr\n");
+		expect(shellTools.background.count()).toBe(0);
+		expect(stops).toBe(0);
+	});
+
+	it("出力の末尾は8KiBまでにし、文字の途中から始めない", async () => {
+		await startBackground({ cmd: "for i in $(seq 1 4000); do printf 'あ'; done" });
+
+		const { output_tail: tail } = await nextExit();
+
+		expect(Buffer.byteLength(tail)).toBeLessThanOrEqual(8 * 1024);
+		expect(Buffer.byteLength(tail)).toBeGreaterThan(8 * 1024 - 3);
+		expect(tail).toMatch(/^あ+$/u);
+	});
+
+	it("timeout_secondsを過ぎたらグループごと止めてtimed_outで通知する", async () => {
+		await startBackground({ cmd: "sleep 30", timeout_seconds: 1 });
+
+		const exit = await nextExit();
+
+		expect(exit).toMatchObject({ reason: "timed_out", exit_code: 143 });
+	});
+
+	it("終了したコマンドが残した子もグループごと止めてから通知する", async () => {
+		await startBackground({ cmd: "sleep 30 & echo $!" });
+
+		const exit = await nextExit();
+
+		expect(isAlive(Number(exit.output_tail.trim()))).toBe(false);
+	});
+
+	it("stop_backgroundは通知せずに止め、動いていないIDは失敗にする", async () => {
+		const started = await startBackground({ cmd: "sleep 30" });
+
+		await expect(stopBackground(started.id)).resolves.toEqual({
+			text: `Stopped background process ${started.id}`,
+			images: [],
+			isError: false,
+		});
+		await vi.waitFor(() => expect(stops).toBe(1));
+		expect(shellTools.background.count()).toBe(0);
+		expect(exits).toEqual([]);
+		await expect(stopBackground(started.id)).resolves.toEqual({
+			text: `stop_background failed: No running background process ${started.id}`,
+			images: [],
+			isError: true,
+		});
+	});
+
+	it("終了して後片付け中のIDはstop_backgroundで止められず、通知も消えない", async () => {
+		const started = await startBackground({ cmd: "trap '' TERM; sleep 30 & exit 0" });
+		await vi.waitFor(() => expect(shellTools.background.count()).toBe(1));
+		await delay(300);
+
+		await expect(stopBackground(started.id)).resolves.toMatchObject({ isError: true });
+		const exit = await nextExit();
+
+		expect(exit).toMatchObject({ id: started.id, reason: "exited", exit_code: 0 });
+		expect(stops).toBe(0);
+	});
+
+	it("stopAllとdisposeは通知せずに止める", async () => {
+		await startBackground({ cmd: "sleep 30" });
+		await shellTools.background.stopAll();
+		await vi.waitFor(() => expect(stops).toBe(1));
+
+		const disposed = createTools();
+		const started = await startBackground({ cmd: "echo $$; exec sleep 30" }, disposed);
+		await vi.waitFor(async () =>
+			expect(await readFile(started.output_path, "utf8")).toMatch(/^\d+\n$/u),
+		);
+		const pid = Number((await readFile(started.output_path, "utf8")).trim());
+		await disposed.dispose();
+
+		expect(await waitForExit(pid)).toBe(true);
+		await vi.waitFor(() => expect(stops).toBe(2));
+		expect(exits).toEqual([]);
+	});
+
+	it.each<[string, Record<string, unknown>, string]>([
+		[
+			"ttyとの組み合わせ",
+			{ cmd: "true", run_in_background: true, tty: false },
+			"exec_command failed: run_in_background cannot be combined with tty, yield_time_ms, or max_output_tokens",
+		],
+		[
+			"yield_time_msとの組み合わせ",
+			{ cmd: "true", run_in_background: true, yield_time_ms: 250 },
+			"exec_command failed: run_in_background cannot be combined with tty, yield_time_ms, or max_output_tokens",
+		],
+		[
+			"max_output_tokensとの組み合わせ",
+			{ cmd: "true", run_in_background: true, max_output_tokens: 10 },
+			"exec_command failed: run_in_background cannot be combined with tty, yield_time_ms, or max_output_tokens",
+		],
+		[
+			"run_in_backgroundのないtimeout_seconds",
+			{ cmd: "true", timeout_seconds: 10 },
+			"exec_command failed: timeout_seconds requires run_in_background",
+		],
+	])("%sはisErrorで返して起動しない", async (_label, argumentsValue, text) => {
+		await expect(execCommand(argumentsValue)).resolves.toEqual({ text, images: [], isError: true });
+		expect(shellTools.background.count()).toBe(0);
+	});
+
+	it("範囲外のtimeout_secondsは引数の検証で失敗する", async () => {
+		const result = await execCommand({
+			cmd: "true",
+			run_in_background: true,
+			timeout_seconds: 7_201,
+		});
+
+		expect(result.isError).toBe(true);
+		expect(result.text).toContain("failed to parse function arguments");
+	});
+});
+
 describe("ツール定義", () => {
-	it("Codexと同じ名前と必須引数を公開する", () => {
+	it("Codexと同じ名前と必須引数に、バックグラウンド実行の停止を加えて公開する", () => {
 		expect(
 			shellTools.tools.map((candidate) => [candidate.name, candidate.parameters["required"]]),
 		).toEqual([
 			["exec_command", ["cmd"]],
 			["write_stdin", ["session_id"]],
+			["stop_background", ["id"]],
 		]);
 	});
 });

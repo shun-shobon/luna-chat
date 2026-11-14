@@ -6,6 +6,8 @@ import type {
 	AgentRunResult,
 	AgentSession,
 } from "../../agent/ports/outbound/agent-session-port";
+import { createFakeBackground } from "../../agent/testing/fake-background";
+import type { FakeBackground } from "../../agent/testing/fake-background";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { ToolOrigin } from "../../tool/domain/tool";
@@ -148,6 +150,72 @@ describe("TaskService", () => {
 		});
 		expect(harness.runs).toHaveLength(2);
 		await vi.waitFor(() => expect(harness.sessions[0]?.close).toHaveBeenCalledOnce());
+	});
+
+	describe("バックグラウンド実行", () => {
+		async function finishWithBackground(harness: Awaited<ReturnType<typeof createHarness>>) {
+			const task = await harness.service.create(channelOrigin, input("build"));
+			await harness.waitForRuns(1);
+			harness.sessions[0]?.background.start();
+			harness.finishRun(0);
+			await vi.waitFor(() => expect(harness.sessions[0]?.waitForBackground).toHaveBeenCalledOnce());
+			return task;
+		}
+
+		it("終了報告がなくても残っていれば、task_checkの前に完了通知を待って同じセッションで続ける", async () => {
+			const harness = await createHarness();
+			const task = await finishWithBackground(harness);
+			expect(harness.service.snapshot().running).toBe(1);
+			expect(harness.latest(task.id).status).toBe("running");
+			expect(harness.runs).toHaveLength(1);
+
+			harness.sessions[0]?.background.settle(true);
+			await harness.waitForRuns(2);
+			expect(harness.runs[1]).toEqual({ sessionId: "session-1", messages: [] });
+			await harness.report(task.id, "result", "built");
+			harness.finishRun(1);
+
+			await vi.waitFor(() => expect(harness.sessions[0]?.close).toHaveBeenCalledOnce());
+			expect(harness.latest(task.id).status).toBe("completed");
+			expect(harness.runs).toHaveLength(2);
+		});
+
+		it("待っている間に届いたmessageで待ちを解き、task_messageで続ける", async () => {
+			const harness = await createHarness();
+			const task = await finishWithBackground(harness);
+
+			await expect(harness.service.message(channelOrigin, task.id, "急いで")).resolves.toBe(
+				"running",
+			);
+			await harness.waitForRuns(2);
+
+			expect(harness.runs[1]?.messages.map((message) => message.kind)).toEqual(["task_message"]);
+			expect(harness.sessions[0]?.steer).not.toHaveBeenCalled();
+		});
+
+		it("通知なしにすべて止まったらtask_checkを送る", async () => {
+			const harness = await createHarness();
+			const task = await finishWithBackground(harness);
+
+			harness.sessions[0]?.background.settle(false);
+			await harness.waitForRuns(2);
+
+			expect(harness.runs[1]?.messages).toEqual([
+				{ kind: "task_check", text: JSON.stringify({ task_id: task.id }) },
+			]);
+		});
+
+		it("待っている間の取消でバックグラウンド実行を止め、以後の実行をせずにセッションを閉じる", async () => {
+			const harness = await createHarness();
+			const task = await finishWithBackground(harness);
+
+			await harness.service.cancel(channelOrigin, task.id, null);
+
+			await vi.waitFor(() => expect(harness.sessions[0]?.close).toHaveBeenCalledOnce());
+			expect(harness.sessions[0]?.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.runs).toHaveLength(1);
+			expect(harness.latest(task.id).status).toBe("cancelled");
+		});
 	});
 
 	it("task_checkの後に終了の報告があれば完了する", async () => {
@@ -541,9 +609,13 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
+	hasBackground: Mock<AgentSession["hasBackground"]>;
+	waitForBackground: Mock<AgentSession["waitForBackground"]>;
+	stopBackground: Mock<AgentSession["stopBackground"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
+	background: FakeBackground;
 };
 
 async function createHarness(
@@ -565,10 +637,16 @@ async function createHarness(
 	function createSession(_origin: ToolOrigin): { ownerId: string; session: FakeSession } {
 		const index = sessions.length + 1;
 		const id = `session-${String(index)}`;
+		const background = createFakeBackground();
 		const session: FakeSession = {
 			id,
+			background,
+			hasBackground: background.hasBackground,
+			waitForBackground: background.waitForBackground,
+			stopBackground: background.stopBackground,
 			// 実行の終わり際の割り込みを再現できるよう、async関数で包まず生のPromiseを返す。
 			run: vi.fn<AgentSession["run"]>((messages) => {
+				background.consume();
 				runs.push({ sessionId: id, messages });
 				return new Promise<AgentRunResult>((resolve, reject) => {
 					settlers.push({ resolve, reject });

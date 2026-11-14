@@ -9,6 +9,8 @@ import type {
 	AgentSessionPhase,
 	ModelSelection,
 } from "../../agent/ports/outbound/agent-session-port";
+import { createFakeBackground } from "../../agent/testing/fake-background";
+import type { FakeBackground } from "../../agent/testing/fake-background";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { LogEntry, LoggerPort } from "../../observability/ports/logger-port";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
@@ -248,6 +250,92 @@ describe("ConversationCoordinator", () => {
 			expect(harness.releaseTools).toHaveBeenCalledWith("owner-1");
 			expect(harness.sessions[0]?.close).not.toHaveBeenCalled();
 			expect(harness.coordinator.snapshot()).toMatchObject([{ phase: "idle" }]);
+		});
+	});
+
+	describe("バックグラウンド実行", () => {
+		const taskBoard: AgentInputMessage = {
+			kind: "task_board",
+			text: JSON.stringify([{ id: "task-1", status: "running" }]),
+		};
+
+		it("残っている間はidle期限を数えず、完了通知を受けて同じセッションでタスク一覧を渡して実行する", async () => {
+			const harness = createHarness();
+			await harness.startFirstRun("100");
+			harness.sessions[0]?.background.start();
+			harness.finishRun(0);
+			await harness.flush();
+
+			await harness.advance(5_000);
+			expect(harness.sessions[0]?.close).not.toHaveBeenCalled();
+			expect(harness.coordinator.snapshot()).toMatchObject([
+				{ phase: "idle", idleDeadlineAt: null },
+			]);
+
+			harness.sessions[0]?.background.settle(true);
+			await harness.flush();
+			expect(harness.runs[1]).toEqual({ sessionId: "session-1", messages: [taskBoard] });
+			harness.finishRun(1);
+			await harness.flush();
+
+			await harness.advance(999);
+			expect(harness.sessions[0]?.close).not.toHaveBeenCalled();
+			await harness.advance(1);
+			expect(harness.sessions[0]?.close).toHaveBeenCalledOnce();
+		});
+
+		it("通知なしにすべて止まったらidle期限を数え始める", async () => {
+			const harness = createHarness();
+			await harness.startFirstRun("100");
+			harness.sessions[0]?.background.start();
+			harness.finishRun(0);
+			await harness.flush();
+
+			harness.sessions[0]?.background.settle(false);
+			await harness.flush();
+			await harness.advance(999);
+			expect(harness.sessions[0]?.close).not.toHaveBeenCalled();
+			await harness.advance(1);
+
+			expect(harness.runs).toHaveLength(1);
+			expect(harness.sessions[0]?.close).toHaveBeenCalledOnce();
+		});
+
+		it("待っている間の新着を先に処理し、その実行中に届いた通知は実行の完了後に続けて渡す", async () => {
+			const harness = createHarness();
+			await harness.startFirstRun("100");
+			harness.sessions[0]?.background.start();
+			harness.finishRun(0);
+			await harness.flush();
+
+			harness.accept("101", "2026-07-23T00:00:01.000Z");
+			await harness.advance(100);
+			expect(harness.runs[1]?.messages[0]?.kind).toBe("discord_message");
+			harness.sessions[0]?.background.settle(true);
+			await harness.flush();
+			expect(harness.runs).toHaveLength(2);
+
+			harness.finishRun(1);
+			await harness.flush();
+			expect(harness.runs[2]).toEqual({ sessionId: "session-1", messages: [taskBoard] });
+		});
+
+		it("終了要求では記憶保存の前に止める", async () => {
+			const harness = createHarness({ sessionMemoryEnabled: true });
+			await harness.startFirstRun("100");
+			harness.sessions[0]?.background.start();
+			harness.finishRun(0);
+			await harness.flush();
+
+			expect(harness.coordinator.endSession(session.key)).toBe(true);
+			await harness.flush();
+
+			expect(harness.sessions[0]?.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.runs[1]?.messages[0]?.kind).toBe("session_end");
+			harness.finishRun(1);
+			await harness.flush();
+			expect(harness.runs).toHaveLength(2);
+			expect(harness.sessions[0]?.close).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -668,10 +756,14 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
+	hasBackground: Mock<AgentSession["hasBackground"]>;
+	waitForBackground: Mock<AgentSession["waitForBackground"]>;
+	stopBackground: Mock<AgentSession["stopBackground"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
 	setPhase(phase: AgentSessionPhase, retries: number): void;
+	background: FakeBackground;
 };
 
 function createHarness(
@@ -698,19 +790,25 @@ function createHarness(
 		const index = sessions.length + 1;
 		const id = `session-${String(index)}`;
 		const state: { phase: AgentSessionPhase; retries: number } = { phase: "idle", retries: 0 };
+		const background = createFakeBackground();
 		const fake: FakeSession = {
 			id,
 			setPhase: (phase: AgentSessionPhase, retries: number): void => {
 				state.phase = phase;
 				state.retries = retries;
 			},
+			background,
 			run: vi.fn<AgentSession["run"]>(
 				async (messages) =>
 					await new Promise<AgentRunResult>((resolve, reject) => {
+						background.consume();
 						runs.push({ sessionId: id, messages });
 						settlers.push({ resolve, reject });
 					}),
 			),
+			hasBackground: background.hasBackground,
+			waitForBackground: background.waitForBackground,
+			stopBackground: background.stopBackground,
 			steer: vi.fn<AgentSession["steer"]>(),
 			abort: vi.fn<AgentSession["abort"]>(async () => {
 				const runIndex = runs.findLastIndex((run) => run.sessionId === id);

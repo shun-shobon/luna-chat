@@ -54,6 +54,7 @@ type Setup = Readonly<{
 	scratchRoot: string;
 	harnessContexts: HarnessToolContext[];
 	harnessDispose: ReturnType<typeof vi.fn>;
+	backgroundCount: { value: number };
 	hasCredentials: { value: boolean };
 	logger: RecordingLogger;
 }>;
@@ -80,6 +81,14 @@ async function setup(
 	const harnessDispose = vi.fn(async () => undefined);
 	const scratchRoot = path.join(transcriptDir, "scratch");
 	const harnessContexts: HarnessToolContext[] = [];
+	const backgroundCount = { value: 0 };
+	const harnessBackground = {
+		count: () => backgroundCount.value,
+		stopAll: async () => {
+			backgroundCount.value = 0;
+			harnessContexts.at(-1)?.background.stopped();
+		},
+	};
 	const hasCredentials = { value: true };
 	const logger = createRecordingLogger();
 	const runtime = new PiAgentRuntime({
@@ -95,7 +104,11 @@ async function setup(
 		},
 		createHarnessTools: (_spec, context) => {
 			harnessContexts.push(context);
-			return { tools: options.harnessTools ?? [], dispose: harnessDispose };
+			return {
+				tools: options.harnessTools ?? [],
+				background: harnessBackground,
+				dispose: harnessDispose,
+			};
 		},
 		hasCredentials: () => hasCredentials.value,
 		logger,
@@ -114,6 +127,7 @@ async function setup(
 		scratchRoot,
 		harnessContexts,
 		harnessDispose,
+		backgroundCount,
 		hasCredentials,
 		logger,
 	};
@@ -327,6 +341,84 @@ describe("ツール", () => {
 		await vi.waitFor(() => {
 			expect(harnessDispose).toHaveBeenCalledTimes(1);
 		});
+	});
+});
+
+describe("バックグラウンド実行", () => {
+	const exitInput = input('{"id":"bg-1"}', "background_exit");
+
+	it("実行していない間の完了通知は待ちを true で解き、次の run の入力の前に入れる", async () => {
+		const { runtime, faux, harnessContexts, backgroundCount } = await setup();
+		const requests: { context: TranscriptContext; model: string }[] = [];
+		faux.setResponses([fauxAssistantMessage("始めた"), capture(requests, "見た")]);
+		const session = runtime.open(spec());
+		await session.run([input("ビルドして")]);
+		backgroundCount.value = 1;
+		expect(session.hasBackground()).toBe(true);
+
+		const waiting = session.waitForBackground();
+		backgroundCount.value = 0;
+		harnessContexts[0]?.background.exited(exitInput);
+
+		await expect(waiting).resolves.toBe(true);
+		expect(session.hasBackground()).toBe(true);
+		await session.run([]);
+		expect(texts(requests[0]?.context.messages ?? [], "user").at(-1)).toBe(
+			'<luna_input kind="background_exit">\n{"id":"bg-1"}\n</luna_input>',
+		);
+		expect(session.hasBackground()).toBe(false);
+		await expect(session.waitForBackground()).resolves.toBe(false);
+		await expect(session.run([])).rejects.toThrow("Agent run requires input");
+	});
+
+	it("実行中の完了通知は同じ実行の次のリクエストの前に入る", async () => {
+		const { runtime, faux, harnessContexts } = await setup();
+		const requests: { context: TranscriptContext; model: string }[] = [];
+		const finishing = tool("finish_tool", async () => {
+			harnessContexts[0]?.background.exited(exitInput);
+			return { text: "ok", images: [], isError: false };
+		});
+		faux.setResponses([
+			fauxAssistantMessage([fauxToolCall("finish_tool", { value: "x" })], {
+				stopReason: "toolUse",
+			}),
+			capture(requests, "見た"),
+		]);
+		const session = runtime.open(spec({ tools: [finishing] }));
+
+		await session.run([input("始めて")]);
+
+		expect(texts(requests[0]?.context.messages ?? [], "user").at(-1)).toBe(
+			'<luna_input kind="background_exit">\n{"id":"bg-1"}\n</luna_input>',
+		);
+		expect(session.hasBackground()).toBe(false);
+	});
+
+	it("stopBackground はまだ run に入れていない完了通知も捨てる", async () => {
+		const { runtime, harnessContexts } = await setup();
+		const session = runtime.open(spec());
+		harnessContexts[0]?.background.exited(exitInput);
+		expect(session.hasBackground()).toBe(true);
+
+		await session.stopBackground();
+
+		expect(session.hasBackground()).toBe(false);
+		await expect(session.waitForBackground()).resolves.toBe(false);
+	});
+
+	it("通知なしにすべて止まるか閉じたら待ちを false で解く", async () => {
+		const { runtime, backgroundCount } = await setup();
+		const stopped = runtime.open(spec());
+		backgroundCount.value = 1;
+		const waitingStop = stopped.waitForBackground();
+		await stopped.stopBackground();
+		await expect(waitingStop).resolves.toBe(false);
+
+		const closed = runtime.open(spec());
+		backgroundCount.value = 1;
+		const waitingClose = closed.waitForBackground();
+		await closed.close();
+		await expect(waitingClose).resolves.toBe(false);
 	});
 });
 

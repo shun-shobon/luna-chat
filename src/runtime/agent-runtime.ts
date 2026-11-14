@@ -14,6 +14,7 @@ import { PiAgentRuntime } from "../modules/agent/adapters/outbound/pi/pi-agent-r
 import type { HarnessToolContext } from "../modules/agent/adapters/outbound/pi/pi-agent-runtime";
 import type {
 	AnyPiAgentTool,
+	HarnessBackground,
 	HarnessToolSet,
 } from "../modules/agent/adapters/outbound/pi/pi-agent-session";
 import { toPiAgentTool } from "../modules/agent/adapters/outbound/pi/pi-tool-adapter";
@@ -117,13 +118,18 @@ function createHarnessTools(
 ): HarnessToolSet {
 	const wanted = new Set<HarnessToolName>(spec.harnessTools);
 	const shell =
-		wanted.has("exec_command") || wanted.has("write_stdin")
-			? createShellTools({ cwd: spec.cwd, env: { ...environment, TMPDIR: context.scratchDir } })
+		wanted.has("exec_command") || wanted.has("write_stdin") || wanted.has("stop_background")
+			? createShellTools({
+					cwd: spec.cwd,
+					env: { ...environment, TMPDIR: context.scratchDir },
+					scratchDir: context.scratchDir,
+					background: context.background,
+				})
 			: undefined;
 	const read = createReadTool(spec.cwd);
 	const candidates: ReadonlyArray<readonly [HarnessToolName, AnyPiAgentTool]> = [
 		...(shell?.tools ?? []).flatMap((tool): Array<readonly [HarnessToolName, AnyPiAgentTool]> =>
-			tool.name === "exec_command" || tool.name === "write_stdin"
+			tool.name === "exec_command" || tool.name === "write_stdin" || tool.name === "stop_background"
 				? [[tool.name, toPiAgentTool(tool)]]
 				: [],
 		),
@@ -160,6 +166,7 @@ function createHarnessTools(
 			.map(([name, tool]) =>
 				name === "read" || name === "exec_command" ? observeSkillUse(tool, recordSkillUse) : tool,
 			),
+		background: shell?.background ?? NO_BACKGROUND,
 		dispose: async () => await shell?.dispose(),
 	};
 }
@@ -205,6 +212,7 @@ export function createReplayHarnessTools(
 	const stubbed: readonly HarnessToolName[] = [
 		"exec_command",
 		"write_stdin",
+		"stop_background",
 		"edit",
 		"write",
 		"image_gen",
@@ -225,9 +233,12 @@ export function createReplayHarnessTools(
 	];
 	return {
 		tools: tools.filter((tool) => spec.harnessTools.some((name) => name === tool.name)),
+		background: NO_BACKGROUND,
 		dispose: async () => {},
 	};
 }
+
+const NO_BACKGROUND: HarnessBackground = { count: () => 0, stopAll: async () => {} };
 
 const REPLAY_STUB_RESULT =
 	"Replay: this tool was not executed. Treat it as having succeeded and continue.";

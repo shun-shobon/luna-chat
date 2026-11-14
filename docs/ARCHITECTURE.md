@@ -199,15 +199,15 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 ### 8.2 バックグラウンド実行
 
 ```text
-exec_command(run_in_background) ─► BackgroundProcesses（シェルツールごと）
+exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表（セッションごと）
                                          │ 終了（通知あり）       │ stop_background / stopBackground / dispose（通知なし）
                                          ▼                        ▼
-                         PiAgentSession.#onBackgroundExit   PiAgentSession.#onBackgroundStopped
-                           ├ 実行中: agent.steer                └ 残りも通知もなければ待ちを false で解く
+                         PiAgentSession.onBackgroundExit    PiAgentSession.onBackgroundStopped
+                           ├ 実行中: steer                      └ 残りも通知もなければ待ちを false で解く
                            └ 実行外: pending に積み、待ちを true で解く ─► 次の run の入力の前に入れる
 ```
 
-- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
+- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。`stopBackground()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
 - 実行中かどうかの判定はアダプターが持つ。`run` の完了から持ち主の継続までの間に届いた通知を、持ち主ではなくアダプターが `pending` に積むため、取りこぼしが起きない。
 - プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。通知の `output_tail` はファイルの末尾から読む。
 - 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（§6.3）。EventExecutor は実行のたびに `waitForBackground()` を待ち、`true` なら `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForBackground()` とメッセージの到着を待つ。

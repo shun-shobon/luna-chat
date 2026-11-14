@@ -55,6 +55,8 @@ type ActiveRun = {
 	opened: OpenedAgentSession | undefined;
 	running: boolean;
 	stopReason: "cancelled" | "shutdown" | undefined;
+	// バックグラウンド実行の終了を待っている間に届いたメッセージで待ちを解く。
+	wake: (() => void) | undefined;
 };
 
 class TaskError extends Error {
@@ -154,6 +156,8 @@ export class TaskService {
 		} else if (task.status === "waiting_input") {
 			this.#update(taskId, { status: "queued" });
 			this.#pump();
+		} else {
+			run?.wake?.();
 		}
 		await this.#persist(taskId);
 		return this.#require(taskId).status;
@@ -237,6 +241,7 @@ export class TaskService {
 				opened: this.#parked.get(task.id),
 				running: false,
 				stopReason: undefined,
+				wake: undefined,
 			};
 			this.#parked.delete(task.id);
 			this.#runs.set(task.id, run);
@@ -297,12 +302,33 @@ export class TaskService {
 			run.opened = undefined;
 			return undefined;
 		}
+		if (opened.session.hasBackground()) {
+			const arrived = await this.#waitForBackgroundOrMessage(run, opened);
+			if (isStopped(run)) return undefined;
+			const latest = this.#require(taskId);
+			if (isTerminalStatus(latest.status)) return undefined;
+			if (latest.messages.some((message) => message.deliveredAt == null)) {
+				return [this.#messagesInput(taskId)];
+			}
+			// 届いた完了通知は次の run の入力の前にセッションが入れる。
+			if (arrived) return [];
+		}
 		if (!run.nudged) {
 			run.nudged = true;
 			return [{ kind: "task_check", text: JSON.stringify({ task_id: taskId }) }];
 		}
 		this.#fail(taskId, "Worker ended without a result, question, or failure report.");
 		return undefined;
+	}
+
+	async #waitForBackgroundOrMessage(run: ActiveRun, opened: OpenedAgentSession): Promise<boolean> {
+		const woken = Promise.withResolvers<boolean>();
+		run.wake = () => woken.resolve(false);
+		try {
+			return await Promise.race([opened.session.waitForBackground(), woken.promise]);
+		} finally {
+			run.wake = undefined;
+		}
 	}
 
 	#assignmentInput(taskId: string): AgentInputMessage {
@@ -408,6 +434,9 @@ export class TaskService {
 		});
 		void opened.session.abort().catch((error: unknown) => {
 			this.dependencies.logger.warn("task.abort_failed", { error });
+		});
+		void opened.session.stopBackground().catch((error: unknown) => {
+			this.dependencies.logger.warn("task.background_stop_failed", { error });
 		});
 	}
 

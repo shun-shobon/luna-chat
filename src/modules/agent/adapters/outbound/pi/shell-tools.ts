@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { once } from "node:events";
+import { mkdir, open } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -11,7 +12,12 @@ import { z } from "zod";
 
 import { hasErrorCode } from "../../../../../shared/error-code";
 import type { JsonObject } from "../../../../../shared/json";
-import type { AgentTool, AgentToolResult } from "../../../ports/outbound/agent-session-port";
+import type {
+	AgentInputMessage,
+	AgentTool,
+	AgentToolResult,
+} from "../../../ports/outbound/agent-session-port";
+import type { HarnessBackground, HarnessBackgroundListener } from "./pi-agent-session";
 
 // 定数とツール定義・出力書式は Codex の unified exec (codex-rs/core/src/unified_exec) に合わせている。
 const SHELL_PATH = "/bin/bash";
@@ -31,6 +37,9 @@ const POST_EXIT_CLOSE_WAIT_MS = 50;
 const TERMINATE_GRACE_MS = 2_000;
 const GROUP_EXIT_POLL_MS = 20;
 const INTERRUPT = "\u0003";
+const DEFAULT_BACKGROUND_TIMEOUT_SECONDS = 1_800;
+const MAX_BACKGROUND_TIMEOUT_SECONDS = 7_200;
+const BACKGROUND_OUTPUT_TAIL_BYTES = 8 * 1024;
 const UNIFIED_EXEC_ENV: Readonly<Record<string, string>> = {
 	NO_COLOR: "1",
 	TERM: "dumb",
@@ -47,11 +56,15 @@ export type ShellToolsOptions = Readonly<{
 	cwd: string;
 	// 子プロセスへ渡す環境変数。秘密情報を除くのは呼び出し側の責務。
 	env: Readonly<Record<string, string | undefined>>;
+	// バックグラウンド実行の出力を background/ に置く、セッションの一時ディレクトリ。
+	scratchDir: string;
+	background: HarnessBackgroundListener;
 	maxSessions?: number;
 }>;
 
 export type ShellTools = Readonly<{
 	tools: readonly AgentTool[];
+	background: HarnessBackground;
 	dispose(): Promise<void>;
 }>;
 
@@ -62,7 +75,11 @@ const execCommandArgumentsSchema = z.object({
 	login: z.boolean().optional(),
 	yield_time_ms: z.number().int().nonnegative().optional(),
 	max_output_tokens: z.number().int().nonnegative().optional(),
+	run_in_background: z.boolean().optional(),
+	timeout_seconds: z.number().int().min(1).max(MAX_BACKGROUND_TIMEOUT_SECONDS).optional(),
 });
+
+const stopBackgroundArgumentsSchema = z.object({ id: z.string() });
 
 const writeStdinArgumentsSchema = z.object({
 	session_id: z.number().int(),
@@ -101,8 +118,27 @@ const EXEC_COMMAND_PARAMETERS: JsonObject = {
 			description:
 				"True runs the shell with -l/-i semantics; false disables them. Defaults to true.",
 		},
+		run_in_background: {
+			type: "boolean",
+			description:
+				"True starts the command in the background with stdin closed and returns its id and output file at once. The command keeps running after your run ends, and a background_exit input arrives in this session when it exits. Cannot be combined with tty, yield_time_ms, or max_output_tokens.",
+		},
+		timeout_seconds: {
+			type: "number",
+			description:
+				"Only with run_in_background. Stops the command after this many seconds. Defaults to 1800; at most 7200.",
+		},
 	},
 	required: ["cmd"],
+	additionalProperties: false,
+};
+
+const STOP_BACKGROUND_PARAMETERS: JsonObject = {
+	type: "object",
+	properties: {
+		id: { type: "string", description: "Id returned by exec_command with run_in_background." },
+	},
+	required: ["id"],
 	additionalProperties: false,
 };
 
@@ -143,6 +179,20 @@ type ShellSession = {
 	termination: Promise<void> | null;
 };
 
+type BackgroundProcess = {
+	readonly id: string;
+	readonly pid: number;
+	readonly command: string;
+	readonly startedAt: Date;
+	readonly outputPath: string;
+	readonly timer: NodeJS.Timeout;
+	reason: "exited" | "timed_out";
+	notify: boolean;
+	// コマンドは終了し、残った子孫の片付けと通知を待っている。
+	exited: boolean;
+	termination: Promise<void> | null;
+};
+
 type CollectedOutput = Readonly<{
 	output: HeadTailBuffer;
 	wallTimeMs: number;
@@ -152,14 +202,110 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 	const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
 	const childEnv = { ...options.env, ...UNIFIED_EXEC_ENV };
 	const sessions = new Map<number, ShellSession>();
+	const backgroundProcesses = new Map<string, BackgroundProcess>();
 	const terminations = new Set<Promise<void>>();
 	let useCounter = 0;
 	let disposed = false;
 
-	const trackTermination = (session: ShellSession): void => {
-		const termination = terminateProcessGroup(session);
+	const trackTermination = (target: ProcessGroup): Promise<void> => {
+		const termination = terminateProcessGroup(target);
 		terminations.add(termination);
 		void termination.finally(() => terminations.delete(termination));
+		return termination;
+	};
+
+	const stopBackground = (entry: BackgroundProcess): Promise<void> => {
+		entry.notify = false;
+		return trackTermination(entry);
+	};
+
+	// 終了したら Codex のセッションと同じくグループに残った子孫も片付けてから知らせる。
+	const finishBackground = async (
+		entry: BackgroundProcess,
+		exitCode: number,
+		endedAt: Date,
+	): Promise<void> => {
+		await trackTermination(entry);
+		const outputTail = entry.notify ? await readOutputTail(entry.outputPath) : "";
+		backgroundProcesses.delete(entry.id);
+		if (!entry.notify) {
+			options.background.stopped();
+			return;
+		}
+		options.background.exited({
+			kind: "background_exit",
+			text: JSON.stringify({
+				id: entry.id,
+				command: entry.command,
+				reason: entry.reason,
+				exit_code: exitCode,
+				started_at: entry.startedAt.toISOString(),
+				ended_at: endedAt.toISOString(),
+				output_path: entry.outputPath,
+				output_tail: outputTail,
+			}),
+		} satisfies AgentInputMessage);
+	};
+
+	const startBackground = async (
+		args: z.infer<typeof execCommandArgumentsSchema>,
+		workdir: string,
+	): Promise<AgentToolResult> => {
+		const outputDir = path.join(options.scratchDir, "background");
+		await mkdir(outputDir, { recursive: true });
+		const id = allocateBackgroundId(backgroundProcesses);
+		const outputPath = path.join(outputDir, `${id}.log`);
+		// パイプを通すと長く動くプロセスの出力をメモリに溜めるため、ファイルへ直接書かせる。
+		const output = await open(outputPath, "wx", 0o600);
+		let child: ChildProcess;
+		try {
+			child = spawn(SHELL_PATH, [(args.login ?? true) ? "-lc" : "-c", args.cmd], {
+				cwd: workdir,
+				env: childEnv,
+				stdio: ["ignore", output.fd, output.fd],
+				detached: true,
+			});
+		} finally {
+			await output.close();
+		}
+		const { pid } = child;
+		if (pid == null) {
+			const reason = await once(child, "spawn").then(
+				() => "process id is unavailable",
+				(error: unknown) => describeError(error),
+			);
+			return errorResult(
+				`exec_command failed: Failed to create background process: ${reason} (workdir: ${workdir})`,
+			);
+		}
+		const timeoutSeconds = args.timeout_seconds ?? DEFAULT_BACKGROUND_TIMEOUT_SECONDS;
+		const entry: BackgroundProcess = {
+			id,
+			pid,
+			command: args.cmd,
+			startedAt: new Date(),
+			outputPath,
+			timer: setTimeout(() => {
+				entry.reason = "timed_out";
+				void trackTermination(entry);
+			}, timeoutSeconds * 1_000),
+			reason: "exited",
+			notify: true,
+			exited: false,
+			termination: null,
+		};
+		backgroundProcesses.set(id, entry);
+		child.on("error", () => undefined);
+		child.once("exit", (code, signal) => {
+			clearTimeout(entry.timer);
+			entry.exited = true;
+			void finishBackground(entry, exitCodeOf(code, signal), new Date());
+		});
+		return {
+			text: JSON.stringify({ id, output_path: outputPath }),
+			images: [],
+			isError: false,
+		};
 	};
 
 	const allocateSessionId = (): number => {
@@ -191,7 +337,7 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 			return;
 		}
 		sessions.delete(victim.id);
-		trackTermination(victim);
+		void trackTermination(victim);
 	};
 
 	// 終了したセッションは Codex と同様にグループに残った子孫ごと片付ける。
@@ -199,7 +345,7 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 		if (sessions.get(session.id) === session) {
 			sessions.delete(session.id);
 		}
-		trackTermination(session);
+		void trackTermination(session);
 	};
 
 	const execCommand = async (
@@ -218,6 +364,21 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 			args.workdir == null || args.workdir === ""
 				? options.cwd
 				: path.resolve(options.cwd, args.workdir);
+		if (args.run_in_background === true) {
+			if (
+				args.tty !== undefined ||
+				args.yield_time_ms !== undefined ||
+				args.max_output_tokens !== undefined
+			) {
+				return errorResult(
+					"exec_command failed: run_in_background cannot be combined with tty, yield_time_ms, or max_output_tokens",
+				);
+			}
+			return await startBackground(args, workdir);
+		}
+		if (args.timeout_seconds !== undefined) {
+			return errorResult("exec_command failed: timeout_seconds requires run_in_background");
+		}
 		const stdinOpen = args.tty ?? false;
 		const child = spawn(SHELL_PATH, [(args.login ?? true) ? "-lc" : "-c", args.cmd], {
 			cwd: workdir,
@@ -334,12 +495,25 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 		};
 	};
 
+	const stopBackgroundTool = async (argumentsValue: unknown): Promise<AgentToolResult> => {
+		const parsed = stopBackgroundArgumentsSchema.safeParse(argumentsValue);
+		if (!parsed.success) {
+			return parseFailure(parsed.error);
+		}
+		const entry = backgroundProcesses.get(parsed.data.id);
+		if (entry == null || entry.exited) {
+			return errorResult(`stop_background failed: No running background process ${parsed.data.id}`);
+		}
+		await stopBackground(entry);
+		return { text: `Stopped background process ${entry.id}`, images: [], isError: false };
+	};
+
 	return {
 		tools: [
 			{
 				name: "exec_command",
 				description:
-					"Runs a command with plain pipes (no PTY), returning output or a session ID for ongoing interaction.",
+					"Runs a command with plain pipes (no PTY), returning output or a session ID for ongoing interaction. With run_in_background, returns at once and reports the exit later as a background_exit input.",
 				parameters: EXEC_COMMAND_PARAMETERS,
 				execute: execCommand,
 			},
@@ -350,13 +524,29 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 				parameters: WRITE_STDIN_PARAMETERS,
 				execute: writeStdin,
 			},
+			{
+				name: "stop_background",
+				description:
+					"Stops a command started with run_in_background, together with its child processes. No background_exit input arrives for it.",
+				parameters: STOP_BACKGROUND_PARAMETERS,
+				execute: stopBackgroundTool,
+			},
 		],
+		background: {
+			count: () => backgroundProcesses.size,
+			stopAll: async () => {
+				await Promise.all([...backgroundProcesses.values()].map(stopBackground));
+			},
+		},
 		dispose: async () => {
 			disposed = true;
 			const remaining = [...sessions.values()];
 			sessions.clear();
 			for (const session of remaining) {
-				trackTermination(session);
+				void trackTermination(session);
+			}
+			for (const entry of backgroundProcesses.values()) {
+				void stopBackground(entry);
 			}
 			await Promise.all(terminations);
 		},
@@ -395,7 +585,7 @@ function startSession(
 	child.stdin?.on("error", () => undefined);
 	child.on("error", () => undefined);
 	child.once("exit", (code, signal) => {
-		session.exitCode = code ?? (signal == null ? -1 : 128 + osConstants.signals[signal]);
+		session.exitCode = exitCodeOf(code, signal);
 		exited.resolve();
 	});
 	child.once("close", () => {
@@ -485,21 +675,53 @@ function waitUntil(
 	});
 }
 
-function terminateProcessGroup(session: ShellSession): Promise<void> {
-	session.termination ??= (async () => {
-		if (!signalProcessGroup(session.pid, "SIGTERM")) {
+type ProcessGroup = { readonly pid: number; termination: Promise<void> | null };
+
+function terminateProcessGroup(target: ProcessGroup): Promise<void> {
+	target.termination ??= (async () => {
+		if (!signalProcessGroup(target.pid, "SIGTERM")) {
 			return;
 		}
 		const deadline = performance.now() + TERMINATE_GRACE_MS;
 		while (performance.now() < deadline) {
-			if (!isProcessGroupAlive(session.pid)) {
+			if (!isProcessGroupAlive(target.pid)) {
 				return;
 			}
 			await delay(GROUP_EXIT_POLL_MS);
 		}
-		signalProcessGroup(session.pid, "SIGKILL");
+		signalProcessGroup(target.pid, "SIGKILL");
 	})();
-	return session.termination;
+	return target.termination;
+}
+
+function exitCodeOf(code: number | null, signal: NodeJS.Signals | null): number {
+	return code ?? (signal == null ? -1 : 128 + osConstants.signals[signal]);
+}
+
+function allocateBackgroundId(taken: ReadonlyMap<string, unknown>): string {
+	for (;;) {
+		const id = `bg-${randomBytes(4).toString("hex")}`;
+		if (!taken.has(id)) {
+			return id;
+		}
+	}
+}
+
+async function readOutputTail(filePath: string): Promise<string> {
+	try {
+		const handle = await open(filePath, "r");
+		try {
+			const { size } = await handle.stat();
+			const length = Math.min(size, BACKGROUND_OUTPUT_TAIL_BYTES);
+			const buffer = Buffer.alloc(length);
+			await handle.read(buffer, 0, length, size - length);
+			return buffer.subarray(ceilCharBoundary(buffer, 0)).toString("utf8");
+		} finally {
+			await handle.close();
+		}
+	} catch (error) {
+		return `(output is unavailable: ${describeError(error)})`;
+	}
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {

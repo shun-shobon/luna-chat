@@ -37,6 +37,7 @@ export interface AgentTool {
 export type HarnessToolName =
 	| "exec_command"
 	| "write_stdin"
+	| "stop_background"
 	| "read"
 	| "edit"
 	| "write"
@@ -90,6 +91,13 @@ export interface AgentSession {
 	// 実行中なら次のLLMリクエストの前に入る。アイドルなら次の run の入力の後に入る。
 	steer(message: AgentInputMessage): void;
 	abort(): Promise<void>;
+	// 動いているバックグラウンド実行か、まだ run に入れていない完了通知があるか。
+	hasBackground(): boolean;
+	// 完了通知が届けば true、通知なしにすべて止まった（または何もない）なら false で解決する。
+	// 届いた通知は次の run の入力の前に入るため、run([]) で続けられる。
+	waitForBackground(): Promise<boolean>;
+	// 残っているバックグラウンド実行を完了通知を出さずに止め、まだ run に入れていない完了通知も捨てる。
+	stopBackground(): Promise<void>;
 	setModel(model: ModelSelection): void;
 	close(): Promise<void>;
 	status(): AgentSessionStatus;
