@@ -13,8 +13,8 @@ import {
 import { AutomationService } from "../modules/automation/application/automation-service";
 import { HeartbeatController } from "../modules/automation/application/heartbeat-controller";
 import { MemoryMaintenanceController } from "../modules/automation/application/memory-maintenance-controller";
+import { RetentionCleaner } from "../modules/automation/application/retention-cleaner";
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
-import { TranscriptRetentionCleaner } from "../modules/automation/application/transcript-retention-cleaner";
 import type { AutomationWorkspacePort } from "../modules/automation/ports/automation-workspace-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
 import { startDashboardServer } from "../modules/dashboard/adapters/dashboard-server";
@@ -73,6 +73,10 @@ import {
 } from "../modules/workspace/adapters/schedule-toml";
 import { SkillUsageStore } from "../modules/workspace/adapters/skill-usage-store";
 import { readWorkspaceSkillsPrompt } from "../modules/workspace/adapters/workspace-skills";
+import {
+	TRASH_RETENTION_DAYS,
+	WorkspaceTrash,
+} from "../modules/workspace/adapters/workspace-trash";
 import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
 import {
 	createChatGptBackend,
@@ -89,6 +93,7 @@ const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
 const SCHEDULE_CHECK_TIMEOUT_MS = 120_000;
 const SCHEDULE_CHECK_KILL_GRACE_MS = 5_000;
 const RECENT_LOG_CAPACITY = 500;
+const TRASH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
 const RECENT_LOG_EXCLUDED_EVENTS: ReadonlySet<string> = new Set();
 const USAGE_POLL_INTERVAL_MS = 600_000;
@@ -302,6 +307,7 @@ export async function startLunaApplication(
 		conversation = coordinator;
 
 		const clock = new SystemAutomationClock();
+		const trash = new WorkspaceTrash(workspace.workspaceDir, logger);
 		const executor = new EventExecutor({
 			logger,
 			now: () => new Date(),
@@ -343,17 +349,28 @@ export async function startLunaApplication(
 				executor,
 				scheduleTimer,
 			}),
-			retention: new TranscriptRetentionCleaner({
-				cleanupIntervalMs: workspace.config.agent.transcriptCleanupIntervalMs,
-				clock,
-				logger,
-				pruner: {
-					prune: async (now, retentionMs) => {
-						await agent.pruneTranscripts(now, retentionMs);
+			cleaners: [
+				new RetentionCleaner({
+					cleanupIntervalMs: workspace.config.agent.transcriptCleanupIntervalMs,
+					clock,
+					failureEvent: "automation.transcript_retention.prune_failed",
+					logger,
+					pruner: {
+						prune: async (now, retentionMs) => {
+							await agent.pruneTranscripts(now, retentionMs);
+						},
 					},
-				},
-				retentionMs: workspace.config.agent.transcriptRetentionMs,
-			}),
+					retentionMs: workspace.config.agent.transcriptRetentionMs,
+				}),
+				new RetentionCleaner({
+					cleanupIntervalMs: TRASH_CLEANUP_INTERVAL_MS,
+					clock,
+					failureEvent: "workspace.trash.prune_failed",
+					logger,
+					pruner: { prune: async (now) => await trash.prune(now) },
+					retentionMs: TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+				}),
+			],
 			schedule: new ScheduleController({
 				checkRunner: new ChildProcessCheckRunner({
 					cwd: workspace.workspaceDir,
@@ -424,6 +441,7 @@ export async function startLunaApplication(
 					activity: () => recentLogs.list(),
 					agent: () => agent.status(),
 					automation: () => automation.snapshot(),
+					workspace: () => trash.status(),
 					conversations: () => coordinator.snapshot(),
 					events: () => executor.snapshot(),
 					tasks: () => taskService.snapshot(),

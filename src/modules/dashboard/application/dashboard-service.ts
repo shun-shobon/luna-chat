@@ -9,6 +9,7 @@ export type DashboardSnapshot = Readonly<{
 	generatedAt: string;
 	startedAt: string;
 	tasks: ReturnType<DashboardSourcePort["tasks"]>;
+	workspace: ReturnType<DashboardSourcePort["workspace"]>;
 }>;
 
 export class DashboardService {
@@ -31,6 +32,7 @@ export class DashboardService {
 			generatedAt: now().toISOString(),
 			startedAt: startedAt.toISOString(),
 			tasks: sources.tasks(),
+			workspace: sources.workspace(),
 		};
 	}
 }

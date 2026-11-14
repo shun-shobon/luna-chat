@@ -25,7 +25,12 @@ describe("AutomationService", () => {
 				order.push("memoryMaintenance");
 			}),
 		});
-		const service = new AutomationService({ heartbeat, memoryMaintenance, retention, schedule });
+		const service = new AutomationService({
+			heartbeat,
+			memoryMaintenance,
+			cleaners: [retention],
+			schedule,
+		});
 
 		await service.startAutomation({ jobs: [] });
 
@@ -37,7 +42,12 @@ describe("AutomationService", () => {
 		const memoryMaintenance = createMemoryMaintenance();
 		const retention = createRetention();
 		const schedule = createSchedule();
-		const service = new AutomationService({ heartbeat, memoryMaintenance, retention, schedule });
+		const service = new AutomationService({
+			heartbeat,
+			memoryMaintenance,
+			cleaners: [retention],
+			schedule,
+		});
 		await service.startAutomation({ jobs: [] });
 
 		await service.stopIntake();
@@ -61,7 +71,7 @@ describe("AutomationService", () => {
 			memoryMaintenance: createMemoryMaintenance({
 				snapshot: () => ({ cron: "0 4 * * *", enabled: false, nextFireAt: null }),
 			}),
-			retention: createRetention(),
+			cleaners: [createRetention()],
 			schedule: createSchedule({ snapshot: () => [] }),
 		});
 

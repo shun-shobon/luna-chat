@@ -3,12 +3,12 @@ import type { Mock } from "vitest";
 
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
-import type { TranscriptPrunerPort } from "../ports/transcript-pruner-port";
-import { TranscriptRetentionCleaner } from "./transcript-retention-cleaner";
+import type { RetentionPrunerPort } from "../ports/retention-pruner-port";
+import { RetentionCleaner } from "./retention-cleaner";
 
 const NOW = new Date("2026-11-14T00:00:00.000Z");
 
-describe("TranscriptRetentionCleaner", () => {
+describe("RetentionCleaner", () => {
 	it("起動直後に現在時刻と保持期間で記録を削除し、完了後に次回を予約する", async () => {
 		const pruner = createPruner();
 		const clock = new FakeClock(NOW);
@@ -102,19 +102,20 @@ describe("TranscriptRetentionCleaner", () => {
 function createCleaner(input: {
 	clock: AutomationClockPort;
 	logger?: LoggerPort;
-	pruner: TranscriptPrunerPort;
-}): TranscriptRetentionCleaner {
-	return new TranscriptRetentionCleaner({
+	pruner: RetentionPrunerPort;
+}): RetentionCleaner {
+	return new RetentionCleaner({
 		cleanupIntervalMs: 1_000,
 		clock: input.clock,
+		failureEvent: "automation.transcript_retention.prune_failed",
 		logger: input.logger ?? { log: vi.fn() },
 		pruner: input.pruner,
 		retentionMs: 100_000,
 	});
 }
 
-function createPruner(implementation: TranscriptPrunerPort["prune"] = async () => undefined): {
-	prune: Mock<TranscriptPrunerPort["prune"]>;
+function createPruner(implementation: RetentionPrunerPort["prune"] = async () => undefined): {
+	prune: Mock<RetentionPrunerPort["prune"]>;
 } {
 	return { prune: vi.fn(implementation) };
 }

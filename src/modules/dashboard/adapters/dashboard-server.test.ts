@@ -64,6 +64,10 @@ const snapshot: DashboardSnapshot = {
 	generatedAt: "2026-10-20T00:00:00.000Z",
 	startedAt: "2026-10-19T23:00:00.000Z",
 	tasks: { maxConcurrent: 2, running: 0, tasks: [] },
+	workspace: {
+		disk: { totalBytes: 100, freeBytes: 40 },
+		trash: [{ date: "2026-11-14", deleteOn: "2026-11-28", entries: ["old"] }],
+	},
 };
 
 async function start(read: () => DashboardSnapshot) {

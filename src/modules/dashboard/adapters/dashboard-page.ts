@@ -144,6 +144,7 @@ details > summary::-webkit-details-marker { display: none; }
 		<section class="panel"><h2>イベント実行 <span class="count" id="events-count"></span></h2><div id="events" class="list"></div></section>
 		<section class="panel wide"><h2>タスクボード <span class="count" id="tasks-count"></span></h2><div id="tasks" class="list"></div></section>
 		<section class="panel wide"><h2>オートメーション</h2><div id="automation" class="list"></div></section>
+		<section class="panel wide"><h2>ワークスペース</h2><div id="workspace" class="list"></div></section>
 		<section class="panel wide">
 			<h2>最近の出来事 <span class="count" id="activity-count"></span>
 				<span class="toolbar">
@@ -509,6 +510,29 @@ details > summary::-webkit-details-marker { display: none; }
 		replace("automation", h("div", { class: "grid" }, cards));
 	}
 
+	function gib(value) { return (value / 1024 / 1024 / 1024).toFixed(1) + " GiB"; }
+
+	function renderWorkspace(s) {
+		var w = s.workspace;
+		var used = w.disk.totalBytes - w.disk.freeBytes;
+		var disk = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "ディスク" })),
+			h("div", { class: "facts" }, [
+				fact("使用", gib(used) + " / " + gib(w.disk.totalBytes) + "（" + Math.round((used / w.disk.totalBytes) * 100) + "%）"),
+				fact("空き", gib(w.disk.freeBytes))
+			]));
+		var trash = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "ゴミ箱（" + w.trash.length + "日分）" })),
+			w.trash.length === 0 ? empty("ゴミ箱は空です") : h("div", { class: "list" }, w.trash.map(function (folder) {
+				return h("details", null,
+					h("summary", null, h("div", { class: "sched" },
+						h("span", null, h("b", { text: folder.date }), " ", h("span", { class: "mono", text: folder.entries.length + "件" })),
+						h("span", { class: "sublabel", text: folder.deleteOn + " に削除" }))),
+					h("div", { class: "task-body" }, h("div", { class: "block code", text: folder.entries.join("\n") })));
+			})));
+		replace("workspace", h("div", { class: "grid" }, [disk, trash]));
+	}
+
 	function contextChips(record) {
 		var c = record.context || {};
 		var parts = [];
@@ -597,6 +621,7 @@ details > summary::-webkit-details-marker { display: none; }
 		renderEvents(s);
 		renderTasks(s);
 		renderAutomation(s);
+		renderWorkspace(s);
 		renderActivity(s);
 		tick();
 	}

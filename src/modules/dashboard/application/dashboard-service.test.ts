@@ -16,6 +16,10 @@ describe("DashboardService", () => {
 			conversations: () => [],
 			events: () => [],
 			tasks: () => ({ maxConcurrent: 2, running: 0, tasks: [] }),
+			workspace: () => ({
+				disk: { totalBytes: 100, freeBytes: 40 },
+				trash: [{ date: "2026-11-14", deleteOn: "2026-11-28", entries: ["old"] }],
+			}),
 		};
 		const service = new DashboardService({
 			now: () => new Date("2026-10-20T01:00:00.000Z"),
@@ -36,6 +40,10 @@ describe("DashboardService", () => {
 			generatedAt: "2026-10-20T01:00:00.000Z",
 			startedAt: "2026-10-20T00:00:00.000Z",
 			tasks: { maxConcurrent: 2, running: 0, tasks: [] },
+			workspace: {
+				disk: { totalBytes: 100, freeBytes: 40 },
+				trash: [{ date: "2026-11-14", deleteOn: "2026-11-28", entries: ["old"] }],
+			},
 		});
 	});
 });
