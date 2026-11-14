@@ -143,6 +143,74 @@ function createHarnessTools(
 	};
 }
 
+// 再生では外へ作用するツールを動かさず、読むだけのツールとWeb検索だけを本物にする。
+export function createReplayHarnessTools(
+	spec: AgentSessionSpec,
+	context: HarnessToolContext,
+	backend: ChatGptBackend,
+	onCall: (name: HarnessToolName, argumentsValue: unknown) => void,
+): HarnessToolSet {
+	const read = createReadTool(spec.cwd);
+	const live: ReadonlyArray<readonly [HarnessToolName, AnyPiAgentTool]> = [
+		["read", read],
+		["view_image", createViewImageTool(read)],
+		[
+			"web_run",
+			toPiAgentTool(
+				createWebRunTool({
+					backend,
+					sessionId: context.sessionId,
+					model: spec.model.model,
+					maxOutputTokens: WEB_RUN_MAX_OUTPUT_TOKENS,
+					conversation: context.conversation,
+				}),
+			),
+		],
+	];
+	const stubbed: readonly HarnessToolName[] = [
+		"exec_command",
+		"write_stdin",
+		"edit",
+		"write",
+		"image_gen",
+	];
+	const tools = [
+		...live.map(([name, tool]) => recordCalls(name, tool, onCall)),
+		...stubbed.map((name) =>
+			toPiAgentTool({
+				name,
+				description: `${name} is not executed during a replay. Calls are recorded and treated as successful.`,
+				parameters: { type: "object", additionalProperties: true },
+				execute: (argumentsValue) => {
+					onCall(name, argumentsValue);
+					return Promise.resolve({ text: REPLAY_STUB_RESULT, images: [], isError: false });
+				},
+			}),
+		),
+	];
+	return {
+		tools: tools.filter((tool) => spec.harnessTools.some((name) => name === tool.name)),
+		dispose: async () => {},
+	};
+}
+
+const REPLAY_STUB_RESULT =
+	"Replay: this tool was not executed. Treat it as having succeeded and continue.";
+
+function recordCalls(
+	name: HarnessToolName,
+	tool: AnyPiAgentTool,
+	onCall: (name: HarnessToolName, argumentsValue: unknown) => void,
+): AnyPiAgentTool {
+	return {
+		...tool,
+		execute: async (toolCallId, params, signal, onUpdate) => {
+			onCall(name, params);
+			return await tool.execute(toolCallId, params, signal, onUpdate);
+		},
+	};
+}
+
 // read は画像ファイルを縮小して画像として返す。Codex の view_image と同じ名前で、画像を見る用途を明示する。
 function createViewImageTool(read: AnyPiAgentTool): AnyPiAgentTool {
 	return {

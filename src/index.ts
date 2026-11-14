@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { startLunaApplication } from "./runtime/composition-root";
 import { runLogin } from "./runtime/login";
+import { runReplayCommand } from "./runtime/replay";
 
 type LunaApplication = Awaited<ReturnType<typeof startLunaApplication>>;
 
@@ -31,6 +32,10 @@ process.once("SIGTERM", handleSignal);
 async function start(): Promise<void> {
 	if (process.argv[2] === "login") {
 		await runLogin(startupAbortController.signal);
+		return;
+	}
+	if (process.argv[2] === "replay") {
+		await runReplayCommand(process.argv.slice(3));
 		return;
 	}
 	application = await startLunaApplication({

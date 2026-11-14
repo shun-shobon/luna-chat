@@ -48,6 +48,15 @@ docker compose run --rm luna-chat node dist/index.mjs login
 
 資格情報の更新に失敗した場合は、ダッシュボードに「ChatGPT 再ログインが必要」と表示されます。同じ手順で再ログインしてください。
 
+## 指示の比較（再生）
+
+記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [SPEC.md](./docs/SPEC.md#82-再生-luna-chat-replay) を参照してください。
+
+```sh
+pnpm exec luna-chat replay --scenes scenes.json \
+  --variant current=$LUNA_HOME/workspace --variant proposed=./proposed --out ./replay-out
+```
+
 ## 環境変数
 
 | 変数名                | 必須   | デフォルト値 | 説明                                                                        |
