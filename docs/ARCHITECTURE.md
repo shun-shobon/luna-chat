@@ -155,7 +155,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 検証済み入力
      │
      ├─ セッションを開く: OpenAgentSession(origin, model?)
-     │     ├─ システムプロンプト = 開発者指示 + skill一覧 + LUNA.md + MEMORY.md
+     │     ├─ システムプロンプト = 種類ごとの開発者指示 + skill一覧 + LUNA.md + MEMORY.md（作業エージェントは後ろ2つを除く）
      │     └─ ツール = ToolSet.bind({ ownerId, origin }) + 汎用ツール
      │
      ├─ run([種類付きメッセージ…])

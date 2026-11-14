@@ -82,7 +82,12 @@ import {
 	createPiAgentRuntime,
 	validateModelSelections,
 } from "./agent-runtime";
-import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
+import {
+	EVENT_INSTRUCTIONS,
+	LUNA_CONVERSATION_GUIDE,
+	LUNA_CORE_INSTRUCTIONS,
+	SESSION_END_INSTRUCTIONS,
+} from "./developer-instructions";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createSessionFactory } from "./session-factory";
 
@@ -198,24 +203,31 @@ export async function startLunaApplication(
 		profiles: {
 			conversation: {
 				developerInstructions: [
-					LUNA_DEVELOPER_INSTRUCTIONS,
+					LUNA_CORE_INSTRUCTIONS,
+					LUNA_CONVERSATION_GUIDE,
+					SESSION_END_INSTRUCTIONS,
 					DISCORD_CAPABILITY_INSTRUCTIONS,
 					TASK_BOARD_INSTRUCTIONS,
 				],
+				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.conversation,
 				tools,
 			},
 			event: {
 				developerInstructions: [
-					LUNA_DEVELOPER_INSTRUCTIONS,
+					LUNA_CORE_INSTRUCTIONS,
+					LUNA_CONVERSATION_GUIDE,
+					EVENT_INSTRUCTIONS,
 					DISCORD_CAPABILITY_INSTRUCTIONS,
 					TASK_BOARD_INSTRUCTIONS,
 				],
+				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.event,
 				tools,
 			},
 			worker: {
 				developerInstructions: [TASK_WORKER_INSTRUCTIONS],
+				includeWorkspaceInstructions: false,
 				model: () => workspace.config.models.worker,
 				tools: workerTools,
 			},

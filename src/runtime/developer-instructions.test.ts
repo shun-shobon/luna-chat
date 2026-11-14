@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { LUNA_DEVELOPER_INSTRUCTIONS } from "./developer-instructions";
+import {
+	EVENT_INSTRUCTIONS,
+	LUNA_CONVERSATION_GUIDE,
+	LUNA_CORE_INSTRUCTIONS,
+	SESSION_END_INSTRUCTIONS,
+} from "./developer-instructions";
 
-describe("LUNA_DEVELOPER_INSTRUCTIONS", () => {
-	it("固定protocol instructionを保持する", () => {
-		expect(LUNA_DEVELOPER_INSTRUCTIONS).toMatchSnapshot();
+describe("開発者指示", () => {
+	it("固定の指示を保持する", () => {
+		expect({
+			LUNA_CORE_INSTRUCTIONS,
+			LUNA_CONVERSATION_GUIDE,
+			SESSION_END_INSTRUCTIONS,
+			EVENT_INSTRUCTIONS,
+		}).toMatchSnapshot();
 	});
 });

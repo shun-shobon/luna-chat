@@ -24,6 +24,8 @@ const HARNESS_TOOLS: readonly HarnessToolName[] = [
 
 type SessionProfile = Readonly<{
 	developerInstructions: readonly string[];
+	// 作業エージェントは依頼文だけで動けるため、人格と記憶は必要な時に自分で読ませる。
+	includeWorkspaceInstructions: boolean;
 	model: () => ModelSelection;
 	tools: ToolSet;
 }>;
@@ -56,7 +58,9 @@ export function createSessionFactory(input: {
 		const kind = sessionKindOf(origin);
 		const profile = input.profiles[kind];
 		const ownerId = createOwnerId();
-		const instructions = await readWorkspaceBaseInstructions(input.workspaceDir);
+		const instructions = profile.includeWorkspaceInstructions
+			? await readWorkspaceBaseInstructions(input.workspaceDir)
+			: { luna: undefined, memory: undefined };
 		const session = input.agent.open({
 			kind,
 			label: describeOrigin(origin),
