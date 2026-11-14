@@ -76,18 +76,18 @@ DISCORD_BOT_TOKEN=... pnpm start
 
 ### 環境変数
 
-| 変数名                 | 必須   | デフォルト値 | 説明                                                                          |
-| ---------------------- | ------ | ------------ | ----------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。            |
-| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                      |
-| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                 |
-| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。   |
-| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。              |
-| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。              |
-| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。        |
-| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。      |
-| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://192.168.0.104:8123`）。トークンと組で指定。   |
-| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。シェルやcheckの子プロセスにも渡ります。 |
+| 変数名                 | 必須   | デフォルト値 | 説明                                                                              |
+| ---------------------- | ------ | ------------ | --------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。                |
+| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                          |
+| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                     |
+| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。       |
+| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。                  |
+| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。                  |
+| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。            |
+| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。          |
+| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://homeassistant.local:8123`）。トークンと組で指定。 |
+| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。シェルやcheckの子プロセスにも渡ります。     |
 
 `LOG_LEVEL` を `debug` または `trace` にすると、メッセージ本文やプロンプト、ツール引数などが標準出力に出ます。既知のトークン等はマスクしますが、平文に含まれる機密情報を完全に取り除けるとは限りません。
 
@@ -211,7 +211,7 @@ ignore = ["sensor.*_battery"]
 cooldown_seconds = 30   # 同じエンティティで起動する最短の間隔（省略時30）
 ```
 
-Assistの会話エージェントとして使うには、HAにカスタム統合 [ha-luna](https://github.com/shun-shobon/ha-luna) を入れ、Luna の HTTP API のURL（例 `http://192.168.0.103:3000`）を設定します。HAが別のホストにある場合は `LUNA_HTTP_HOST=0.0.0.0` が必要です。HTTP APIには認証がないため、そのネットワーク内の全員がLunaを動かせます。HA側の設定方法はha-lunaのREADMEを参照してください。
+Assistの会話エージェントとして使うには、HAにカスタム統合 [ha-luna](https://github.com/shun-shobon/ha-luna) を入れ、Luna の HTTP API のURL（例 `http://luna.local:3000`）を設定します。HAが別のホストにある場合は `LUNA_HTTP_HOST=0.0.0.0` が必要です。HTTP APIには認証がないため、そのネットワーク内の全員がLunaを動かせます。HA側の設定方法はha-lunaのREADMEを参照してください。
 
 ### ダッシュボード
 
