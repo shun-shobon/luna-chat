@@ -66,24 +66,28 @@ describe("DiscordActionAdapter", () => {
 		vi.useRealTimers();
 	});
 
-	it("Luna自身のreactionを削除する", async () => {
-		const remove = vi.fn(async () => undefined);
-		const resolve = vi.fn((_emoji: string) => ({ users: { remove } }));
-		const adapter = createAdapter(createClient(createChannel({ resolve })));
+	it.each([
+		{ emoji: { kind: "custom", id: "400", name: "luna" }, key: "400" },
+		{ emoji: { kind: "unicode", value: "👍" }, key: "👍" },
+	] as const)(
+		"Luna自身のreactionをdiscord.jsのキャッシュキーで引いて削除する: $key",
+		async ({ emoji, key }) => {
+			const remove = vi.fn(async () => undefined);
+			const cache = new Map<string, { users: { remove(): Promise<unknown> } }>([
+				[key, { users: { remove } }],
+			]);
+			const adapter = createAdapter(
+				createClient(createChannel({ resolve: (emojiKey: string) => cache.get(emojiKey) ?? null })),
+			);
 
-		await adapter.execute(
-			{
-				kind: "remove_reaction",
-				channelId: "200",
-				messageId: "300",
-				emoji: { kind: "custom", id: "400", name: "luna" },
-			},
-			"turn-1",
-		);
+			await adapter.execute(
+				{ kind: "remove_reaction", channelId: "200", messageId: "300", emoji },
+				"turn-1",
+			);
 
-		expect(resolve).toHaveBeenCalledWith("luna:400");
-		expect(remove).toHaveBeenCalledOnce();
-	});
+			expect(remove).toHaveBeenCalledOnce();
+		},
+	);
 });
 
 function createAdapter(

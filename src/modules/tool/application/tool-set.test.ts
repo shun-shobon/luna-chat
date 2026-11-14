@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Mock } from "vitest";
 import { z } from "zod";
 
-import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { ToolExecution, ToolOrigin } from "../domain/tool";
 import { defineTool } from "../ports/tool-provider";
 import type { ToolProvider } from "../ports/tool-provider";
@@ -15,7 +14,7 @@ describe("createToolSet", () => {
 		const execute = vi.fn(async (input: { value: string }, _execution: ToolExecution) => ({
 			echoed: input.value,
 		}));
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const toolSet = createToolSet([provider([echoTool(execute)])], logger);
 		const [tool] = toolSet.bind({ ownerId: "owner-1", origin });
 		const signal = new AbortController().signal;
@@ -33,24 +32,27 @@ describe("createToolSet", () => {
 			isError: false,
 		});
 		expect(execute).toHaveBeenCalledWith({ value: "hi" }, { ownerId: "owner-1", origin, signal });
-		expect(logger.log).toHaveBeenCalledWith(
-			"info",
-			"tool.succeeded",
-			{},
-			{ ownerId: "owner-1", target: { value: "hi" }, toolName: "echo" },
-			{ input: { value: "hi" }, result: { echoed: "hi" } },
-		);
+		expect(logger.entries).toContainEqual({
+			level: "info",
+			event: "tool.succeeded",
+			context: {},
+			details: { ownerId: "owner-1", target: { value: "hi" }, toolName: "echo" },
+			payload: { input: { value: "hi" }, result: { echoed: "hi" } },
+		});
 	});
 
 	it("複数のプロバイダーで同じ名前のツールがあれば作成時に拒否する", () => {
 		expect(() =>
-			createToolSet([provider([echoTool(vi.fn())]), provider([echoTool(vi.fn())])], createLogger()),
+			createToolSet(
+				[provider([echoTool(vi.fn())]), provider([echoTool(vi.fn())])],
+				createRecordingLogger(),
+			),
 		).toThrow("Duplicate tool name: echo");
 	});
 
 	it("不正な入力は実行せず、検証エラーをisErrorで返して記録する", async () => {
 		const execute = vi.fn(async () => null);
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const [tool] = createToolSet([provider([echoTool(execute)])], logger).bind({
 			ownerId: "owner-1",
 			origin,
@@ -62,20 +64,20 @@ describe("createToolSet", () => {
 		expect(result?.text).toContain("value");
 		expect(result?.text).toContain("extra");
 		expect(execute).not.toHaveBeenCalled();
-		expect(logger.log).toHaveBeenCalledWith(
-			"warn",
-			"tool.failed",
-			{},
-			{ error: result?.text, ownerId: "owner-1", toolName: "echo" },
-			{ input: { value: "", extra: true } },
-		);
+		expect(logger.entries).toContainEqual({
+			level: "warn",
+			event: "tool.failed",
+			context: {},
+			details: { error: result?.text, ownerId: "owner-1", toolName: "echo" },
+			payload: { input: { value: "", extra: true } },
+		});
 	});
 
 	it.each([
 		["Error", new Error("port failed"), "port failed"],
 		["Error以外の値", "plain failure", "plain failure"],
 	])("実行中の例外(%s)をisErrorのメッセージとして返す", async (_label, thrown, message) => {
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const [tool] = createToolSet(
 			[
 				provider([
@@ -93,13 +95,13 @@ describe("createToolSet", () => {
 			images: [],
 			isError: true,
 		});
-		expect(logger.log).toHaveBeenCalledWith(
-			"warn",
-			"tool.failed",
-			{},
-			{ error: message, ownerId: "owner-1", toolName: "echo" },
-			{ input: { value: "hi" } },
-		);
+		expect(logger.entries).toContainEqual({
+			level: "warn",
+			event: "tool.failed",
+			context: {},
+			details: { error: message, ownerId: "owner-1", toolName: "echo" },
+			payload: { input: { value: "hi" } },
+		});
 	});
 
 	it("releaseを全プロバイダーへ渡し、失敗したプロバイダーを記録して残りも解放する", async () => {
@@ -110,18 +112,18 @@ describe("createToolSet", () => {
 		const secondRelease = vi.fn(async () => undefined);
 		const first: ToolProvider = { definitions: [], release: firstRelease };
 		const second: ToolProvider = { definitions: [], release: secondRelease };
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 
 		await createToolSet([first, second], logger).release("owner-1");
 
 		expect(firstRelease).toHaveBeenCalledWith("owner-1");
 		expect(secondRelease).toHaveBeenCalledWith("owner-1");
-		expect(logger.log).toHaveBeenCalledWith(
-			"warn",
-			"tool.provider_release_failed",
-			{},
-			{ error: failure, ownerId: "owner-1", providerIndex: 0 },
-		);
+		expect(logger.entries).toContainEqual({
+			level: "warn",
+			event: "tool.provider_release_failed",
+			context: {},
+			details: { error: failure, ownerId: "owner-1", providerIndex: 0 },
+		});
 	});
 });
 
@@ -140,8 +142,4 @@ function echoTool(
 
 function provider(definitions: ToolProvider["definitions"]): ToolProvider {
 	return { definitions, release: async () => {} };
-}
-
-function createLogger(): { log: Mock<LoggerPort["log"]> } {
-	return { log: vi.fn() };
 }

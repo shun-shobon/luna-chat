@@ -62,7 +62,7 @@ export class PiAgentRuntime implements AgentRuntimePort {
 		const duplicated = findDuplicatedName(tools.map((tool) => tool.name));
 		if (duplicated !== undefined) {
 			void harness.dispose().catch((error: unknown) => {
-				this.#options.logger.log("error", "agent.pi.harness_dispose_failed", undefined, {
+				this.#options.logger.error("agent.pi.harness_dispose_failed", {
 					error: error instanceof Error ? error.message : String(error),
 				});
 			});

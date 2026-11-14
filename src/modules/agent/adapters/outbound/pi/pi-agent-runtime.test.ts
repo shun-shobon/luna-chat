@@ -20,6 +20,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { formatLocalDate } from "../../../../../shared/local-date";
+import { createRecordingLogger } from "../../../../observability/testing/recording-logger";
+import type { RecordingLogger } from "../../../../observability/testing/recording-logger";
 import type {
 	AgentSession,
 	AgentSessionSpec,
@@ -50,7 +52,7 @@ type Setup = Readonly<{
 	transcriptDir: string;
 	harnessDispose: ReturnType<typeof vi.fn>;
 	hasCredentials: { value: boolean };
-	logger: { log: ReturnType<typeof vi.fn> };
+	logger: RecordingLogger;
 }>;
 
 async function setup(
@@ -74,7 +76,7 @@ async function setup(
 	temporaryDirectories.push(transcriptDir);
 	const harnessDispose = vi.fn(async () => undefined);
 	const hasCredentials = { value: true };
-	const logger = { log: vi.fn() };
+	const logger = createRecordingLogger();
 	const runtime = new PiAgentRuntime({
 		models,
 		transcriptDir,
@@ -461,11 +463,16 @@ describe("エラーと再試行", () => {
 
 		await expect(session.run([input("始めて")])).resolves.toMatchObject({ status: "completed" });
 
-		expect(logger.log).toHaveBeenCalledWith("warn", "agent.pi.provider_diagnostic", undefined, {
-			details: { configuredTransport: "auto", fallbackTransport: "sse" },
-			error: "WebSocket error",
-			sessionId: session.id,
-			type: "provider_transport_failure",
+		expect(logger.entries).toContainEqual({
+			level: "warn",
+			event: "agent.pi.provider_diagnostic",
+			context: {},
+			details: {
+				details: { configuredTransport: "auto", fallbackTransport: "sse" },
+				error: "WebSocket error",
+				sessionId: session.id,
+				type: "provider_transport_failure",
+			},
 		});
 	});
 

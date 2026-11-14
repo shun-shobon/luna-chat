@@ -6,7 +6,7 @@ import type {
 } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import { toEventMessage } from "../../event/ports/event-message";
-import type { LogContext, LoggerPort } from "../../observability/ports/logger-port";
+import type { LoggerPort } from "../../observability/ports/logger-port";
 import { describeRunFailure } from "../../tool/ports/agent-session-factory-port";
 import type {
 	OpenAgentSession,
@@ -151,6 +151,7 @@ class ConversationActor {
 	#endPending = false;
 	#modelSettings: ModelSelection | undefined;
 	readonly #activeEventIds = new Set<string>();
+	readonly #logger: LoggerPort;
 
 	constructor(
 		private readonly session: ConversationSession,
@@ -159,6 +160,7 @@ class ConversationActor {
 		private readonly onClosed: () => void,
 	) {
 		this.#phaseSince = dependencies.now();
+		this.#logger = dependencies.logger.child({ conversationSession: session.key });
 	}
 
 	status(): ConversationStatus | undefined {
@@ -304,15 +306,11 @@ class ConversationActor {
 			case "session_ready":
 				this.#openingBatch = [];
 				this.#opened = command.opened;
-				this.#logEvent(
-					"conversation.session_opened",
-					{},
-					{
-						eventCount: command.batch.length,
-						historyCount: command.history.length,
-						sessionId: command.opened.session.id,
-					},
-				);
+				this.#logger.info("conversation.session_opened", {
+					eventCount: command.batch.length,
+					historyCount: command.history.length,
+					sessionId: command.opened.session.id,
+				});
 				this.#startRun(
 					[
 						...(command.history.length === 0
@@ -337,7 +335,7 @@ class ConversationActor {
 			case "close_finished":
 				if (!this.#matches(command.token, "closing")) return;
 				this.#resetSession();
-				this.#logEvent("conversation.session_closed", {});
+				this.#logger.info("conversation.session_closed");
 				this.#continueOrClose();
 				return;
 			case "shutdown":
@@ -459,7 +457,7 @@ class ConversationActor {
 		const token = ++this.#operationToken;
 		this.#purpose = purpose;
 		this.#enter("running");
-		this.#logEvent("conversation.run_started", {}, { purpose, sessionId: opened.session.id });
+		this.#logger.info("conversation.run_started", { purpose, sessionId: opened.session.id });
 		opened.session.run(messages).then(
 			(result) => this.#post({ kind: "run_finished", token, result }),
 			(error: unknown) =>
@@ -470,9 +468,8 @@ class ConversationActor {
 	#handleRunFinished(result: AgentRunResult): void {
 		const opened = this.#opened;
 		if (opened !== undefined) void this.#releaseTools(opened.ownerId);
-		this.#logEvent(
+		this.#logger.info(
 			"conversation.run_finished",
-			{},
 			{ purpose: this.#purpose, sessionId: opened?.session.id, status: result.status },
 			result,
 		);
@@ -566,27 +563,7 @@ class ConversationActor {
 	}
 
 	#logError(error: unknown, operation: string): void {
-		this.dependencies.logger.log(
-			"error",
-			"conversation.operation_failed",
-			{ conversationSession: this.session.key },
-			{ error, operation },
-		);
-	}
-
-	#logEvent(
-		event: string,
-		context: Omit<LogContext, "conversationSession">,
-		details?: Readonly<Record<string, unknown>>,
-		payload?: unknown,
-	): void {
-		this.dependencies.logger.log(
-			"info",
-			event,
-			{ ...context, conversationSession: this.session.key },
-			details,
-			payload,
-		);
+		this.#logger.error("conversation.operation_failed", { error, operation });
 	}
 
 	#enter(phase: ConversationPhase): void {

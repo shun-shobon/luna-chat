@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import { formatLocalDate } from "../../../shared/local-date";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { AutomationClockPort } from "../ports/automation-clock-port";
@@ -8,7 +9,6 @@ import type {
 	ScheduledAutomationJob,
 } from "../ports/automation-schedule-port";
 import type { MemoryMaintenanceStatus } from "../ports/automation-status";
-import { ActiveExecutionSet } from "./active-execution-set";
 
 export class MemoryMaintenanceController {
 	readonly #clock: AutomationClockPort;

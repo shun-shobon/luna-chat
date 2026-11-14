@@ -1,6 +1,7 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { writeFileAtomic } from "../../../../../shared/atomic-file";
 import type { LoggerPort } from "../../../../observability/ports/logger-port";
 import type { UsageSnapshot } from "../../../ports/outbound/agent-session-port";
 
@@ -43,17 +44,11 @@ export class UsagePoller {
 		try {
 			const usage = await this.input.fetch(this.#controller.signal);
 			this.input.onUsage(usage);
-			await writeAtomically(this.input.filePath, `${JSON.stringify(usage, null, 2)}\n`);
+			await mkdir(dirname(this.input.filePath), { recursive: true });
+			await writeFileAtomic(this.input.filePath, `${JSON.stringify(usage, null, 2)}\n`);
 		} catch (error: unknown) {
 			if (this.#controller.signal.aborted) return;
-			this.input.logger.log("warn", "agent.usage_fetch_failed", {}, { error });
+			this.input.logger.warn("agent.usage_fetch_failed", { error });
 		}
 	}
-}
-
-async function writeAtomically(filePath: string, content: string): Promise<void> {
-	await mkdir(dirname(filePath), { recursive: true });
-	const temporaryPath = `${filePath}.${process.pid}.tmp`;
-	await writeFile(temporaryPath, content, "utf8");
-	await rename(temporaryPath, filePath);
 }

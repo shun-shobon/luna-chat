@@ -7,7 +7,7 @@ import type {
 	AgentSession,
 	AgentSessionPhase,
 } from "../../agent/ports/outbound/agent-session-port";
-import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
 import type { LunaEvent } from "../domain/luna-event";
 import { EventExecutor } from "./event-executor";
@@ -40,12 +40,12 @@ describe("EventExecutor", () => {
 			{ kind: "task_board", text: JSON.stringify([{ id: "task-1" }]) },
 		]);
 		expect(harness.calls).toEqual(["release:owner-1", "close"]);
-		expect(harness.log).toHaveBeenCalledWith(
-			"info",
-			"event.execution_completed",
-			{ eventId: event.id },
-			{ sessionId: "session-1" },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "info",
+			event: "event.execution_completed",
+			context: { eventId: event.id },
+			details: { sessionId: "session-1" },
+		});
 	});
 
 	it("実行開始後、完了を待たずにcallbackを呼ぶ", async () => {
@@ -79,12 +79,12 @@ describe("EventExecutor", () => {
 		const outcome = await execution;
 		expect(outcome.status === "failed" && String(outcome.error)).toBe(`Error: ${message}`);
 		expect(harness.calls).toEqual(["release:owner-1", "close"]);
-		expect(harness.log).toHaveBeenCalledWith(
-			"error",
-			"event.execution_failed",
-			{ eventId: event.id },
-			{ error: expect.any(Error), eventSource: event.source, eventType: event.type },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "error",
+			event: "event.execution_failed",
+			context: { eventId: event.id },
+			details: { error: expect.any(Error), eventSource: event.source, eventType: event.type },
+		});
 	});
 
 	it("runの例外を失敗として返し、セッションを閉じる", async () => {
@@ -137,18 +137,18 @@ describe("EventExecutor", () => {
 
 		await expect(execution).resolves.toEqual({ status: "completed" });
 		expect(harness.session.close).toHaveBeenCalledOnce();
-		expect(harness.log).toHaveBeenCalledWith(
-			"error",
-			"event.operation_failed",
-			{},
-			{ error: releaseFailure, operation: "tools/release" },
-		);
-		expect(harness.log).toHaveBeenCalledWith(
-			"error",
-			"event.operation_failed",
-			{},
-			{ error: closeFailure, operation: "session/close" },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "error",
+			event: "event.operation_failed",
+			context: { eventId: event.id },
+			details: { error: releaseFailure, operation: "tools/release" },
+		});
+		expect(harness.logs).toContainEqual({
+			level: "error",
+			event: "event.operation_failed",
+			context: { eventId: event.id },
+			details: { error: closeFailure, operation: "session/close" },
+		});
 	});
 
 	it("実行失敗後に解放とcloseも失敗しても元の失敗を返す", async () => {
@@ -217,15 +217,15 @@ function createHarness() {
 	const releaseTools = vi.fn(async (ownerId: string) => {
 		calls.push(`release:${ownerId}`);
 	});
-	const log = vi.fn<LoggerPort["log"]>();
+	const logger = createRecordingLogger();
 	const executor = new EventExecutor({
-		logger: { log },
+		logger,
 		now: () => new Date("2026-08-09T03:00:01Z"),
 		openSession,
 		releaseTools,
 		tasks: { listAll: () => [{ id: "task-1" }] },
 	});
-	return { calls, executor, log, openSession, releaseTools, session };
+	return { calls, executor, logs: logger.entries, openSession, releaseTools, session };
 }
 
 type FakeSession = {

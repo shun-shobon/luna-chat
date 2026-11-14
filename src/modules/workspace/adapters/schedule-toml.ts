@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { readFile as readFileAsync, writeFile as writeFileAsync } from "node:fs/promises";
 
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
+import { writeFileAtomicSync } from "../../../shared/atomic-file";
 import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { EMPTY_WORKSPACE_SCHEDULE } from "../domain/workspace-schedule";
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
@@ -98,7 +99,7 @@ export async function createWorkspaceScheduleFile(schedulePath: string): Promise
 
 function writeWorkspaceSchedule(schedulePath: string, schedule: WorkspaceSchedule): void {
 	try {
-		writeFileSync(schedulePath, serializeWorkspaceSchedule(schedule), "utf8");
+		writeFileAtomicSync(schedulePath, serializeWorkspaceSchedule(schedule));
 	} catch (error: unknown) {
 		throw new WorkspaceScheduleError("cron.toml could not be written.", { cause: error });
 	}

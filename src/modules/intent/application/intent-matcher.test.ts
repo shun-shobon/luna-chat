@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { LunaEvent } from "../../event/domain/luna-event";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { IntentFireStates, StandingIntent } from "../domain/standing-intent";
 import type { IntentStorePort } from "../ports/intent-store-port";
 import { IntentMatcher } from "./intent-matcher";
@@ -36,8 +37,7 @@ function store(intents: readonly StandingIntent[], states: IntentFireStates = {}
 describe("IntentMatcher", () => {
 	it("人の発言で発火した予定を intent 入力にし、発火を記録する", () => {
 		const intents = store([INTENT]);
-		const log = vi.fn();
-		const matcher = new IntentMatcher(intents, { log }, () => NOW);
+		const matcher = new IntentMatcher(intents, createRecordingLogger(), () => NOW);
 
 		expect(matcher.match([message("10", "旅行から帰った"), message("11", "旅行", "bot")])).toEqual([
 			{
@@ -58,7 +58,7 @@ describe("IntentMatcher", () => {
 
 	it("同じ束の中で2回目は cooldown で発火しない", () => {
 		const intents = store([INTENT]);
-		const matcher = new IntentMatcher(intents, { log: vi.fn() }, () => NOW);
+		const matcher = new IntentMatcher(intents, createRecordingLogger(), () => NOW);
 
 		expect(matcher.match([message("10", "旅行"), message("12", "旅行また行きたい")])).toHaveLength(
 			1,
@@ -67,7 +67,7 @@ describe("IntentMatcher", () => {
 
 	it("発火がなければ状態を書かず、人の発言がなければ予定も読まない", () => {
 		const intents = store([INTENT]);
-		const matcher = new IntentMatcher(intents, { log: vi.fn() }, () => NOW);
+		const matcher = new IntentMatcher(intents, createRecordingLogger(), () => NOW);
 
 		expect(matcher.match([message("10", "晴れ")])).toEqual([]);
 		expect(matcher.match([message("11", "旅行", "bot")])).toEqual([]);
@@ -76,7 +76,7 @@ describe("IntentMatcher", () => {
 	});
 
 	it("予定が読めなければ記録して発火しない", () => {
-		const log = vi.fn();
+		const logger = createRecordingLogger();
 		const matcher = new IntentMatcher(
 			{
 				readIntents: () => {
@@ -85,13 +85,18 @@ describe("IntentMatcher", () => {
 				readStates: () => ({}),
 				writeStates: vi.fn(),
 			},
-			{ log },
+			logger,
 			() => NOW,
 		);
 
 		expect(matcher.match([message("10", "旅行")])).toEqual([]);
-		expect(log).toHaveBeenCalledWith("error", "intent.read_failed", undefined, {
-			error: "invalid TOML",
-		});
+		expect(logger.entries).toEqual([
+			{
+				level: "error",
+				event: "intent.read_failed",
+				context: {},
+				details: { error: "invalid TOML" },
+			},
+		]);
 	});
 });

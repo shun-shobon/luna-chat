@@ -1,3 +1,4 @@
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { AcceptedConversationEvent } from "../../conversation/domain/conversation-session";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import { createHttpConversationSession, createHttpEvent } from "../domain/http-event";
@@ -12,7 +13,7 @@ export type HttpSubmission =
 	| Readonly<{ kind: "unavailable" }>;
 
 export class HttpEventService {
-	readonly #executions = new Set<Promise<void>>();
+	readonly #executions = new ActiveExecutionSet();
 	#accepting = true;
 
 	constructor(
@@ -44,8 +45,7 @@ export class HttpEventService {
 				.then((result) =>
 					this.dependencies.responses.complete(event.id, result.status === "completed"),
 				);
-			this.#executions.add(execution);
-			void execution.then(() => this.#executions.delete(execution));
+			this.#executions.track(execution);
 		}
 
 		if (response === undefined) return { kind: "accepted", requestId: event.id };
@@ -57,6 +57,6 @@ export class HttpEventService {
 	}
 
 	async drain(): Promise<void> {
-		while (this.#executions.size > 0) await Promise.all(this.#executions);
+		await this.#executions.drain();
 	}
 }

@@ -1,7 +1,11 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { z } from "zod";
+
+import { writeFileAtomic } from "../../../shared/atomic-file";
+import { hasErrorCode } from "../../../shared/error-code";
+import { SerialQueue } from "../../../shared/serial-queue";
 
 const usageSchema = z.record(
 	z.string(),
@@ -21,30 +25,27 @@ export function findSkillNames(argumentsValue: unknown): readonly string[] {
 
 // 使われていない skill を日次整理で片付けられるよう、最後に読まれた時刻と回数を残す。
 export class SkillUsageStore {
-	#chain: Promise<void> = Promise.resolve();
+	readonly #queue = new SerialQueue();
 
 	constructor(private readonly filePath: string) {}
 
 	record(names: readonly string[], at: Date): Promise<void> {
 		if (names.length === 0) return Promise.resolve();
-		this.#chain = this.#chain.then(async () => {
+		return this.#queue.run(async () => {
 			const usage = await this.#read();
 			for (const name of names) {
 				usage[name] = { lastUsedAt: at.toISOString(), uses: (usage[name]?.uses ?? 0) + 1 };
 			}
 			await mkdir(dirname(this.filePath), { recursive: true });
-			const temporary = join(dirname(this.filePath), `.skill-usage.${String(process.pid)}.tmp`);
-			await writeFile(temporary, `${JSON.stringify(usage, null, "\t")}\n`);
-			await rename(temporary, this.filePath);
+			await writeFileAtomic(this.filePath, `${JSON.stringify(usage, null, "\t")}\n`);
 		});
-		return this.#chain;
 	}
 
 	async #read(): Promise<Record<string, { lastUsedAt: string; uses: number }>> {
 		try {
 			return usageSchema.parse(JSON.parse(await readFile(this.filePath, "utf8")));
 		} catch (error: unknown) {
-			if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
+			if (hasErrorCode(error, "ENOENT")) return {};
 			throw error;
 		}
 	}

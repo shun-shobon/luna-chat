@@ -1,6 +1,7 @@
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { writeFileAtomic } from "../../../shared/atomic-file";
 import { taskSchema } from "../domain/task";
 import type { Task } from "../domain/task";
 import type { TaskStorePort } from "../ports/task-store-port";
@@ -29,8 +30,6 @@ export class JsonFileTaskStore implements TaskStorePort {
 
 	async save(task: Task): Promise<void> {
 		const path = join(this.directory, `${task.id}${TASK_FILE_SUFFIX}`);
-		const temporaryPath = `${path}.tmp`;
-		await writeFile(temporaryPath, `${JSON.stringify(task, null, "\t")}\n`, { mode: 0o600 });
-		await rename(temporaryPath, path);
+		await writeFileAtomic(path, `${JSON.stringify(task, null, "\t")}\n`, { mode: 0o600 });
 	}
 }

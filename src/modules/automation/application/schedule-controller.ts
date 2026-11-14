@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { JsonObject } from "../../../shared/json";
+import { SerialQueue } from "../../../shared/serial-queue";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type {
-	OneShotScheduleJob,
-	RecurringScheduleJob,
 	WorkspaceSchedule,
 	WorkspaceScheduleJob,
 } from "../../workspace/domain/workspace-schedule";
@@ -18,7 +19,6 @@ import type {
 } from "../ports/automation-schedule-port";
 import type { ScheduleJobStatus } from "../ports/automation-status";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
-import { ActiveExecutionSet } from "./active-execution-set";
 
 type RegisteredScheduleJob = {
 	definition: WorkspaceScheduleJob;
@@ -45,7 +45,7 @@ export class ScheduleController {
 	readonly #jobs = new Map<string, RegisteredScheduleJob>();
 	readonly #firedOneShots = new Map<string, FiredOneShotState>();
 	#accepting = false;
-	#reloadChain: Promise<void> = Promise.resolve();
+	readonly #reloadQueue = new SerialQueue();
 	#reloadTimer: AutomationTimerHandle | undefined;
 
 	constructor(input: {
@@ -82,7 +82,7 @@ export class ScheduleController {
 				this.#debounceReload();
 			},
 			onError: (error) => {
-				this.#logger.log("error", "automation.schedule.watcher_failed", {}, { error });
+				this.#logger.error("automation.schedule.watcher_failed", { error });
 			},
 		});
 	}
@@ -93,7 +93,7 @@ export class ScheduleController {
 			try {
 				schedule = await this.#workspace.readSchedule();
 			} catch (error: unknown) {
-				this.#logger.log("error", "automation.schedule.reload_failed", {}, { error });
+				this.#logger.error("automation.schedule.reload_failed", { error });
 				return;
 			}
 			this.#applySchedule(schedule);
@@ -105,7 +105,7 @@ export class ScheduleController {
 		this.#reloadTimer?.cancel();
 		this.#reloadTimer = undefined;
 		await this.#watcher.close().catch((error: unknown) => {
-			this.#logger.log("error", "automation.schedule.watcher_close_failed", {}, { error });
+			this.#logger.error("automation.schedule.watcher_close_failed", { error });
 		});
 		await this.#enqueueReload(() => {
 			for (const job of this.#jobs.values()) {
@@ -139,7 +139,7 @@ export class ScheduleController {
 		this.#reloadTimer = this.#clock.setTimer(this.#reloadDebounceMs, () => {
 			this.#reloadTimer = undefined;
 			void this.reloadSchedule().catch((error: unknown) => {
-				this.#logger.log("error", "automation.schedule.apply_failed", {}, { error });
+				this.#logger.error("automation.schedule.apply_failed", { error });
 			});
 		});
 	}
@@ -175,7 +175,7 @@ export class ScheduleController {
 		const nextById = new Map(schedulableJobs.map((job) => [job.id, job]));
 		for (const [jobId, registered] of this.#jobs) {
 			const next = nextById.get(jobId);
-			if (next === undefined || !isSameDefinition(registered.definition, next)) {
+			if (next === undefined || !isDeepStrictEqual(registered.definition, next)) {
 				registered.timer.stop();
 				this.#jobs.delete(jobId);
 			}
@@ -200,12 +200,9 @@ export class ScheduleController {
 		try {
 			this.#workspace.removeScheduleJob(jobId);
 		} catch (error: unknown) {
-			this.#logger.log(
-				"error",
-				"automation.schedule.past_one_shot_delete_failed",
-				{ jobId },
-				{ error },
-			);
+			this.#logger.child({ jobId }).error("automation.schedule.past_one_shot_delete_failed", {
+				error,
+			});
 		}
 	}
 
@@ -270,11 +267,10 @@ export class ScheduleController {
 
 	async #runCheck(jobId: string, command: string): Promise<JsonObject | undefined> {
 		const result = await this.#checkRunner.run(command);
+		const logger = this.#logger.child({ jobId });
 		if (result.status === "failed") {
-			this.#logger.log(
-				"error",
+			logger.error(
 				"automation.schedule.check_failed",
-				{ jobId },
 				{
 					error: result.error,
 					exitCode: result.exitCode,
@@ -287,7 +283,7 @@ export class ScheduleController {
 		}
 		const output = result.stdout.trim();
 		if (output.length === 0) {
-			this.#logger.log("info", "automation.schedule.check_skipped", { jobId });
+			logger.info("automation.schedule.check_skipped");
 			return undefined;
 		}
 		if (output.length > CHECK_OUTPUT_MAX_LENGTH) {
@@ -304,45 +300,11 @@ export class ScheduleController {
 		try {
 			this.#workspace.removeScheduleJob(jobId);
 		} catch (error: unknown) {
-			this.#logger.log("error", "automation.schedule.one_shot_delete_failed", { jobId }, { error });
+			this.#logger.child({ jobId }).error("automation.schedule.one_shot_delete_failed", { error });
 		}
 	}
 
 	async #enqueueReload(operation: () => Promise<void> | void): Promise<void> {
-		const execution = this.#reloadChain.then(operation, operation);
-		this.#reloadChain = execution.then(
-			() => undefined,
-			() => undefined,
-		);
-		await execution;
+		await this.#reloadQueue.run(operation);
 	}
-}
-
-function isSameDefinition(left: WorkspaceScheduleJob, right: WorkspaceScheduleJob): boolean {
-	if (
-		left.id !== right.id ||
-		left.kind !== right.kind ||
-		left.enabled !== right.enabled ||
-		left.prompt !== right.prompt
-	) {
-		return false;
-	}
-	if (left.kind === "recurring" && right.kind === "recurring") {
-		return isSameRecurringDefinition(left, right);
-	}
-	if (left.kind === "one_shot" && right.kind === "one_shot") {
-		return isSameOneShotDefinition(left, right);
-	}
-	return false;
-}
-
-function isSameRecurringDefinition(
-	left: RecurringScheduleJob,
-	right: RecurringScheduleJob,
-): boolean {
-	return left.cron === right.cron && left.check === right.check;
-}
-
-function isSameOneShotDefinition(left: OneShotScheduleJob, right: OneShotScheduleJob): boolean {
-	return left.at === right.at;
 }

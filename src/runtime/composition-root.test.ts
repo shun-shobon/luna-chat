@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createRecordingLogger } from "../modules/observability/testing/recording-logger";
 import { shutdownApplication } from "./composition-root";
 
 describe("application composition lifecycle", () => {
@@ -46,7 +47,7 @@ describe("application composition lifecycle", () => {
 			httpFailPending: () => {
 				calls.push("http.failPending");
 			},
-			logger: { flush: vi.fn(async () => undefined), log: vi.fn() },
+			logger: { ...createRecordingLogger(), flush: vi.fn(async () => undefined) },
 			tasks: {
 				stopIntake: vi.fn(() => {
 					calls.push("tasks.stopIntake");

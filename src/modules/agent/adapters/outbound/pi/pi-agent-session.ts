@@ -282,7 +282,7 @@ export class PiAgentSession implements AgentSession {
 			}
 			transientAttempts += 1;
 			this.#retries += 1;
-			this.#logger.log("warn", "agent.pi.retry_scheduled", undefined, {
+			this.#logger.warn("agent.pi.retry_scheduled", {
 				attempt: transientAttempts,
 				delayMs,
 				error: errorMessage,
@@ -303,7 +303,7 @@ export class PiAgentSession implements AgentSession {
 	}
 
 	#fail(reason: AgentRunFailureReason, message: string): AgentRunResult {
-		this.#logger.log("warn", "agent.pi.run_failed", undefined, {
+		this.#logger.warn("agent.pi.run_failed", {
 			error: message,
 			reason,
 			sessionId: this.id,
@@ -392,7 +392,7 @@ export class PiAgentSession implements AgentSession {
 		const firstKeptMessage = target === undefined ? undefined : messages[target.cutIndex];
 		if (target === undefined || firstKeptMessage === undefined) {
 			this.#compactionCheckedUsage = usageMessage;
-			this.#logger.log("warn", "agent.pi.compaction_skipped", undefined, {
+			this.#logger.warn("agent.pi.compaction_skipped", {
 				sessionId: this.id,
 				tokens: usage.tokens,
 			});
@@ -424,7 +424,7 @@ export class PiAgentSession implements AgentSession {
 				tokensBefore: usage.tokens,
 				summary: text,
 			});
-			this.#logger.log("info", "agent.pi.compaction_completed", undefined, {
+			this.#logger.info("agent.pi.compaction_completed", {
 				firstKeptIndex: target.cutIndex,
 				sessionId: this.id,
 				tokensBefore: usage.tokens,
@@ -458,7 +458,7 @@ export class PiAgentSession implements AgentSession {
 		// pi-ai は WebSocket から SSE への切り替えなど、成功した応答の裏で起きた障害を diagnostics にだけ残す。
 		if (event.message.role === "assistant") {
 			for (const diagnostic of event.message.diagnostics ?? []) {
-				this.#logger.log("warn", "agent.pi.provider_diagnostic", undefined, {
+				this.#logger.warn("agent.pi.provider_diagnostic", {
 					details: diagnostic.details,
 					error: diagnostic.error?.message,
 					sessionId: this.id,

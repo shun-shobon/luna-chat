@@ -2,6 +2,7 @@ import { readdirSync, statfsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import { hasErrorCode } from "../../../shared/error-code";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { TrashFolderStatus, WorkspaceStatus } from "../domain/workspace-status";
 
@@ -25,12 +26,12 @@ export class WorkspaceTrash {
 		for (const name of await this.#folderNames()) {
 			const deleteOn = deleteDateOf(name);
 			if (deleteOn === undefined) {
-				this.logger.log("warn", "workspace.trash.unknown_entry", undefined, { name });
+				this.logger.warn("workspace.trash.unknown_entry", { name });
 				continue;
 			}
 			if (now.getTime() < Date.parse(`${deleteOn}T00:00:00`)) continue;
 			await rm(join(this.#trashDir, name), { recursive: true, force: true });
-			this.logger.log("info", "workspace.trash.deleted", undefined, { folder: name });
+			this.logger.info("workspace.trash.deleted", { folder: name });
 		}
 	}
 
@@ -47,7 +48,7 @@ export class WorkspaceTrash {
 		try {
 			names = readdirSync(this.#trashDir).toSorted();
 		} catch (error: unknown) {
-			if (isMissing(error)) return [];
+			if (hasErrorCode(error, "ENOENT")) return [];
 			throw error;
 		}
 		return names.flatMap((name) => {
@@ -63,7 +64,7 @@ export class WorkspaceTrash {
 		try {
 			return await readdir(this.#trashDir);
 		} catch (error: unknown) {
-			if (isMissing(error)) return [];
+			if (hasErrorCode(error, "ENOENT")) return [];
 			throw error;
 		}
 	}
@@ -74,8 +75,4 @@ function deleteDateOf(name: string): string | undefined {
 	const discarded = Date.parse(`${name}T00:00:00Z`);
 	if (Number.isNaN(discarded)) return undefined;
 	return new Date(discarded + TRASH_RETENTION_DAYS * DAY_MS).toISOString().slice(0, 10);
-}
-
-function isMissing(error: unknown): boolean {
-	return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

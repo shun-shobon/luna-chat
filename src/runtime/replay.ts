@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseArgs } from "node:util";
 
 import type { Models } from "@earendil-works/pi-ai/models";
 import { z } from "zod";
@@ -57,7 +56,7 @@ export type ReplayResult = Readonly<{
 	calls: readonly ReplayCall[];
 }>;
 
-const silentLogger: LoggerPort = { log: () => {} };
+const silentLogger: LoggerPort = { child: () => silentLogger, info() {}, warn() {}, error() {} };
 const REPLAY_ORIGIN = { kind: "event", eventId: "replay", eventType: "replay" } as const;
 const REPLAY_SCOPE = { kind: "guild_channel", guildId: "0", channelId: "0" } as const;
 
@@ -153,44 +152,32 @@ export function blindResults(
 	return { candidates, key };
 }
 
-export function parseReplayArguments(argv: readonly string[]): Readonly<{
-	scenesPath: string;
-	outDir: string;
-	variants: ReadonlyArray<Readonly<{ name: string; dir: string }>>;
-}> {
-	const { values } = parseArgs({
-		args: [...argv],
-		options: {
-			scenes: { type: "string" },
-			variant: { type: "string", multiple: true },
-			out: { type: "string" },
-		},
-		strict: true,
-		allowPositionals: false,
-	});
-	if (values.scenes === undefined || values.out === undefined) {
-		throw new Error(
-			"Usage: luna-chat replay --scenes <file> --variant <name>=<dir>... --out <dir>",
-		);
-	}
-	const variants = (values.variant ?? []).map((raw) => {
+export function parseReplayVariants(
+	values: readonly string[],
+): ReadonlyArray<Readonly<{ name: string; dir: string }>> {
+	const variants = values.map((raw) => {
 		const separator = raw.indexOf("=");
 		if (separator <= 0 || separator === raw.length - 1) {
-			throw new Error(`--variant must be <name>=<dir>: ${raw}`);
+			throw new Error(`variant must be <name>=<dir>: ${raw}`);
 		}
 		return { name: raw.slice(0, separator), dir: raw.slice(separator + 1) };
 	});
 	if (variants.length === 0) {
-		throw new Error("At least one --variant is required");
+		throw new Error("At least one variant is required");
 	}
 	if (new Set(variants.map((variant) => variant.name)).size !== variants.length) {
-		throw new Error("--variant names must be unique");
+		throw new Error("variant names must be unique");
 	}
-	return { scenesPath: values.scenes, outDir: values.out, variants };
+	return variants;
 }
 
-export async function runReplayCommand(argv: readonly string[]): Promise<void> {
-	const options = parseReplayArguments(argv);
+export async function runReplayCommand(
+	options: Readonly<{
+		scenesPath: string;
+		outDir: string;
+		variants: ReadonlyArray<Readonly<{ name: string; dir: string }>>;
+	}>,
+): Promise<void> {
 	const lunaHomeDir = resolveLunaHome(process.env["LUNA_HOME"]);
 	const workspaceDir = resolve(lunaHomeDir, "workspace");
 	const config = await readWorkspaceConfig(resolve(lunaHomeDir, "config.toml"));

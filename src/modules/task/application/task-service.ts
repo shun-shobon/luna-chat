@@ -1,3 +1,4 @@
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { JsonObject } from "../../../shared/json";
 import type { AgentInputMessage } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
@@ -64,7 +65,7 @@ class TaskError extends Error {
 }
 
 export class TaskService {
-	readonly #background = new Set<Promise<void>>();
+	readonly #background = new ActiveExecutionSet();
 	readonly #parked = new Map<string, OpenedAgentSession>();
 	readonly #runs = new Map<string, ActiveRun>();
 	readonly #tasks = new Map<string, Task>();
@@ -101,7 +102,7 @@ export class TaskService {
 		const parked = [...this.#parked.values()];
 		this.#parked.clear();
 		await Promise.allSettled(parked.map(async (opened) => await this.#closeSession(opened)));
-		while (this.#background.size > 0) await Promise.allSettled(this.#background);
+		await this.#background.drain();
 		while (this.#writes.size > 0) await Promise.allSettled(this.#writes.values());
 	}
 
@@ -169,7 +170,7 @@ export class TaskService {
 		const parked = this.#parked.get(taskId);
 		if (parked !== undefined) {
 			this.#parked.delete(taskId);
-			this.#track(this.#closeSession(parked));
+			this.#background.track(this.#closeSession(parked));
 		}
 		await this.#persist(taskId);
 		return "cancelled";
@@ -239,7 +240,7 @@ export class TaskService {
 			};
 			this.#parked.delete(task.id);
 			this.#runs.set(task.id, run);
-			this.#track(this.#drive(task.id, run));
+			this.#background.track(this.#drive(task.id, run));
 		}
 	}
 
@@ -263,7 +264,7 @@ export class TaskService {
 			while (messages !== undefined) messages = await this.#runOnce(taskId, run, opened, messages);
 		} catch (error: unknown) {
 			if (isStopped(run)) return;
-			this.dependencies.logger.log("error", "task.run_failed", { taskId }, { error });
+			this.dependencies.logger.child({ taskId }).error("task.run_failed", { error });
 			this.#fail(taskId, error instanceof Error ? error.message : String(error));
 		} finally {
 			this.#runs.delete(taskId);
@@ -377,12 +378,9 @@ export class TaskService {
 		const delivery = this.dependencies.delivery.deliver(task.origin, event).then(
 			(outcome) => {
 				if (outcome === "rejected") {
-					this.dependencies.logger.log(
-						"warn",
-						"task.delivery_rejected",
-						{ taskId },
-						{ reportSeq: report.seq },
-					);
+					this.dependencies.logger
+						.child({ taskId })
+						.warn("task.delivery_rejected", { reportSeq: report.seq });
 					return;
 				}
 				const latest = this.#require(taskId);
@@ -394,34 +392,31 @@ export class TaskService {
 				});
 			},
 			(error: unknown) => {
-				this.dependencies.logger.log(
-					"error",
-					"task.delivery_failed",
-					{ taskId },
-					{ error, reportSeq: report.seq },
-				);
+				this.dependencies.logger
+					.child({ taskId })
+					.error("task.delivery_failed", { error, reportSeq: report.seq });
 			},
 		);
-		this.#track(delivery);
+		this.#background.track(delivery);
 	}
 
 	#stop(run: ActiveRun): void {
 		const opened = run.opened;
 		if (opened === undefined) return;
 		void this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+			this.dependencies.logger.error("task.tools_release_failed", { error });
 		});
 		void opened.session.abort().catch((error: unknown) => {
-			this.dependencies.logger.log("warn", "task.abort_failed", {}, { error });
+			this.dependencies.logger.warn("task.abort_failed", { error });
 		});
 	}
 
 	async #closeSession(opened: OpenedAgentSession): Promise<void> {
 		await this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+			this.dependencies.logger.error("task.tools_release_failed", { error });
 		});
 		await opened.session.close().catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.session_close_failed", {}, { error });
+			this.dependencies.logger.error("task.session_close_failed", { error });
 		});
 	}
 
@@ -450,7 +445,7 @@ export class TaskService {
 			const latest = this.#tasks.get(taskId);
 			if (latest === undefined) return;
 			await this.dependencies.store.save(latest).catch((error: unknown) => {
-				this.dependencies.logger.log("error", "task.save_failed", { taskId }, { error });
+				this.dependencies.logger.child({ taskId }).error("task.save_failed", { error });
 			});
 		});
 		this.#writes.set(taskId, write);
@@ -469,11 +464,6 @@ export class TaskService {
 		const task = this.#tasks.get(taskId);
 		if (task === undefined) throw new TaskError(`Unknown task ${taskId}`);
 		return task;
-	}
-
-	#track(promise: Promise<void>): void {
-		this.#background.add(promise);
-		void promise.finally(() => this.#background.delete(promise));
 	}
 
 	#timestamp(): string {

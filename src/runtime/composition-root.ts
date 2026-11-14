@@ -54,7 +54,7 @@ import { HttpResponseRegistry } from "../modules/http/application/http-response-
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { IntentFileStore } from "../modules/intent/adapters/intent-file-store";
 import { IntentMatcher } from "../modules/intent/application/intent-matcher";
-import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
+import { createPinoLogger } from "../modules/observability/adapters/pino-logger";
 import { RecentLogBuffer } from "../modules/observability/adapters/recent-log-buffer";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
 import { JsonFileTaskStore } from "../modules/task/adapters/json-file-task-store";
@@ -95,7 +95,6 @@ const SCHEDULE_CHECK_KILL_GRACE_MS = 5_000;
 const RECENT_LOG_CAPACITY = 500;
 const TRASH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
-const RECENT_LOG_EXCLUDED_EVENTS: ReadonlySet<string> = new Set();
 const USAGE_POLL_INTERVAL_MS = 600_000;
 
 interface LunaApplication {
@@ -116,23 +115,18 @@ export async function startLunaApplication(
 		workspace.configPath,
 		workspace.config.discord.allowedChannelIds,
 	);
-	const stdoutLogger = new JsonLinesLogger(environment.logLevel);
 	const recentLogs = new RecentLogBuffer({
 		capacity: RECENT_LOG_CAPACITY,
-		excludedEvents: RECENT_LOG_EXCLUDED_EVENTS,
 		maxFieldLength: RECENT_LOG_MAX_FIELD_LENGTH,
 		now: () => new Date(),
 	});
-	const logger = {
-		flush: async () => await stdoutLogger.flush(),
-		log: (...entry: Parameters<LoggerPort["log"]>) => {
-			stdoutLogger.log(...entry);
-			recentLogs.log(...entry);
-		},
-	};
+	const logger = createPinoLogger({
+		level: environment.logLevel,
+		onEntry: (entry) => recentLogs.record(entry),
+	});
 	const client = createDiscordGatewayClient();
 	const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
-		logger.log("error", "discord.typing.refresh_failed", {}, { error, ...context });
+		logger.error("discord.typing.refresh_failed", { error, ...context });
 	});
 	const actionAdapter = new DiscordActionAdapter(client, resolveSendFile, typing);
 	let conversation: ConversationCoordinator | undefined;
@@ -263,7 +257,7 @@ export async function startLunaApplication(
 			openSession,
 			releaseTools,
 			store: new JsonFileTaskStore(workspace.tasksDir, (path, error) => {
-				logger.log("error", "task.file_invalid", {}, { error, path });
+				logger.error("task.file_invalid", { error, path });
 			}),
 		});
 		tasks = taskService;
@@ -399,19 +393,19 @@ export async function startLunaApplication(
 			allowDm: workspace.config.discord.allowDm,
 			allowedChannelIds: allowedChannels.ids,
 			onAccepted: (event) => {
-				logger.log(
-					"info",
-					"conversation.message_accepted",
-					{
+				logger
+					.child({
 						conversationScope: JSON.stringify(event.scope),
 						conversationSession: createDiscordConversationSession(event.scope).key,
-					},
-					{ authorId: event.message.author.id, messageId: event.message.id },
-					event.message,
-				);
+					})
+					.info(
+						"conversation.message_accepted",
+						{ authorId: event.message.author.id, messageId: event.message.id },
+						event.message,
+					);
 			},
 			onError: (error, event) => {
-				logger.log("error", "discord.gateway_event_failed", {}, { error, event });
+				logger.error("discord.gateway_event_failed", { error, event });
 			},
 		});
 		const commands = new DiscordCommandAdapter(
@@ -420,7 +414,7 @@ export async function startLunaApplication(
 			agent,
 			workspace.config.discord.allowDm,
 			allowedChannels,
-			(error) => logger.log("error", "discord.command_failed", {}, { error }),
+			(error) => logger.error("discord.command_failed", { error }),
 		);
 		startupCleanups.push(() => commands.stop());
 		await commands.start();
@@ -431,7 +425,7 @@ export async function startLunaApplication(
 			hostname: environment.httpHost,
 			port: environment.httpPort,
 			service: httpService,
-			onError: (error) => logger.log("error", "http.server_failed", {}, { error }),
+			onError: (error) => logger.error("http.server_failed", { error }),
 		});
 		startupCleanups.push(async () => await httpServer.close());
 		const dashboardServer = await startDashboardServer({
@@ -450,11 +444,11 @@ export async function startLunaApplication(
 			}),
 			hostname: environment.dashboardHost,
 			port: environment.dashboardPort,
-			onError: (error) => logger.log("error", "dashboard.server_failed", {}, { error }),
+			onError: (error) => logger.error("dashboard.server_failed", { error }),
 		});
 		startupCleanups.push(async () => await dashboardServer.close());
 		options.startupSignal?.throwIfAborted();
-		logger.log("info", "application.started");
+		logger.info("application.started");
 		let shutdownPromise: Promise<void> | undefined;
 
 		const application = {
@@ -500,12 +494,12 @@ export async function shutdownApplication(input: {
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
 	httpClose(): Promise<void>;
 	httpFailPending(): void;
-	logger: Pick<JsonLinesLogger, "flush" | "log">;
+	logger: LoggerPort & Readonly<{ flush(): Promise<void> }>;
 	tasks: Pick<TaskService, "drain" | "stopIntake">;
 	typingRelease(): void;
 	usageStop(): Promise<void>;
 }): Promise<void> {
-	input.logger.log("info", "application.shutdown_started");
+	input.logger.info("application.shutdown_started");
 	const failures: unknown[] = [];
 	await settleCleanup(
 		[
@@ -533,9 +527,9 @@ export async function shutdownApplication(input: {
 		failures,
 	);
 	for (const error of failures) {
-		input.logger.log("error", "application.shutdown_cleanup_failed", {}, { error });
+		input.logger.error("application.shutdown_cleanup_failed", { error });
 	}
-	input.logger.log("info", "application.shutdown_completed");
+	input.logger.info("application.shutdown_completed");
 	await input.logger.flush().catch((error: unknown) => failures.push(error));
 	if (failures.length > 0) throw new AggregateError(failures, "Application shutdown failed");
 }
@@ -556,11 +550,11 @@ async function settleCleanup(
 
 function logCleanupFailures(
 	results: readonly PromiseSettledResult<void>[],
-	logger: Pick<JsonLinesLogger, "log">,
+	logger: LoggerPort,
 	event: string,
 ): void {
 	for (const result of results) {
-		if (result.status === "rejected") logger.log("error", event, {}, { error: result.reason });
+		if (result.status === "rejected") logger.error(event, { error: result.reason });
 	}
 }
 

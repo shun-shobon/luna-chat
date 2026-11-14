@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { JsonValue } from "../../../shared/json";
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import { createToolSet } from "../../tool/application/tool-set";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { ToolProvider } from "../../tool/ports/tool-provider";
@@ -140,7 +141,7 @@ function createBoard() {
 }
 
 function bind(provider: ToolProvider, origin: ToolOrigin): readonly AgentTool[] {
-	return createToolSet([provider], { log: vi.fn() }).bind({ ownerId: "owner-1", origin });
+	return createToolSet([provider], createRecordingLogger()).bind({ ownerId: "owner-1", origin });
 }
 
 function tool(tools: readonly AgentTool[], name: string): AgentTool {

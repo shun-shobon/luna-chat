@@ -7,7 +7,7 @@ import type {
 	AgentSession,
 } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
-import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
 import type { Task, TaskOrigin, TaskReportKind } from "../domain/task";
@@ -272,12 +272,12 @@ describe("TaskService", () => {
 			outcome: "model unavailable",
 		});
 		expect(taskIdOf(harness.runs[0]?.messages)).toBe(next.id);
-		expect(harness.log).toHaveBeenCalledWith(
-			"error",
-			"task.run_failed",
-			{ taskId: broken.id },
-			{ error: expect.any(Error) },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "error",
+			event: "task.run_failed",
+			context: { taskId: broken.id },
+			details: { error: expect.any(Error) },
+		});
 	});
 
 	it("実行中taskの取消でツールを解放して実行を中断し、以後の実行をせずにセッションを閉じる", async () => {
@@ -430,19 +430,19 @@ describe("TaskService", () => {
 		await harness.report(task.id, "milestone", "second");
 
 		await vi.waitFor(() =>
-			expect(harness.log).toHaveBeenCalledWith(
-				"error",
-				"task.delivery_failed",
-				{ taskId: task.id },
-				{ error: expect.any(Error), reportSeq: 2 },
-			),
+			expect(harness.logs).toContainEqual({
+				level: "error",
+				event: "task.delivery_failed",
+				context: { taskId: task.id },
+				details: { error: expect.any(Error), reportSeq: 2 },
+			}),
 		);
-		expect(harness.log).toHaveBeenCalledWith(
-			"warn",
-			"task.delivery_rejected",
-			{ taskId: task.id },
-			{ reportSeq: 1 },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "warn",
+			event: "task.delivery_rejected",
+			context: { taskId: task.id },
+			details: { reportSeq: 1 },
+		});
 		expect(harness.latest(task.id).reports.map((item) => item.deliveredAt)).toEqual([null, null]);
 	});
 
@@ -525,12 +525,12 @@ describe("TaskService", () => {
 		const task = await harness.service.create(channelOrigin, input("unsaved"));
 		await harness.waitForRuns(1);
 
-		expect(harness.log).toHaveBeenCalledWith(
-			"error",
-			"task.save_failed",
-			{ taskId: task.id },
-			{ error: expect.any(Error) },
-		);
+		expect(harness.logs).toContainEqual({
+			level: "error",
+			event: "task.save_failed",
+			context: { taskId: task.id },
+			details: { error: expect.any(Error) },
+		});
 		expect(harness.service.snapshot().tasks[0]).toMatchObject({ id: task.id, status: "running" });
 	});
 });
@@ -599,7 +599,7 @@ async function createHarness(
 	const save = vi.fn(async (task: Task) => {
 		saved.set(task.id, task);
 	});
-	const log = vi.fn<LoggerPort["log"]>();
+	const logger = createRecordingLogger();
 	const service = new TaskService({
 		createId: () => `id-${String(++idCount)}`,
 		delivery: {
@@ -609,7 +609,7 @@ async function createHarness(
 			},
 		},
 		isPrivateSession: options.isPrivateSession ?? (() => false),
-		logger: { log },
+		logger,
 		maxConcurrent: options.maxConcurrent ?? 2,
 		now: () => new Date("2026-10-19T00:00:00.000Z"),
 		openSession,
@@ -638,7 +638,7 @@ async function createHarness(
 			if (task === undefined) throw new Error(`task ${taskId} was not saved`);
 			return task;
 		},
-		log,
+		logs: logger.entries,
 		openSession,
 		releaseTools,
 		report: async (

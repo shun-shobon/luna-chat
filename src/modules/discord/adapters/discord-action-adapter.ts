@@ -69,7 +69,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 			}
 			case "remove_reaction": {
 				const message = await this.#fetchMessage(action.channelId, action.messageId);
-				const reaction = message.reactions.resolve(emojiIdentifier(action.emoji));
+				const reaction = message.reactions.resolve(reactionCacheKey(action.emoji));
 				if (reaction == null) throw new Error("Luna reaction was not found");
 				await reaction.users.remove();
 				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
@@ -139,6 +139,11 @@ function toAttachmentBuilder(file: SendFile): AttachmentBuilder {
 
 function emojiIdentifier(emoji: DiscordEmoji): string {
 	return emoji.kind === "unicode" ? emoji.value : `${emoji.name ?? "_"}:${emoji.id}`;
+}
+
+// discord.js の ReactionManager は emoji.id ?? emoji.name をキャッシュのキーにしており、name:id では引けない。
+function reactionCacheKey(emoji: DiscordEmoji): string {
+	return emoji.kind === "unicode" ? emoji.value : emoji.id;
 }
 
 function success(

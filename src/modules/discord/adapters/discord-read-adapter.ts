@@ -1,4 +1,4 @@
-import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { ChannelType, formatEmoji } from "discord.js";
 import type { Client, DMChannel } from "discord.js";
 import { z } from "zod";
 
@@ -83,8 +83,8 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
 			return Array.from(messages.values());
 		},
 		listChannels: async () => {
-			const lunaUser = client.user;
-			if (lunaUser == null) throw new Error("Discord client is not authenticated");
+			// viewable は client.user を前提に判定する。
+			if (client.user == null) throw new Error("Discord client is not authenticated");
 			const guildSummaries = await client.guilds.fetch();
 			const guildChannelGroups = await Promise.all(
 				Array.from(guildSummaries.values()).map(async (guildSummary) => {
@@ -94,11 +94,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
 						guild.channels.fetchActiveThreads(false),
 					]);
 					const guildChannels = Array.from(channels.values()).flatMap((channel) => {
-						if (
-							channel == null ||
-							!channel.isTextBased() ||
-							channel.permissionsFor(lunaUser)?.has(PermissionFlagsBits.ViewChannel) !== true
-						) {
+						if (channel == null || !channel.isTextBased() || !channel.viewable) {
 							return [];
 						}
 						return [
@@ -112,10 +108,7 @@ export function createDiscordReadClient(client: Client): DiscordReadClient {
 						];
 					});
 					const threads = Array.from(activeThreads.threads.values())
-						.filter(
-							(thread) =>
-								thread.permissionsFor(lunaUser)?.has(PermissionFlagsBits.ViewChannel) === true,
-						)
+						.filter((thread) => thread.viewable)
 						.map((thread) => ({
 							kind: "guild_thread",
 							id: thread.id,
@@ -205,7 +198,7 @@ function toGuildEmoji(
 		name,
 		animated,
 		available: emoji.available === true,
-		mention: animated ? `<a:${name}:${emoji.id}>` : `<:${name}:${emoji.id}>`,
+		mention: formatEmoji({ id: emoji.id, name, animated }),
 		url: emoji.imageURL({ extension: animated ? "gif" : "webp" }),
 	};
 }
