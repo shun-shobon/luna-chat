@@ -206,8 +206,8 @@ curl -i http://127.0.0.1:3000/events \
 記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [SPEC.md](./docs/SPEC.md#82-再生-luna-chat-replay) を参照してください。
 
 ```sh
-pnpm exec luna-chat replay --scenes scenes.json \
-  --variant current=$LUNA_HOME/workspace --variant proposed=./proposed --out ./replay-out
+pnpm exec luna-chat replay --scenes scenes.json --out ./replay-out \
+  current=$LUNA_HOME/workspace proposed=./proposed
 ```
 
 ## 運用

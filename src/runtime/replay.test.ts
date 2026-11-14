@@ -12,7 +12,7 @@ import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatGptBackend } from "../modules/agent/adapters/outbound/pi/chatgpt-backend";
-import { blindResults, parseReplayArguments, runReplay } from "./replay";
+import { blindResults, parseReplayVariants, runReplay } from "./replay";
 import type { ReplayResult } from "./replay";
 
 const temporaryDirectories: string[] = [];
@@ -25,37 +25,22 @@ afterEach(async () => {
 	);
 });
 
-describe("parseReplayArguments", () => {
-	it("場面・出力先・名前付きの指示の組を受け取る", () => {
-		expect(
-			parseReplayArguments([
-				"--scenes",
-				"scenes.json",
-				"--variant",
-				"current=/w",
-				"--variant",
-				"proposed=/p=1",
-				"--out",
-				"out",
-			]),
-		).toEqual({
-			scenesPath: "scenes.json",
-			outDir: "out",
-			variants: [
-				{ name: "current", dir: "/w" },
-				{ name: "proposed", dir: "/p=1" },
-			],
-		});
+describe("parseReplayVariants", () => {
+	it("名前付きの指示の組を受け取り、ディレクトリ側の = は残す", () => {
+		expect(parseReplayVariants(["current=/w", "proposed=/p=1"])).toEqual([
+			{ name: "current", dir: "/w" },
+			{ name: "proposed", dir: "/p=1" },
+		]);
 	});
 
 	it.each([
-		[["--variant", "a=/w", "--out", "out"], "Usage"],
-		[["--scenes", "s.json", "--out", "out"], "At least one --variant"],
-		[["--scenes", "s.json", "--variant", "=/w", "--out", "out"], "<name>=<dir>"],
-		[["--scenes", "s.json", "--variant", "a=", "--out", "out"], "<name>=<dir>"],
-		[["--scenes", "s.json", "--variant", "a=/w", "--variant", "a=/p", "--out", "out"], "unique"],
-	])("不正な引数 %j を拒否する", (argv, message) => {
-		expect(() => parseReplayArguments(argv)).toThrow(message);
+		[[], "At least one variant"],
+		[["=/w"], "<name>=<dir>"],
+		[["a="], "<name>=<dir>"],
+		[["a"], "<name>=<dir>"],
+		[["a=/w", "a=/p"], "unique"],
+	])("不正な引数 %j を拒否する", (values, message) => {
+		expect(() => parseReplayVariants(values)).toThrow(message);
 	});
 });
 

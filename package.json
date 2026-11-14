@@ -27,6 +27,7 @@
 		"@earendil-works/pi-coding-agent": "1.5.2",
 		"@hono/node-server": "2.1.1",
 		"chokidar": "5.0.0",
+		"citty": "0.2.2",
 		"cron": "4.4.0",
 		"discord.js": "14.27.0",
 		"hono": "4.13.9",
