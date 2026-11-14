@@ -79,6 +79,7 @@ describe("TaskService", () => {
 			subject: task.id,
 			data: {
 				task: { id: task.id, status: "completed" },
+				instructions: task.instructions,
 				report: { kind: "result", summary: "まとめた", artifacts: ["/workspace/report.md"] },
 			},
 		});
