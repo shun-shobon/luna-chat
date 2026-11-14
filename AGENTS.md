@@ -32,6 +32,12 @@
 ## 開発コマンド
 
 ```sh
+mise install
+pnpm install --frozen-lockfile
+pnpm run dev   # ソースを監視して再起動する
+```
+
+```sh
 pnpm run format:check
 pnpm run lint
 pnpm run knip
@@ -46,6 +52,12 @@ docker compose build
 ## GitHub Actions
 
 - `uses:` はタグで記述し、SHAは `.github/workflows/actions.lock` で固定します。`uses:` を変更したら `gh-actions-lock`（miseで導入）を実行してロックファイルを更新してください。
+
+## リリース
+
+GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を選びます。作られた準備PRをmainへマージすると、タグ付け、GHCRへのDockerイメージのpush、GitHub Releaseの公開まで進みます。流れと失敗時の扱いは `docs/SPEC.md` の「19. リリース」に、更新対象のファイルは `.github/easy-release.json` にあります。
+
+準備PRの作成には、GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしておく必要があります。
 
 ## Git運用
 

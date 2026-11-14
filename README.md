@@ -1,6 +1,8 @@
-# Luna
+<p align="center">
+  <img src="./.github/assets/banner.jpg" alt="Luna: Discordに暮らす、自律型のパーソナルエージェント" width="100%">
+</p>
 
-Lunaは、DiscordとローカルHTTP APIをインターフェースとして、ChatGPTのモデルを使うエージェントを自律稼働させる個人用のワークスペースエージェントです。エージェントの実行には [pi](https://github.com/earendil-works/pi) を使います。入力を共通イベントに変換し、会話の管理、ホスト上のファイルシステムやコマンドの実行、記憶の蓄積、ハートビート、スケジュールタスクを単一のワークスペース内で統合処理します。
+Lunaは、Discordに常駐して会話し、自分でスケジュールを回して動く個人用のAIエージェントです。ChatGPTのサブスクリプションでモデルを使い、エージェントの実行には [pi](https://github.com/earendil-works/pi) を使います。1つの配置につき、1つのDiscord Bot、1つのワークスペース、1つのChatGPTアカウントを持ちます。
 
 ## セキュリティに関する重要事項
 
@@ -14,50 +16,62 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 
 **信頼できない第三者が入力できる環境には絶対に配置しないでください。** Dockerコンテナ環境であっても、実行ユーザーにはパスワードなしsudo権限が付与されています。
 
+## できること
+
+- **会話**：常設チャンネル、メンションで始まる一時セッション、DMで会話します。同じ会話の投稿をまとめて受け取り、返信・リアクション・ファイル添付で応えます。
+- **ツールの実行**：シェル、ファイル操作、Web検索、画像生成などを、ホスト上で確認なしに実行します。
+- **記憶**：会話が途切れると内容を要約して日次記憶に残し、毎日決まった時刻に長期記憶（`MEMORY.md`）とワークスペースを整理します。
+- **ハートビート**：ランダムな間隔で起き、チェックリストと「続けたいこと」の一覧（`AGENDA.md`）から一つ進めます。
+- **スケジュール実行**：`cron.toml` のジョブを指定時刻に実行します。事前のシェルコマンドで変化があった時だけ起動することもできます。
+- **バックグラウンドタスク**：長い調査や制作を作業エージェントへ任せ、会話を止めずに進捗と結果を受け取ります。
+- **HTTP API**：ローカルのHTTPでイベントを受け、単発の実行や会話として処理します。
+- **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
+
 ## 動作要件
 
 - OS: macOS / Linux（native）、または Docker（linux/amd64, linux/arm64）
-- Runtime: Node.js `24.21.0`, pnpm `12.7.0`
-- その他:
-  - Discord Bot Token（Message Content、Guild/DM Messages、Typing 等の各種Intentが必要）
-  - ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
-  - Docker Engine および Docker Compose（Docker実行時）
-  - Git（日次整理のコミット履歴を残す場合）
-  - ripgrep（エージェントが記憶やワークスペースの検索に使う）
+- Discord Bot Token（Message Content、Guild/DM Messages、Typing などのIntentが必要）
+- ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
+- Docker で動かす場合：Docker Engine と Docker Compose
+- native で動かす場合：[mise](https://mise.jdx.dev/)（Node.js と pnpm を導入します）、ripgrep（エージェントが記憶やワークスペースの検索に使います）
+- Git（任意。日次整理のたびにワークスペースのコミットを残します）
 
-※ Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイント等は提供していません。
+Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイントは提供していません。
 
-## 事前準備（ChatGPTへのログイン）
+## はじめかた
 
-初回起動前に、ChatGPTへログインして資格情報を `LUNA_HOME/auth/credentials.json` に保存しておく必要があります。デバイスコード方式なので、表示されたURLを任意の端末のブラウザで開き、コードを入力してください。
+### Docker
 
-### Native環境の場合
+GHCRに公開しているイメージを使います。`./data` がコンテナのホームディレクトリにマウントされ、データは `./data/.luna` に保存されます。
 
 ```sh
+git clone https://github.com/shun-shobon/luna-chat.git
+cd luna-chat
+cp .env.example .env   # DISCORD_BOT_TOKEN を設定する
+mkdir -p data          # コンテナ内の実行ユーザーから書き込めるようにしておく
+docker compose run --rm luna-chat node dist/index.mjs login
+docker compose up -d
+```
+
+### Native
+
+```sh
+git clone https://github.com/shun-shobon/luna-chat.git
+cd luna-chat
+mise install
+pnpm install --frozen-lockfile
 pnpm run build
 pnpm exec luna-chat login
+DISCORD_BOT_TOKEN=... pnpm start
 ```
 
-### Docker環境の場合
+### ChatGPTへのログイン
 
-事前にホスト側の `./data` がコンテナにマウントされる設定を確認してください。
+`login` はデバイスコード方式です。表示されたURLを任意の端末のブラウザで開き、コードを入力すると、資格情報が `LUNA_HOME/auth/credentials.json` に保存されます。資格情報の更新に失敗した場合はダッシュボードに「ChatGPT 再ログインが必要」と表示されるので、同じ手順で再ログインしてください。
 
-```sh
-docker compose run --rm luna-chat node dist/index.mjs login
-```
+## 設定
 
-資格情報の更新に失敗した場合は、ダッシュボードに「ChatGPT 再ログインが必要」と表示されます。同じ手順で再ログインしてください。
-
-## 指示の比較（再生）
-
-記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [SPEC.md](./docs/SPEC.md#82-再生-luna-chat-replay) を参照してください。
-
-```sh
-pnpm exec luna-chat replay --scenes scenes.json \
-  --variant current=$LUNA_HOME/workspace --variant proposed=./proposed --out ./replay-out
-```
-
-## 環境変数
+### 環境変数
 
 | 変数名                | 必須   | デフォルト値 | 説明                                                                        |
 | --------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
@@ -70,11 +84,11 @@ pnpm exec luna-chat replay --scenes scenes.json \
 | `LUNA_DASHBOARD_PORT` | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。      |
 | `TZ`                  | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。    |
 
-※ `LOG_LEVEL` を `debug` または `trace` に設定すると、メッセージ本文やプロンプト、ツール引数などが標準出力に出力されます。既知のトークン等はマスクされますが、平文に含まれる機密情報の完全な除去は保証されません。
+`LOG_LEVEL` を `debug` または `trace` にすると、メッセージ本文やプロンプト、ツール引数などが標準出力に出ます。既知のトークン等はマスクしますが、平文に含まれる機密情報を完全に取り除けるとは限りません。
 
-## ディレクトリ構成
+### `LUNA_HOME` の中身
 
-初回起動時、不足しているディレクトリやファイルが自動生成されます（既存のファイルは上書きされません）。
+初回起動時、足りないディレクトリやファイルを生成します（既存のファイルは上書きしません）。
 
 ```text
 ~/.luna/
@@ -85,8 +99,8 @@ pnpm exec luna-chat replay --scenes scenes.json \
 └── workspace/
     ├── LUNA.md            # エージェントの人格や会話方針
     ├── MEMORY.md          # 長期記憶
-    ├── memory/            # 日次会話ログ（初回の記憶保存時に自動生成）
-    ├── HEARTBEAT.md       # 定期ハートビート用チェックリスト
+    ├── memory/            # 日次記憶とトピック記憶（初回の記憶保存時に生成）
+    ├── HEARTBEAT.md       # ハートビートで確認するチェックリスト
     ├── AGENDA.md          # 続けたいこと・約束・関心の一覧
     ├── .agents/skills/    # cronやheartbeatの運用手順
     │   ├── cron/SKILL.md
@@ -94,9 +108,9 @@ pnpm exec luna-chat replay --scenes scenes.json \
     └── cron.toml          # 定期実行タスクの設定
 ```
 
-### `config.toml` の基本設定
+### `config.toml`
 
-設定ファイルでは `[memory]` セクションが必須です。その他の項目は省略可能で、デフォルト値が適用されます。
+`[memory]` セクションは必須です。その他の項目は省略でき、省略した項目にはデフォルト値が入ります。
 
 ```toml
 [memory]
@@ -108,11 +122,11 @@ allowed_channel_ids = []
 allow_dm = true
 ```
 
-- `memory.enabled`: アイドル終了時の記憶保存および日次整理を一括で有効/無効化します。
-- `maintenance_cron`: 日次整理を実行するcronスケジュール（ローカルタイムゾーン）。
-- 設定変更の反映には再起動が必要です（`/luna channel add/remove` による変更を除く）。詳細は [SPEC.md](./docs/SPEC.md#14-設定仕様) を参照してください。
+- `memory.enabled`: アイドル終了時の記憶保存と日次整理をまとめて有効/無効にします。
+- `memory.maintenance_cron`: 日次整理を実行するcronスケジュール（ローカルタイムゾーン）。
+- 設定の変更は再起動で反映されます（`/luna channel add/remove` による変更を除く）。モデル、ハートビート間隔、タスクの同時実行数などの全項目は [SPEC.md](./docs/SPEC.md#14-設定仕様) を参照してください。
 
-### `cron.toml` の設定例
+### `cron.toml`
 
 ```toml
 [[jobs]]
@@ -131,56 +145,27 @@ check = "./scripts/check-release.sh"
 prompt = "data.check_output にある新しいリリースを要約し、Discordへ報告する"
 ```
 
-定期ジョブの `check` には、発火時にエージェントより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があればその内容を `check_output` としてプロンプトとともに実行し、出力が空、または失敗・タイムアウト（120秒）した場合はエージェントを起動しません。詳細は [SPEC.md](./docs/SPEC.md#131-事前判定コマンド-check) を参照してください。
+定期ジョブの `check` には、発火時にエージェントより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があれば、その内容を `check_output` としてプロンプトとともに渡します。出力が空、または失敗・タイムアウト（120秒）した場合はエージェントを起動しません。詳細は [SPEC.md](./docs/SPEC.md#131-事前判定コマンド-check) を参照してください。
 
-## セットアップと起動
+## 使いかた
 
-### Native環境
+### Discord
 
-```sh
-mise install
-pnpm install --frozen-lockfile
-pnpm run build
-pnpm exec luna-chat login   # 初回のみ
-DISCORD_BOT_TOKEN=... pnpm start
-```
+メッセージを受け取る条件は3つです。
 
-開発時は以下を実行します：
+- **常設チャンネル**：`allowed_channel_ids` に登録したチャンネルでは、Luna自身の発言を除くすべてのメッセージを受け取ります。
+- **一時セッション**：未登録のチャンネルやスレッドでは、Lunaへのメンションで30分間の一時セッションが始まります。セッション中はメンションなしの発言も受け取ります。
+- **DM**：デフォルトですべてのユーザーからのDMを受け取ります。
 
-```sh
-pnpm run dev
-```
+スラッシュコマンドは、メッセージを受け取れるチャンネルやDMで使えます（未登録チャンネルでは一時セッション中のみ）。
 
-### Docker環境
+- `/luna model [model] [effort]`: 現在のセッションで使うモデルと推論強度（reasoning effort）を変更します。
+- `/luna end`: 現在のセッションを終了します。処理中のターンの完了を待って記憶を保存し、セッションを閉じます。
+- `/luna channel add` / `/luna channel remove`: 実行したチャンネルを常設チャンネルに追加・削除します。ギルド内であれば誰でも実行でき、設定ファイルにすぐ反映されます。
 
-```sh
-cp .env.example .env
-mkdir -p data
-# .env に DISCORD_BOT_TOKEN を設定
-docker compose up
-```
+### HTTP API
 
-※ `./data` ディレクトリはコンテナ内の実行ユーザーから書き込み可能である必要があります。
-
-## Discordでの利用方法
-
-### メッセージの受付条件
-
-- **常設チャンネル**: `allowed_channel_ids` に登録されたチャンネルでは、Luna自身の発言を除くすべてのメッセージを受信します。
-- **一時セッション**: 未登録のチャンネルやスレッドでは、Lunaへのメンションによって30分間の一時セッションが開始されます。セッション継続中はメンションなしの発言も受信します。
-- **DM**: デフォルトですべてのユーザーからのDMを受信します。
-
-### スラッシュコマンド
-
-通常のメッセージを受信できるチャンネルやDMで利用可能です（未登録チャンネルでは一時セッション中のみ実行可能）。
-
-- `/luna model [model] [effort]`: 現在のセッションで使用するモデルと推論強度（reasoning effort）を変更します。
-- `/luna end`: 現在のセッションを手動で終了します。処理中のターン完了を待って記憶を保存し、セッションを閉じます。
-- `/luna channel add` / `/luna channel remove`: 実行したチャンネルを常設チャンネル（`allowed_channel_ids`）に追加または削除します（ギルド内であれば誰でも実行可能で、設定ファイルに即座に反映されます）。
-
-## HTTP APIでの利用方法
-
-`POST http://127.0.0.1:3000/events` にJSONを送ります。認証はありません。Native起動ではループバックにのみ待ち受け、Docker Composeでもホストのループバックにのみポートを公開します。`LUNA_HTTP_PORT` を設定した場合はURLのポートを読み替えてください。
+`POST http://127.0.0.1:3000/events` にJSONを送ります。認証はありません。Native起動ではループバックでのみ待ち受け、Docker Composeでもホストのループバックにのみポートを公開します。`LUNA_HTTP_PORT` を設定した場合はURLのポートを読み替えてください。
 
 ```sh
 curl -i http://127.0.0.1:3000/events \
@@ -193,7 +178,7 @@ curl -i http://127.0.0.1:3000/events \
 - `event.type` は空でない文字列、`event.data` は任意のJSON値です。LunaがイベントIDと時刻を付け、エージェントには `event.data.payload` として渡します。
 - `wait` の場合、エージェントが `http_respond` ツールで `request_id`、HTTPステータス、JSON本文を指定すると、その内容を処理完了後に返します。指定がなければ `204`、処理失敗なら `500` です。
 
-会話を継続する場合は `execution` を `conversation` にし、同じ `session_id` を送ります。会話は通常のアイドル期限後に終了します。
+会話を続ける場合は `execution` を `conversation` にし、同じ `session_id` を送ります。会話は通常のアイドル期限後に終了します。
 
 ```sh
 curl -i http://127.0.0.1:3000/events \
@@ -201,7 +186,7 @@ curl -i http://127.0.0.1:3000/events \
   -d '{"execution":"conversation","response_mode":"async","session_id":"home-automation","event":{"type":"sensor.changed.v1","data":{"value":25}}}'
 ```
 
-## ダッシュボード
+### ダッシュボード
 
 `http://127.0.0.1:3001/` を開くと、Lunaのいまの状態を確認できます（3秒ごとに自動更新、閲覧のみ）。
 
@@ -212,41 +197,25 @@ curl -i http://127.0.0.1:3000/events \
 - 次のハートビート・日次整理・スケジュールの発火予定
 - 最近の出来事（受信メッセージやツールの入力・結果を含むログ）
 
-認証はありません。会話本文やタスクの内容が表示されるため、`LUNA_DASHBOARD_HOST=0.0.0.0` でLANへ公開する場合は、そのネットワーク内の全員が閲覧できることに注意してください。Docker Composeではホストのループバックにのみ公開します。
+認証はありません。会話本文やタスクの内容が表示されるため、`LUNA_DASHBOARD_HOST=0.0.0.0` でLANへ公開する場合は、そのネットワーク内の全員が閲覧できます。Docker Composeではホストのループバックにのみ公開します。
 
-## 記憶と自律運用
+### 指示の比較（再生）
 
-- **セッション記憶保存**: 会話が30分間途切れてアイドル状態になると、エージェントが会話内容を要約し、`memory/YYYY-MM-DD.md` に追記保存します。
-- **日次整理**: 指定したcron時刻（デフォルト午前4時）に専用のセッションが起動し、前回以降の日次ログや `MEMORY.md`、ワークスペースを見直し、`MEMORY.md` を16000文字以内の中核記憶に保ちつつ詳細を `memory/topics/` へ整理します。Gitが利用可能な場合は、ローカルにコミットを作成します。
-- **ハートビート**: 一定間隔（ランダムなインターバル）ごとに `HEARTBEAT.md` と `AGENDA.md` を読み込み、チェックリストを処理したうえで、アジェンダから再開条件を満たした項目を1つ進めます。長い一手はバックグラウンドタスクへ委任します。
-- **スケジュール実行**: `cron.toml` に定義されたジョブに基づき、指定時刻にプロンプトを実行します。定期ジョブは `check` コマンドで変化があった時だけエージェントを起動できます。
-- **バックグラウンドタスク**: 長い調査や制作は、会話中のLunaが `task_create` で作業エージェントへ委任します。会話は止まらず、作業エージェントの節目・質問・結果は依頼元の会話へ届きます。タスクは `LUNA_HOME/tasks/` に保存され、同時実行数は `[tasks].max_concurrent`（デフォルト2）で設定します。
-
-## ログとプロセス管理
-
-ログはすべて標準出力にJSON Lines形式で出力されます。ファイル保存やログローテーション、プロセスの常駐監視は、実行環境のプロセス管理ツール（systemd、Docker等）に委ねられています。
-
-SIGINTまたはSIGTERMを受信すると、新規メッセージの受付を停止し、処理中のタスクをすべて完了させてから正常に終了します。
-
-## 開発とテスト
+記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [SPEC.md](./docs/SPEC.md#82-再生-luna-chat-replay) を参照してください。
 
 ```sh
-pnpm run format:check # フォーマット確認
-pnpm run lint         # 静的解析
-pnpm run knip         # 未使用コード検出
-pnpm run typecheck    # 型チェック
-pnpm run test         # テスト実行
-pnpm run build        # dist/ へビルド
-docker compose build  # Dockerイメージビルド
+pnpm exec luna-chat replay --scenes scenes.json \
+  --variant current=$LUNA_HOME/workspace --variant proposed=./proposed --out ./replay-out
 ```
 
-## リリース手順
+## 運用
 
-GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`、`minor`、`major` を選択します。[easy-release](https://github.com/shun-shobon/easy-release) が最新の安定版Gitタグを基準に次のバージョンを計算し、`package.json` の更新後に `pnpm format` を実行し、整形結果を含むPull Requestを作成します。GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしてください。
+ログはすべて標準出力にJSON Lines形式で出ます。ファイルへの保存、ログローテーション、プロセスの常駐監視は、systemdやDockerなど実行環境のプロセス管理に任せてください。
 
-準備PRをmainブランチにマージすると、リリースタグとドラフトReleaseを作成し、GHCRへDockerイメージをプッシュします。ビルドと証明の付与が成功した後、Dockerイメージの `latest` タグを更新してGitHub Releaseを公開します。更新対象は `.github/easy-release.json` で指定します。
+SIGINTまたはSIGTERMを受け取ると、新しいメッセージの受付を止め、処理中の実行をすべて終えてから終了します。
 
-## ドキュメント一覧
+## ドキュメント
 
-- [SPEC.md](./docs/SPEC.md): 機能仕様、設定項目、エラー時の挙動などの詳細
-- [ARCHITECTURE.md](./docs/ARCHITECTURE.md): 内部アーキテクチャ、状態遷移、設計方針の詳細
+- [SPEC.md](./docs/SPEC.md)：機能仕様、設定項目、エラー時の挙動
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)：内部アーキテクチャ、状態遷移、設計方針
+- [AGENTS.md](./AGENTS.md)：開発の手順と規約、リリース手順
