@@ -23,10 +23,10 @@ export class AutomationService {
 	constructor(input: {
 		heartbeat: StatusReportingControl<HeartbeatStatus>;
 		memoryMaintenance: StatusReportingControl<MemoryMaintenanceStatus>;
-		retention: AutomationControl;
+		cleaners: readonly AutomationControl[];
 		schedule: StatusReportingControl<readonly ScheduleJobStatus[]>;
 	}) {
-		this.#controls = [input.retention, input.schedule, input.memoryMaintenance, input.heartbeat];
+		this.#controls = [...input.cleaners, input.schedule, input.memoryMaintenance, input.heartbeat];
 		this.#heartbeat = input.heartbeat;
 		this.#memoryMaintenance = input.memoryMaintenance;
 		this.#schedule = input.schedule;

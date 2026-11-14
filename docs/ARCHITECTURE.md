@@ -63,21 +63,21 @@ src/
 
 ## 4. モジュールの責務 (Capability Ownership)
 
-| モジュール      | 主な責務・所有する概念                                                      | 公開インターフェース（ポート）                                                              | 主なアダプター                                            |
-| --------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `discord`       | メッセージ正規化、スコープ判定、Discordツール、タイピング管理               | イベント変換、ツールプロバイダ、Discord API呼び出し、Gateway購読                            | discord.js Gateway/REST                                   |
-| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定              | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`                        | Discordコントローラー、履歴取得                           |
-| `agent`         | エージェントのセッション、再試行、圧縮、記録、汎用ツール、認証と使用枠      | `open`（セッションの `run`・`steer`・`abort`・`setModel`・`close`）、`listModels`、`status` | pi-agent-core、pi-ai、pi-coding-agent、ファイル           |
-| `event`         | 共通イベント（`LunaEvent`）と入力メッセージへの変換、ワンショット実行       | `execute`                                                                                   | なし（EventExecutorがセッションを開いて実行する）         |
-| `http`          | HTTPイベントの検証、受付、完了待ち応答                                      | `submit`、`stopIntake`、`drain`                                                             | Hono、`http_respond` ツール                               |
-| `tool`          | ツールの定義、実行元（`ToolOrigin`）、ツール集合、待機                      | `defineTool`、`createToolSet`（`bind`・`release`）、`OpenAgentSession`                      | 待機ツール                                                |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定、記録の掃除 | `startAutomation`、`stopIntake`、`drain`                                                    | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
-| `task`          | タスク状態、作業エージェントの実行枠と実行の続け方、公開範囲、通知          | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`          | JSONファイルストア、`task_*` ツール                       |
-| `intent`        | 話題をきっかけにする予定の照合、発火回数とcooldown                          | `match`                                                                                     | `intents.toml`、状態のJSONファイル                        |
-| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視                    | 初期化、プロンプト読み込み、スケジュール読み書き                                            | ファイルシステム、`smol-toml`、Zod                        |
-| `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                                      | `snapshot`                                                                                  | Hono（`/`、`/api/snapshot`）                              |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持        | ロガーポート、直近ログの一覧                                                                | 標準出力（JSON Lines）、メモリ上のリングバッファ          |
-| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                    | プロセスエントリポイント                                                                    | シグナルハンドラー                                        |
+| モジュール      | 主な責務・所有する概念                                                            | 公開インターフェース（ポート）                                                              | 主なアダプター                                            |
+| --------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `discord`       | メッセージ正規化、スコープ判定、Discordツール、タイピング管理                     | イベント変換、ツールプロバイダ、Discord API呼び出し、Gateway購読                            | discord.js Gateway/REST                                   |
+| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定                    | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`                        | Discordコントローラー、履歴取得                           |
+| `agent`         | エージェントのセッション、再試行、圧縮、記録、汎用ツール、認証と使用枠            | `open`（セッションの `run`・`steer`・`abort`・`setModel`・`close`）、`listModels`、`status` | pi-agent-core、pi-ai、pi-coding-agent、ファイル           |
+| `event`         | 共通イベント（`LunaEvent`）と入力メッセージへの変換、ワンショット実行             | `execute`                                                                                   | なし（EventExecutorがセッションを開いて実行する）         |
+| `http`          | HTTPイベントの検証、受付、完了待ち応答                                            | `submit`、`stopIntake`、`drain`                                                             | Hono、`http_respond` ツール                               |
+| `tool`          | ツールの定義、実行元（`ToolOrigin`）、ツール集合、待機                            | `defineTool`、`createToolSet`（`bind`・`release`）、`OpenAgentSession`                      | 待機ツール                                                |
+| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定、記録の掃除       | `startAutomation`、`stopIntake`、`drain`                                                    | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
+| `task`          | タスク状態、作業エージェントの実行枠と実行の続け方、公開範囲、通知                | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`          | JSONファイルストア、`task_*` ツール                       |
+| `intent`        | 話題をきっかけにする予定の照合、発火回数とcooldown                                | `match`                                                                                     | `intents.toml`、状態のJSONファイル                        |
+| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録 | 初期化、プロンプト読み込み、スケジュール読み書き                                            | ファイルシステム、`smol-toml`、Zod                        |
+| `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                                            | `snapshot`                                                                                  | Hono（`/`、`/api/snapshot`）                              |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                | 標準出力（JSON Lines）、メモリ上のリングバッファ          |
+| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                          | プロセスエントリポイント                                                                    | シグナルハンドラー                                        |
 
 ## 5. 依存関係の方向
 
@@ -195,7 +195,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 
 - 直近の assistant の `usage` が文脈長から予約分を引いた値を超えたら、`[models.compaction]` のモデルで切り口より前を要約する（pi-coding-agent の `findCutPoint` と `generateSummaryWithUsage`）。切り口と要約はアダプターが保持し、`transformContext` で毎回のリクエストを「システム → 要約 → 切り口以降」に置き換える。記録（`agent.state.messages`）は書き換えない。
 - 記録は `message_end` ごとにJSONLへ追記する。先頭の system メッセージは `message_end` で出ないため、開いた時点で書く。
-- 最終更新から保持期間を過ぎた記録は `TranscriptRetentionCleaner` が定期的に削除する。長く開いているセッションは開いた日のファイルに追記し続けるため、日付ではなく更新時刻で判断する。
+- 最終更新から保持期間を過ぎた記録は `RetentionCleaner` が定期的に削除する。同じクリーナーを、ワークスペースのゴミ箱（`WorkspaceTrash`）の日付フォルダの削除にも使う。長く開いているセッションは開いた日のファイルに追記し続けるため、日付ではなく更新時刻で判断する。
 
 ### 8.4 認証と使用枠
 
