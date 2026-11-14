@@ -41,7 +41,7 @@ function requestBody(index: number): unknown {
 }
 
 describe("image_gen", () => {
-	let cwd: string;
+	let scratchDir: string;
 	let conversation: Message[];
 	const signal = new AbortController().signal;
 
@@ -60,13 +60,13 @@ describe("image_gen", () => {
 		models.setProvider(openaiCodexProvider());
 		return createImageGenTool({
 			backend: new ChatGptBackend({ models, timeoutMs: options.timeoutMs ?? 1000 }),
-			cwd,
+			scratchDir,
 			conversation: () => conversation,
 		});
 	}
 
 	beforeEach(async () => {
-		cwd = await mkdtemp(path.join(tmpdir(), "luna-image-gen-"));
+		scratchDir = await mkdtemp(path.join(tmpdir(), "luna-image-gen-"));
 		conversation = [];
 		fetchMock.mockReset();
 		vi.stubGlobal("fetch", fetchMock);
@@ -74,7 +74,7 @@ describe("image_gen", () => {
 
 	afterEach(async () => {
 		vi.unstubAllGlobals();
-		await rm(cwd, { recursive: true, force: true });
+		await rm(scratchDir, { recursive: true, force: true });
 	});
 
 	it("新規生成をimages/generationsへ送り、PNGを保存してパスと画像を返す", async () => {
@@ -92,13 +92,13 @@ describe("image_gen", () => {
 			quality: "auto",
 			size: "auto",
 		});
-		const outputDir = path.join(cwd, "generated_images");
+		const outputDir = path.join(scratchDir, "generated_images");
 		const files = await readdir(outputDir);
 		expect(files).toEqual([expect.stringMatching(/^[\da-f-]+\.png$/u)]);
 		const savedPath = path.join(outputDir, files[0] ?? "");
 		await expect(readFile(savedPath)).resolves.toEqual(PNG_BYTES);
 		expect(result).toEqual({
-			text: `Generated images are saved to ${outputDir} as ${savedPath} by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.`,
+			text: `Generated images are saved to ${outputDir} as ${savedPath} by default.\nThis is the session's scratch directory, which the system clears eventually. To keep an image, copy it into the workspace and leave the original in place unless the user explicitly asks you to delete it.`,
 			images: [{ data: PNG_BASE64, mimeType: "image/png" }],
 			isError: false,
 		});
@@ -114,13 +114,13 @@ describe("image_gen", () => {
 
 		expect(requestBody(0)).toMatchObject({ background: "transparent" });
 		expect(result.images).toEqual([{ data: gif, mimeType: "image/gif" }]);
-		await expect(readdir(path.join(cwd, "generated_images"))).resolves.toEqual([
+		await expect(readdir(path.join(scratchDir, "generated_images"))).resolves.toEqual([
 			expect.stringMatching(/\.gif$/u),
 		]);
 	});
 
 	it("referenced_image_pathsの画像をdata URLにしてimages/editsへ送る", async () => {
-		const imagePath = path.join(cwd, "input.png");
+		const imagePath = path.join(scratchDir, "input.png");
 		await writeFile(imagePath, PNG_BYTES);
 		fetchMock.mockResolvedValueOnce(imageResponse(PNG_BASE64));
 
@@ -175,7 +175,7 @@ describe("image_gen", () => {
 	});
 
 	it("参照画像の指定が不正なら送らずにエラーを返す", async () => {
-		const textPath = path.join(cwd, "note.txt");
+		const textPath = path.join(scratchDir, "note.txt");
 		await writeFile(textPath, "not an image");
 		const tool = await createTool();
 
@@ -187,7 +187,10 @@ describe("image_gen", () => {
 			tool.execute({ prompt: "x", num_last_images_to_include: 6 }, signal),
 			tool.execute({ prompt: "x", num_last_images_to_include: 1 }, signal),
 			tool.execute({ prompt: "x", referenced_image_paths: [textPath] }, signal),
-			tool.execute({ prompt: "x", referenced_image_paths: [path.join(cwd, "none.png")] }, signal),
+			tool.execute(
+				{ prompt: "x", referenced_image_paths: [path.join(scratchDir, "none.png")] },
+				signal,
+			),
 			tool.execute({ prompt: "x", referenced_image_paths: ["relative.png"] }, signal),
 			tool.execute(
 				{ prompt: "x", referenced_image_paths: Array.from({ length: 6 }, () => textPath) },
@@ -243,13 +246,13 @@ describe("image_gen", () => {
 			images: [],
 			isError: true,
 		});
-		await expect(readdir(cwd)).resolves.toEqual([]);
+		await expect(readdir(scratchDir)).resolves.toEqual([]);
 	});
 
 	it("保存先がシンボリックリンクなら保存せず、生成した画像だけ返す", async () => {
-		const outside = path.join(cwd, "outside");
+		const outside = path.join(scratchDir, "outside");
 		await mkdir(outside);
-		await symlink(outside, path.join(cwd, "generated_images"));
+		await symlink(outside, path.join(scratchDir, "generated_images"));
 		fetchMock.mockResolvedValueOnce(imageResponse(PNG_BASE64));
 
 		const result = await (await createTool()).execute({ prompt: "x" }, signal);

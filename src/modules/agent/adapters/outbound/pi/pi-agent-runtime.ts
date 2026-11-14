@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { Message, ModelThinkingLevel, Models } from "@earendil-works/pi-ai";
@@ -22,6 +24,8 @@ import { pruneTranscripts, TranscriptWriter, transcriptFilePath } from "./pi-tra
 export type PiAgentRuntimeOptions = Readonly<{
 	models: Models;
 	transcriptDir: string;
+	// セッションごとの一時ディレクトリを作る親ディレクトリ。消すのはOSに任せる。
+	scratchRoot: string;
 	retryDelaysMs: readonly number[];
 	requestTimeoutMs: number;
 	compaction: PiCompactionSettings;
@@ -34,6 +38,7 @@ export type PiAgentRuntimeOptions = Readonly<{
 // 汎用ツールはセッションより先に作るため、セッションの履歴は呼び出し時に引く。
 export type HarnessToolContext = Readonly<{
 	sessionId: string;
+	scratchDir: string;
 	conversation: () => readonly Message[];
 }>;
 
@@ -53,9 +58,16 @@ export class PiAgentRuntime implements AgentRuntimePort {
 		// 存在しないモデルで汎用ツールを作らないよう、先に解決しておく。
 		resolveModel(this.#options.models, spec.model);
 		const id = randomUUID();
+		const scratchDir = path.join(this.#options.scratchRoot, id);
+		mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
+		const sessionSpec: AgentSessionSpec = {
+			...spec,
+			systemPrompt: `${spec.systemPrompt}\n\n${describeScratchDir(scratchDir)}`,
+		};
 		let opened: PiAgentSession | undefined;
-		const harness = this.#options.createHarnessTools(spec, {
+		const harness = this.#options.createHarnessTools(sessionSpec, {
 			sessionId: id,
+			scratchDir,
 			conversation: () => opened?.llmMessages() ?? [],
 		});
 		const tools = [...spec.tools.map(toPiAgentTool), ...harness.tools];
@@ -71,7 +83,7 @@ export class PiAgentRuntime implements AgentRuntimePort {
 
 		const session = new PiAgentSession({
 			id,
-			spec,
+			spec: sessionSpec,
 			tools,
 			harness,
 			models: this.#options.models,
@@ -141,6 +153,10 @@ export class PiAgentRuntime implements AgentRuntimePort {
 			this.#authFailed = true;
 		}
 	}
+}
+
+function describeScratchDir(scratchDir: string): string {
+	return `# Scratch directory\n\nThis session's scratch directory is ${scratchDir}. exec_command sets it as TMPDIR.`;
 }
 
 function isLunaThinkingLevel(level: ModelThinkingLevel): level is ThinkingLevel {

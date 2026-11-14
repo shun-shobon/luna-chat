@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -29,6 +29,7 @@ import type {
 	AgentToolResult,
 } from "../../../ports/outbound/agent-session-port";
 import { PiAgentRuntime } from "./pi-agent-runtime";
+import type { HarnessToolContext } from "./pi-agent-runtime";
 import type { HarnessToolSet } from "./pi-agent-session";
 import { SessionBusyError, SessionClosedError } from "./pi-agent-session";
 
@@ -50,6 +51,8 @@ type Setup = Readonly<{
 	runtime: PiAgentRuntime;
 	faux: ReturnType<typeof fauxProvider>;
 	transcriptDir: string;
+	scratchRoot: string;
+	harnessContexts: HarnessToolContext[];
 	harnessDispose: ReturnType<typeof vi.fn>;
 	hasCredentials: { value: boolean };
 	logger: RecordingLogger;
@@ -75,11 +78,14 @@ async function setup(
 	const transcriptDir = await mkdtemp(path.join(tmpdir(), "pi-runtime-"));
 	temporaryDirectories.push(transcriptDir);
 	const harnessDispose = vi.fn(async () => undefined);
+	const scratchRoot = path.join(transcriptDir, "scratch");
+	const harnessContexts: HarnessToolContext[] = [];
 	const hasCredentials = { value: true };
 	const logger = createRecordingLogger();
 	const runtime = new PiAgentRuntime({
 		models,
 		transcriptDir,
+		scratchRoot,
 		retryDelaysMs: options.retryDelaysMs ?? [1, 1],
 		requestTimeoutMs: 60_000,
 		compaction: {
@@ -87,7 +93,10 @@ async function setup(
 			reserveTokens: options.reserveTokens ?? 16_384,
 			keepRecentTokens: options.keepRecentTokens ?? 20_000,
 		},
-		createHarnessTools: () => ({ tools: options.harnessTools ?? [], dispose: harnessDispose }),
+		createHarnessTools: (_spec, context) => {
+			harnessContexts.push(context);
+			return { tools: options.harnessTools ?? [], dispose: harnessDispose };
+		},
 		hasCredentials: () => hasCredentials.value,
 		logger,
 		now: () => NOW,
@@ -98,7 +107,16 @@ async function setup(
 		openedSessions.push(session);
 		return session;
 	};
-	return { runtime, faux, transcriptDir, harnessDispose, hasCredentials, logger };
+	return {
+		runtime,
+		faux,
+		transcriptDir,
+		scratchRoot,
+		harnessContexts,
+		harnessDispose,
+		hasCredentials,
+		logger,
+	};
 }
 
 function spec(overrides: Partial<AgentSessionSpec> = {}): AgentSessionSpec {
@@ -655,7 +673,30 @@ describe("記録", () => {
 					(line) => z.object({ message: z.object({ role: z.string() }) }).parse(line).message.role,
 				),
 		).toEqual(["system", "luna_input", "assistant"]);
-		expect(lines[1]).toMatchObject({ message: { role: "system", content: "あなたはルナです。" } });
+		expect(lines[1]).toMatchObject({
+			message: { role: "system", content: expect.stringMatching(/^あなたはルナです。\n\n/u) },
+		});
+	});
+});
+
+describe("一時ディレクトリ", () => {
+	it("セッションごとに所有者だけのディレクトリを作り、汎用ツールとシステムプロンプトへ渡す", async () => {
+		const { runtime, faux, transcriptDir, scratchRoot, harnessContexts } = await setup();
+		faux.setResponses([fauxAssistantMessage("はい")]);
+		const session = runtime.open(spec());
+		await session.run([input("やあ")]);
+		await session.close();
+
+		const scratchDir = path.join(scratchRoot, session.id);
+		expect((await stat(scratchDir)).mode & 0o777).toBe(0o700);
+		expect(harnessContexts.map((context) => context.scratchDir)).toEqual([scratchDir]);
+		const lines = await readTranscript(transcriptDir, session.id);
+		expect(lines[1]).toMatchObject({
+			message: {
+				role: "system",
+				content: `あなたはルナです。\n\n# Scratch directory\n\nThis session's scratch directory is ${scratchDir}. exec_command sets it as TMPDIR.`,
+			},
+		});
 	});
 });
 

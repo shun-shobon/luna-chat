@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -87,6 +88,7 @@ export function createPiAgentRuntime(input: {
 	return new PiAgentRuntime({
 		models: input.models,
 		transcriptDir: resolve(input.lunaHomeDir, "sessions"),
+		scratchRoot: resolve(tmpdir(), "luna"),
 		retryDelaysMs: TURN_RETRY_DELAYS_MS,
 		requestTimeoutMs: input.requestTimeoutMs,
 		compaction: {
@@ -116,7 +118,7 @@ function createHarnessTools(
 	const wanted = new Set<HarnessToolName>(spec.harnessTools);
 	const shell =
 		wanted.has("exec_command") || wanted.has("write_stdin")
-			? createShellTools({ cwd: spec.cwd, env: environment })
+			? createShellTools({ cwd: spec.cwd, env: { ...environment, TMPDIR: context.scratchDir } })
 			: undefined;
 	const read = createReadTool(spec.cwd);
 	const candidates: ReadonlyArray<readonly [HarnessToolName, AnyPiAgentTool]> = [
@@ -144,7 +146,11 @@ function createHarnessTools(
 		[
 			"image_gen",
 			toPiAgentTool(
-				createImageGenTool({ backend, cwd: spec.cwd, conversation: context.conversation }),
+				createImageGenTool({
+					backend,
+					scratchDir: context.scratchDir,
+					conversation: context.conversation,
+				}),
 			),
 		],
 	];
