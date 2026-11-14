@@ -22,6 +22,7 @@ import type {
 	ConversationStatus,
 } from "../domain/conversation-status";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
+import type { ConversationIntentPort } from "../ports/conversation-intent-port";
 import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 
 type ConversationCoordinatorOptions = Readonly<{
@@ -34,6 +35,7 @@ type ConversationCoordinatorOptions = Readonly<{
 
 type ConversationDependencies = Readonly<{
 	history: ConversationHistoryPort;
+	intents: ConversationIntentPort;
 	logger: LoggerPort;
 	now: () => Date;
 	onBatchSettled(eventIds: readonly string[], succeeded: boolean): void;
@@ -362,6 +364,9 @@ class ConversationActor {
 		if (this.#phase === "running" && this.#opened !== undefined) {
 			this.#activeEventIds.add(event.id);
 			this.#opened.session.steer(toEventMessage(event));
+			for (const intent of this.dependencies.intents.match([event])) {
+				this.#opened.session.steer(intent);
+			}
 			return;
 		}
 		this.#queue.push(event);
@@ -443,6 +448,7 @@ class ConversationActor {
 	#batchMessages(batch: readonly LunaEvent[]): readonly AgentInputMessage[] {
 		return [
 			...batch.map(toEventMessage),
+			...this.dependencies.intents.match(batch),
 			{ kind: "task_board", text: JSON.stringify(this.dependencies.tasks.listFor(this.session)) },
 		];
 	}

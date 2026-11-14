@@ -14,6 +14,7 @@ import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
+import type { ConversationIntentPort } from "../ports/conversation-intent-port";
 import { ConversationCoordinator } from "./conversation-coordinator";
 
 const session: ConversationSession = {
@@ -72,6 +73,24 @@ describe("ConversationCoordinator", () => {
 				eventMessage(event("102", "2026-07-23T09:00:01.000+09:00")),
 				eventMessage(event("100", "2026-07-23T09:00:02.000+09:00")),
 				eventMessage(event("101", "2026-07-23T00:00:02.000Z")),
+				{ kind: "task_board", text: JSON.stringify([{ id: "task-1", status: "running" }]) },
+			]);
+		});
+
+		it("新着に反応した予定を、新着の後・タスク一覧の前に渡す", async () => {
+			const match = vi.fn<ConversationIntentPort["match"]>((events) =>
+				events.some((candidate) => candidate.id === "101") ? [{ kind: "intent", text: "I" }] : [],
+			);
+			const harness = createHarness({ intents: { match } });
+
+			harness.accept("100", "2026-07-23T00:00:00.000Z");
+			harness.accept("101", "2026-07-23T00:00:01.000Z");
+			await harness.advance(100);
+
+			expect(harness.runs[0]?.messages).toEqual([
+				eventMessage(event("100", "2026-07-23T00:00:00.000Z")),
+				eventMessage(event("101", "2026-07-23T00:00:01.000Z")),
+				{ kind: "intent", text: "I" },
 				{ kind: "task_board", text: JSON.stringify([{ id: "task-1", status: "running" }]) },
 			]);
 		});
@@ -156,6 +175,26 @@ describe("ConversationCoordinator", () => {
 
 			expect(harness.onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100", "101", "102"], true);
 			expect(harness.runs).toHaveLength(1);
+		});
+
+		it("実行中の新着に反応した予定も、その新着の直後にsteerする", async () => {
+			const harness = createHarness({
+				intents: {
+					match: (events) =>
+						events.some((candidate) => candidate.id === "101")
+							? [{ kind: "intent", text: "I" }]
+							: [],
+				},
+			});
+			await harness.startFirstRun("100");
+
+			harness.accept("101", "2026-07-23T00:00:01.000Z");
+			await harness.flush();
+
+			expect(harness.sessions[0]?.steer.mock.calls).toEqual([
+				[eventMessage(event("101", "2026-07-23T00:00:01.000Z"))],
+				[{ kind: "intent", text: "I" }],
+			]);
 		});
 
 		it("セッションを開いている間の新着は、最初の実行の完了後に同じセッションで続けて実行する", async () => {
@@ -628,6 +667,7 @@ type FakeSession = {
 function createHarness(
 	options: {
 		history?: ConversationHistoryPort;
+		intents?: ConversationIntentPort;
 		log?: LoggerPort["log"];
 		sessionMemoryEnabled?: boolean;
 	} = {},
@@ -695,6 +735,7 @@ function createHarness(
 	const coordinator = new ConversationCoordinator(
 		{
 			history: options.history ?? { fetchBefore: vi.fn(async () => []) },
+			intents: options.intents ?? { match: () => [] },
 			logger: { log },
 			now: () => new Date(),
 			onBatchSettled,

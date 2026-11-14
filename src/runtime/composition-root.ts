@@ -52,6 +52,8 @@ import { createHttpResponseToolProvider } from "../modules/http/adapters/http-re
 import { HttpEventService } from "../modules/http/application/http-event-service";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
+import { IntentFileStore } from "../modules/intent/adapters/intent-file-store";
+import { IntentMatcher } from "../modules/intent/application/intent-matcher";
 import { JsonLinesLogger } from "../modules/observability/adapters/json-lines-logger";
 import { RecentLogBuffer } from "../modules/observability/adapters/recent-log-buffer";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
@@ -69,6 +71,7 @@ import {
 	readWorkspaceSchedule,
 	removeWorkspaceScheduleJob,
 } from "../modules/workspace/adapters/schedule-toml";
+import { SkillUsageStore } from "../modules/workspace/adapters/skill-usage-store";
 import { readWorkspaceSkillsPrompt } from "../modules/workspace/adapters/workspace-skills";
 import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
 import {
@@ -179,6 +182,7 @@ export async function startLunaApplication(
 		models,
 		parentEnvironment: process.env,
 		requestTimeoutMs: workspace.config.agent.requestTimeoutMs,
+		skillUsage: new SkillUsageStore(resolve(workspace.lunaHomeDir, "state", "skill-usage.json")),
 	});
 	validateModelSelections(agent, workspace.config.models);
 	const usage = new UsagePoller({
@@ -258,8 +262,17 @@ export async function startLunaApplication(
 			}),
 		});
 		tasks = taskService;
+		const intentMatcher = new IntentMatcher(
+			new IntentFileStore(
+				resolve(workspace.workspaceDir, "intents.toml"),
+				resolve(workspace.lunaHomeDir, "state", "intents-state.json"),
+			),
+			logger,
+			() => new Date(),
+		);
 		const coordinator = new ConversationCoordinator(
 			{
+				intents: intentMatcher,
 				history: {
 					fetchBefore: async (session, beforeEvent, limit) => {
 						if (session.source === HTTP_EVENT_SOURCE) return [];
