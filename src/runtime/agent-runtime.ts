@@ -24,6 +24,8 @@ import type {
 	ModelSelection,
 } from "../modules/agent/ports/outbound/agent-session-port";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
+import { findSkillNames } from "../modules/workspace/adapters/skill-usage-store";
+import type { SkillUsageStore } from "../modules/workspace/adapters/skill-usage-store";
 
 export const TURN_RETRY_DELAYS_MS: readonly number[] = [15_000, 60_000, 180_000];
 const COMPACTION_RESERVE_TOKENS = 16_384;
@@ -72,7 +74,15 @@ export function createPiAgentRuntime(input: {
 	models: Models;
 	parentEnvironment: NodeJS.ProcessEnv;
 	requestTimeoutMs: number;
+	skillUsage: SkillUsageStore;
 }): PiAgentRuntime {
+	const recordSkillUse = (names: readonly string[]): void => {
+		input.skillUsage.record(names, new Date()).catch((error: unknown) => {
+			input.logger.log("error", "workspace.skill_usage_write_failed", undefined, {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		});
+	};
 	const childEnvironment = withoutSecrets(input.parentEnvironment);
 	return new PiAgentRuntime({
 		models: input.models,
@@ -85,7 +95,7 @@ export function createPiAgentRuntime(input: {
 			keepRecentTokens: COMPACTION_KEEP_RECENT_TOKENS,
 		},
 		createHarnessTools: (spec, context) =>
-			createHarnessTools(spec, context, input.backend, childEnvironment),
+			createHarnessTools(spec, context, input.backend, childEnvironment, recordSkillUse),
 		hasCredentials: () => existsSync(credentialsPath(input.lunaHomeDir)),
 		logger: input.logger,
 		now: () => new Date(),
@@ -101,6 +111,7 @@ function createHarnessTools(
 	context: HarnessToolContext,
 	backend: ChatGptBackend,
 	environment: Readonly<Record<string, string | undefined>>,
+	recordSkillUse: (names: readonly string[]) => void,
 ): HarnessToolSet {
 	const wanted = new Set<HarnessToolName>(spec.harnessTools);
 	const shell =
@@ -138,8 +149,26 @@ function createHarnessTools(
 		],
 	];
 	return {
-		tools: candidates.filter(([name]) => wanted.has(name)).map(([, tool]) => tool),
+		tools: candidates
+			.filter(([name]) => wanted.has(name))
+			.map(([name, tool]) =>
+				name === "read" || name === "exec_command" ? observeSkillUse(tool, recordSkillUse) : tool,
+			),
 		dispose: async () => await shell?.dispose(),
+	};
+}
+
+// SKILL.md を読んだ呼び出しを、skill が使われた記録として残す。
+function observeSkillUse(
+	tool: AnyPiAgentTool,
+	recordSkillUse: (names: readonly string[]) => void,
+): AnyPiAgentTool {
+	return {
+		...tool,
+		execute: async (toolCallId, params, signal, onUpdate) => {
+			recordSkillUse(findSkillNames(params));
+			return await tool.execute(toolCallId, params, signal, onUpdate);
+		},
 	};
 }
 
