@@ -219,3 +219,7 @@ SIGINTまたはSIGTERMを受け取ると、新しいメッセージの受付を�
 - [SPEC.md](./docs/SPEC.md)：機能仕様、設定項目、エラー時の挙動
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)：内部アーキテクチャ、状態遷移、設計方針
 - [AGENTS.md](./AGENTS.md)：開発の手順と規約、リリース手順
+
+## ライセンス
+
+[MIT](./LICENSE)
