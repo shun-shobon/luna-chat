@@ -27,9 +27,14 @@
 
 - 単なるカバレッジ率の向上を目的とせず、すべての状態遷移や外部との接続点における「成功・タイムアウト・不正なレスポンス・例外」を検証するテストを作成してください。
 - スナップショットテストは、固定の開発者インストラクションおよび入力JSONの組み立て検証のみに限定します。
-- 実際のDiscordやChatGPTを用いた動作確認は、`README.md` に記載の手動E2E手順に従って実施してください。
 
 ## 開発コマンド
+
+```sh
+mise install
+pnpm install --frozen-lockfile
+pnpm run dev   # ソースを監視して再起動する
+```
 
 ```sh
 pnpm run format:check
@@ -46,6 +51,12 @@ docker compose build
 ## GitHub Actions
 
 - `uses:` はタグで記述し、SHAは `.github/workflows/actions.lock` で固定します。`uses:` を変更したら `gh-actions-lock`（miseで導入）を実行してロックファイルを更新してください。
+
+## リリース
+
+GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を選びます。作られた準備PRをmainへマージすると、タグ付け、GHCRへのDockerイメージのpush、GitHub Releaseの公開まで進みます。流れと失敗時の扱いは `docs/SPEC.md` の「19. リリース」に、更新対象のファイルは `.github/easy-release.json` にあります。
+
+準備PRの作成には、GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしておく必要があります。
 
 ## Git運用
 
