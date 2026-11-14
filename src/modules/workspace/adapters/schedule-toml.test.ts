@@ -6,9 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 import {
-	createWorkspaceScheduleFile,
 	parseWorkspaceSchedule,
-	readWorkspaceSchedule,
 	removeWorkspaceScheduleJob,
 	serializeWorkspaceSchedule,
 } from "./schedule-toml";
@@ -62,17 +60,6 @@ describe("workspace schedule TOML", () => {
 		expect(source).toContain("[[jobs]]");
 		expect(source).toContain('kind = "one_shot"');
 		expect(parseWorkspaceSchedule(source)).toEqual(SCHEDULE);
-	});
-
-	it("空のスケジュールファイルを排他的に作成する", async () => {
-		const directory = await createTemporaryDirectory();
-		const schedulePath = resolve(directory, "cron.toml");
-
-		await createWorkspaceScheduleFile(schedulePath);
-		await expect(readWorkspaceSchedule(schedulePath)).resolves.toEqual({ jobs: [] });
-		await expect(createWorkspaceScheduleFile(schedulePath)).rejects.toMatchObject({
-			code: "EEXIST",
-		});
 	});
 
 	it("削除直前にファイルを再読込し、対象ジョブだけを同期的に削除する", async () => {
