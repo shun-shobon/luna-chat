@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { listenHono } from "../../../shared/hono-server";
+import { listenHono, readJsonRequestBody } from "../../../shared/hono-server";
 import type { HonoServerHandle } from "../../../shared/hono-server";
 import type { HttpEventService } from "../application/http-event-service";
 import { httpEventRequestSchema } from "../domain/http-event";
@@ -11,6 +11,7 @@ export async function startHttpEventServer(
 		port: number;
 		service: HttpEventService;
 		onError(error: Error): void;
+		configure?(app: Hono): void;
 	}>,
 ): Promise<HonoServerHandle> {
 	const app = new Hono();
@@ -19,19 +20,9 @@ export async function startHttpEventServer(
 		return context.json({ error: "internal_error" }, 500);
 	});
 	app.post("/events", async (context) => {
-		if (
-			context.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
-			"application/json"
-		) {
-			return context.json({ error: "content_type_must_be_json" }, 415);
-		}
-		let body: unknown;
-		try {
-			body = await context.req.json();
-		} catch {
-			return context.json({ error: "invalid_json" }, 400);
-		}
-		const parsed = httpEventRequestSchema.safeParse(body);
+		const body = await readJsonRequestBody(context);
+		if (body.kind === "rejected") return body.response;
+		const parsed = httpEventRequestSchema.safeParse(body.body);
 		if (!parsed.success) return context.json({ error: "invalid_request" }, 400);
 		const result = await input.service.submit(parsed.data);
 		if (result.kind === "unavailable") return context.json({ error: "unavailable" }, 503);
@@ -46,5 +37,6 @@ export async function startHttpEventServer(
 		});
 	});
 
+	input.configure?.(app);
 	return await listenHono(app, input);
 }

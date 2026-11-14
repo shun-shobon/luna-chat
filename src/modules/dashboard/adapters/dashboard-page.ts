@@ -144,6 +144,7 @@ details > summary::-webkit-details-marker { display: none; }
 		<section class="panel"><h2>イベント実行 <span class="count" id="events-count"></span></h2><div id="events" class="list"></div></section>
 		<section class="panel wide"><h2>タスクボード <span class="count" id="tasks-count"></span></h2><div id="tasks" class="list"></div></section>
 		<section class="panel wide"><h2>オートメーション</h2><div id="automation" class="list"></div></section>
+		<section class="panel wide" id="home-assistant-panel" hidden><h2>Home Assistant</h2><div id="home-assistant" class="list"></div></section>
 		<section class="panel wide"><h2>ワークスペース</h2><div id="workspace" class="list"></div></section>
 		<section class="panel wide">
 			<h2>最近の出来事 <span class="count" id="activity-count"></span>
@@ -237,7 +238,11 @@ details > summary::-webkit-details-marker { display: none; }
 		"tool.succeeded": "ツール実行",
 		"tool.failed": "ツール失敗",
 		"automation.schedule.check_skipped": "スケジュールのcheckで見送り",
-		"automation.schedule.check_failed": "スケジュールのcheck失敗"
+		"automation.schedule.check_failed": "スケジュールのcheck失敗",
+		"home_assistant.ws.connected": "Home Assistantに接続",
+		"home_assistant.ws.disconnected": "Home Assistantから切断",
+		"home_assistant.ws.auth_failed": "Home Assistantの認証に失敗",
+		"home_assistant.state_change_triggered": "Home Assistantの状態変化"
 	};
 
 	function h(tag, attrs) {
@@ -337,6 +342,11 @@ details > summary::-webkit-details-marker { display: none; }
 			if (context.kind === "guild_channel") return "チャンネル " + context.channelId;
 		}
 		if (key.indexOf("http:") === 0) return "HTTP " + key.slice(5);
+		if (key === "home_assistant:state_changes") return "Home Assistantの状態変化";
+		if (key.indexOf("home_assistant:assist:") === 0) {
+			var where = context && typeof context === "object" ? (context.device_name || context.area_name) : null;
+			return "Assist " + (where || key.slice("home_assistant:assist:".length));
+		}
 		return key;
 	}
 	function isActivePhase(phase) {
@@ -510,6 +520,42 @@ details > summary::-webkit-details-marker { display: none; }
 		replace("automation", h("div", { class: "grid" }, cards));
 	}
 
+	var HA_PHASES = {
+		connected: ["接続済み", "s-ok"],
+		connecting: ["接続中", "s-wait"],
+		waiting_retry: ["再接続待ち", "s-bad"]
+	};
+	var WATCH_STATUS = {
+		missing: ["home-assistant.toml なし", "s-idle"],
+		valid: ["有効", "s-ok"],
+		invalid: ["不正", "s-bad"]
+	};
+
+	function renderHomeAssistant(s) {
+		var ha = s.homeAssistant;
+		document.getElementById("home-assistant-panel").hidden = ha === null;
+		if (ha === null) return;
+		var c = ha.connection;
+		var connection = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "WebSocket" }), badge(HA_PHASES[c.phase] || [c.phase, "s-idle"])),
+			h("div", { class: "facts" }, [
+				h("span", null, "この状態になって ", h("b", null, since(c.phaseSince))),
+				c.nextRetryAt ? h("span", null, "再接続 ", h("b", null, until(c.nextRetryAt))) : null
+			]),
+			c.lastError ? h("div", { class: "block" }, h("div", { class: "mono", text: clock(c.lastError.at) }), c.lastError.message) : null);
+		var w = ha.watchConfig;
+		var watch = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "状態変化の監視" }), badge(WATCH_STATUS[w.status] || [w.status, "s-idle"])),
+			h("div", { class: "facts" }, [
+				fact("起動", ha.triggered.count + "回"),
+				ha.triggered.lastAt ? fact("最後", clock(ha.triggered.lastAt)) : null,
+				w.status === "valid" ? fact("cooldown", w.config.cooldownSeconds + "秒") : null
+			]),
+			w.status === "valid" ? h("div", { class: "block code", text: "watch: " + (w.config.watch.join(", ") || "（なし）") + "\nignore: " + (w.config.ignore.join(", ") || "（なし）") }) : null,
+			w.status === "invalid" ? h("div", { class: "block code", text: w.error }) : null);
+		replace("home-assistant", h("div", { class: "grid" }, [connection, watch]));
+	}
+
 	function gib(value) { return (value / 1024 / 1024 / 1024).toFixed(1) + " GiB"; }
 
 	function renderWorkspace(s) {
@@ -621,6 +667,7 @@ details > summary::-webkit-details-marker { display: none; }
 		renderEvents(s);
 		renderTasks(s);
 		renderAutomation(s);
+		renderHomeAssistant(s);
 		renderWorkspace(s);
 		renderActivity(s);
 		tick();

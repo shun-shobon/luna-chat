@@ -15,6 +15,7 @@ describe("DashboardService", () => {
 			}),
 			conversations: () => [],
 			events: () => [],
+			homeAssistant: () => HOME_ASSISTANT_STATUS,
 			tasks: () => ({ maxConcurrent: 2, running: 0, tasks: [] }),
 			workspace: () => ({
 				disk: { totalBytes: 100, freeBytes: 40 },
@@ -38,6 +39,7 @@ describe("DashboardService", () => {
 			conversations: [],
 			events: [],
 			generatedAt: "2026-10-20T01:00:00.000Z",
+			homeAssistant: HOME_ASSISTANT_STATUS,
 			startedAt: "2026-10-20T00:00:00.000Z",
 			tasks: { maxConcurrent: 2, running: 0, tasks: [] },
 			workspace: {
@@ -47,3 +49,14 @@ describe("DashboardService", () => {
 		});
 	});
 });
+
+const HOME_ASSISTANT_STATUS = {
+	connection: {
+		phase: "connected",
+		phaseSince: "2026-10-20T00:00:01.000Z",
+		nextRetryAt: null,
+		lastError: null,
+	},
+	watchConfig: { status: "missing" },
+	triggered: { count: 0, lastAt: null },
+} as const satisfies ReturnType<DashboardSourcePort["homeAssistant"]>;

@@ -55,4 +55,34 @@ describe("readRuntimeEnvironment", () => {
 			readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", LUNA_DASHBOARD_HOST: "localhost" }),
 		).toThrow("at LUNA_DASHBOARD_HOST");
 	});
+
+	it("HOME_ASSISTANT_URLとHOME_ASSISTANT_TOKENの組をHAの接続設定にする", () => {
+		const environment = readRuntimeEnvironment({
+			DISCORD_BOT_TOKEN: "token",
+			HOME_ASSISTANT_TOKEN: "ha-token",
+			HOME_ASSISTANT_URL: "http://192.168.0.104:8123",
+		});
+
+		expect(environment.homeAssistant?.url.href).toBe("http://192.168.0.104:8123/");
+		expect(environment.homeAssistant?.token).toBe("ha-token");
+	});
+
+	it.each([
+		[{ HOME_ASSISTANT_URL: "http://192.168.0.104:8123" }],
+		[{ HOME_ASSISTANT_TOKEN: "ha-token" }],
+	])("HAの設定が片方だけなら拒否する (%o)", (homeAssistant) => {
+		expect(() => readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", ...homeAssistant })).toThrow(
+			"HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN must be set together",
+		);
+	});
+
+	it("HAのURLがhttpでもhttpsでもなければ拒否する", () => {
+		expect(() =>
+			readRuntimeEnvironment({
+				DISCORD_BOT_TOKEN: "token",
+				HOME_ASSISTANT_TOKEN: "ha-token",
+				HOME_ASSISTANT_URL: "ws://192.168.0.104:8123",
+			}),
+		).toThrow("at HOME_ASSISTANT_URL");
+	});
 });

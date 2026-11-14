@@ -8,6 +8,8 @@ const MESSAGE_KIND_BY_EVENT_TYPE: Readonly<Record<string, string>> = {
 	"system.heartbeat.fired.v1": "heartbeat",
 	"system.schedule.fired.v1": "schedule",
 	"system.memory_maintenance.fired.v1": "memory_maintenance",
+	"home_assistant.state_changed.v1": "home_assistant_state",
+	"home_assistant.assist.requested.v1": "assist_request",
 };
 
 export function toEventMessage(event: LunaEvent): AgentInputMessage {

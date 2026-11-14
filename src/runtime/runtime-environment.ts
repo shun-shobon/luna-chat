@@ -9,15 +9,33 @@ const portSchema = z
 	.transform(Number)
 	.pipe(z.number().int().min(1).max(65_535));
 
-const RuntimeEnvironmentSchema = z.object({
-	DISCORD_BOT_TOKEN: z.string().refine((value) => value.trim().length > 0, "must not be blank"),
-	LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
-	LUNA_DASHBOARD_HOST: hostSchema,
-	LUNA_DASHBOARD_PORT: portSchema.default(3001),
-	LUNA_HTTP_HOST: hostSchema,
-	LUNA_HTTP_PORT: portSchema.default(3000),
-	LUNA_HOME: z.string().optional(),
-});
+const RuntimeEnvironmentSchema = z
+	.object({
+		DISCORD_BOT_TOKEN: z.string().refine((value) => value.trim().length > 0, "must not be blank"),
+		LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
+		LUNA_DASHBOARD_HOST: hostSchema,
+		LUNA_DASHBOARD_PORT: portSchema.default(3001),
+		LUNA_HTTP_HOST: hostSchema,
+		LUNA_HTTP_PORT: portSchema.default(3000),
+		LUNA_HOME: z.string().optional(),
+		HOME_ASSISTANT_URL: z
+			.url({ protocol: /^https?$/u })
+			.transform((value) => new URL(value))
+			.optional(),
+		HOME_ASSISTANT_TOKEN: z
+			.string()
+			.refine((value) => value.trim().length > 0, "must not be blank")
+			.optional(),
+	})
+	.refine(
+		(environment) =>
+			(environment.HOME_ASSISTANT_URL === undefined) ===
+			(environment.HOME_ASSISTANT_TOKEN === undefined),
+		{
+			message: "HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN must be set together",
+			path: ["HOME_ASSISTANT_URL"],
+		},
+	);
 
 type ListenHost = z.infer<typeof hostSchema>;
 
@@ -25,6 +43,7 @@ type RuntimeEnvironment = Readonly<{
 	dashboardHost: ListenHost;
 	dashboardPort: number;
 	discordBotToken: string;
+	homeAssistant?: Readonly<{ url: URL; token: string }> | undefined;
 	httpHost: ListenHost;
 	httpPort: number;
 	logLevel: LogLevel;
@@ -53,5 +72,14 @@ export function readRuntimeEnvironment(environment: NodeJS.ProcessEnv): RuntimeE
 		httpPort: result.data.LUNA_HTTP_PORT,
 		logLevel: result.data.LOG_LEVEL,
 		...(result.data.LUNA_HOME === undefined ? {} : { lunaHome: result.data.LUNA_HOME }),
+		...(result.data.HOME_ASSISTANT_URL === undefined ||
+		result.data.HOME_ASSISTANT_TOKEN === undefined
+			? {}
+			: {
+					homeAssistant: {
+						url: result.data.HOME_ASSISTANT_URL,
+						token: result.data.HOME_ASSISTANT_TOKEN,
+					},
+				}),
 	};
 }

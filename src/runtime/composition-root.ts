@@ -17,6 +17,7 @@ import { RetentionCleaner } from "../modules/automation/application/retention-cl
 import { ScheduleController } from "../modules/automation/application/schedule-controller";
 import type { AutomationWorkspacePort } from "../modules/automation/ports/automation-workspace-port";
 import { ConversationCoordinator } from "../modules/conversation/application/conversation-coordinator";
+import type { AcceptedConversationEvent } from "../modules/conversation/domain/conversation-session";
 import { startDashboardServer } from "../modules/dashboard/adapters/dashboard-server";
 import { DashboardService } from "../modules/dashboard/application/dashboard-service";
 import { DiscordActionAdapter } from "../modules/discord/adapters/discord-action-adapter";
@@ -47,6 +48,27 @@ import {
 } from "../modules/discord/domain/discord-event";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
 import { EventExecutor } from "../modules/event/application/event-executor";
+import { registerAssistRoute } from "../modules/home-assistant/adapters/assist-route";
+import { createAssistToolProvider } from "../modules/home-assistant/adapters/assist-tool-provider";
+import {
+	createNodeHomeAssistantSocket,
+	HomeAssistantConnection,
+} from "../modules/home-assistant/adapters/home-assistant-connection";
+import { HomeAssistantRegistry } from "../modules/home-assistant/adapters/home-assistant-registry";
+import { HomeAssistantRestClient } from "../modules/home-assistant/adapters/home-assistant-rest-client";
+import { createHomeAssistantToolProvider } from "../modules/home-assistant/adapters/home-assistant-tool-provider";
+import { WatchConfigFile } from "../modules/home-assistant/adapters/watch-config-file";
+import { AssistResponseRegistry } from "../modules/home-assistant/application/assist-response-registry";
+import { AssistService } from "../modules/home-assistant/application/assist-service";
+import { StateChangeWatcher } from "../modules/home-assistant/application/state-change-watcher";
+import {
+	HOME_ASSISTANT_EVENT_SOURCE,
+	isAssistSession,
+} from "../modules/home-assistant/domain/home-assistant-event";
+import {
+	HOME_ASSISTANT_TOOL_INSTRUCTIONS,
+	HOME_ASSISTANT_WATCH_INSTRUCTIONS,
+} from "../modules/home-assistant/home-assistant-instructions";
 import { startHttpEventServer } from "../modules/http/adapters/http-event-server";
 import { createHttpResponseToolProvider } from "../modules/http/adapters/http-response-tool-provider";
 import { HttpEventService } from "../modules/http/application/http-event-service";
@@ -137,6 +159,16 @@ export async function startLunaApplication(
 		now: () => new Date(),
 	});
 	const httpResponses = new HttpResponseRegistry();
+	const assistResponses = new AssistResponseRegistry();
+	const homeAssistant =
+		environment.homeAssistant === undefined
+			? undefined
+			: createHomeAssistant({
+					...environment.homeAssistant,
+					accept: (input) => conversation?.accept(input) ?? false,
+					logger,
+					watchConfigPath: resolve(workspace.workspaceDir, "home-assistant.toml"),
+				});
 	let tasks: TaskService | undefined;
 	const taskBoard = {
 		cancel: async (...input: Parameters<TaskService["cancel"]>) =>
@@ -155,8 +187,10 @@ export async function startLunaApplication(
 		[
 			createDiscordToolProvider({ actions: actionAdapter, delegation, read: readAdapter }),
 			createHttpResponseToolProvider(httpResponses),
+			createAssistToolProvider(assistResponses),
 			createTaskBoardToolProvider(taskBoard),
 			waitTools,
+			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
 		],
 		logger,
 	);
@@ -165,6 +199,7 @@ export async function startLunaApplication(
 			createDiscordReadToolProvider(readAdapter),
 			createTaskReportToolProvider(taskBoard),
 			waitTools,
+			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
 		],
 		logger,
 	);
@@ -191,23 +226,40 @@ export async function startLunaApplication(
 		logger,
 		onUsage: (snapshot) => agent.setUsage(snapshot),
 	});
+	const withHomeAssistant = (
+		instructions: readonly string[],
+		homeAssistantInstructions: readonly string[],
+	): readonly string[] =>
+		homeAssistant === undefined ? instructions : [...instructions, ...homeAssistantInstructions];
+	const homeAssistantInstructions = [
+		HOME_ASSISTANT_TOOL_INSTRUCTIONS,
+		HOME_ASSISTANT_WATCH_INSTRUCTIONS,
+	];
 	const openSession = createSessionFactory({
 		agent,
 		profiles: {
 			conversation: {
-				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.conversation,
+				developerInstructions: withHomeAssistant(
+					SESSION_DEVELOPER_INSTRUCTIONS.conversation,
+					homeAssistantInstructions,
+				),
 				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.conversation,
 				tools,
 			},
 			event: {
-				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.event,
+				developerInstructions: withHomeAssistant(
+					SESSION_DEVELOPER_INSTRUCTIONS.event,
+					homeAssistantInstructions,
+				),
 				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.event,
 				tools,
 			},
 			worker: {
-				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.worker,
+				developerInstructions: withHomeAssistant(SESSION_DEVELOPER_INSTRUCTIONS.worker, [
+					HOME_ASSISTANT_TOOL_INSTRUCTIONS,
+				]),
 				includeWorkspaceInstructions: false,
 				model: () => workspace.config.models.worker,
 				tools: workerTools,
@@ -219,6 +271,8 @@ export async function startLunaApplication(
 
 	const startupCleanups: Array<() => Promise<void> | void> = [
 		() => httpResponses.failAll(),
+		() => assistResponses.failAll(),
+		() => homeAssistant?.connection.stop(),
 		() => typing.releaseAll(),
 		async () => await client.destroy(),
 		async () => await usage.stop(),
@@ -275,13 +329,17 @@ export async function startLunaApplication(
 				history: {
 					fetchBefore: async (session, beforeEvent, limit) => {
 						if (session.source === HTTP_EVENT_SOURCE) return [];
+						if (session.source === HOME_ASSISTANT_EVENT_SOURCE) return [];
 						return await discordHistory.fetchBefore(session, beforeEvent, limit);
 					},
 				},
 				logger,
 				now: () => new Date(),
 				onBatchSettled: (eventIds, succeeded) => {
-					for (const eventId of eventIds) httpResponses.complete(eventId, succeeded);
+					for (const eventId of eventIds) {
+						httpResponses.complete(eventId, succeeded);
+						assistResponses.complete(eventId, succeeded);
+					}
 				},
 				openSession,
 				releaseTools,
@@ -291,7 +349,8 @@ export async function startLunaApplication(
 				},
 			},
 			{
-				debounceMs: workspace.config.discord.debounceMs,
+				debounceMs: (session) =>
+					isAssistSession(session) ? 0 : workspace.config.discord.debounceMs,
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
@@ -322,6 +381,16 @@ export async function startLunaApplication(
 			responses: httpResponses,
 		});
 		startupCleanups.push(() => httpService.stopIntake());
+		const assistService = new AssistService({
+			conversation: coordinator,
+			createId: randomUUID,
+			now: () => new Date(),
+			responses: assistResponses,
+		});
+		startupCleanups.push(() => assistService.stopIntake());
+		if (homeAssistant !== undefined) {
+			startupCleanups.push(() => homeAssistant.watcher.stopIntake());
+		}
 		const scheduleTimer = new CronScheduleTimer();
 		const automation = new AutomationService({
 			heartbeat: new HeartbeatController({
@@ -426,6 +495,7 @@ export async function startLunaApplication(
 			port: environment.httpPort,
 			service: httpService,
 			onError: (error) => logger.error("http.server_failed", { error }),
+			configure: (app) => registerAssistRoute(app, assistService),
 		});
 		startupCleanups.push(async () => await httpServer.close());
 		const dashboardServer = await startDashboardServer({
@@ -434,6 +504,7 @@ export async function startLunaApplication(
 				sources: {
 					activity: () => recentLogs.list(),
 					agent: () => agent.status(),
+					homeAssistant: () => homeAssistant?.watcher.status() ?? null,
 					automation: () => automation.snapshot(),
 					workspace: () => trash.status(),
 					conversations: () => coordinator.snapshot(),
@@ -447,6 +518,7 @@ export async function startLunaApplication(
 			onError: (error) => logger.error("dashboard.server_failed", { error }),
 		});
 		startupCleanups.push(async () => await dashboardServer.close());
+		homeAssistant?.connection.start();
 		options.startupSignal?.throwIfAborted();
 		logger.info("application.started");
 		let shutdownPromise: Promise<void> | undefined;
@@ -463,6 +535,14 @@ export async function startLunaApplication(
 							gateway.stop();
 							commands.stop();
 						},
+					},
+					homeAssistant: {
+						stopIntake: () => {
+							assistService.stopIntake();
+							homeAssistant?.watcher.stopIntake();
+						},
+						failPending: () => assistResponses.failAll(),
+						stop: () => homeAssistant?.connection.stop(),
 					},
 					http: httpService,
 					httpClose: () => httpServer.close(),
@@ -491,6 +571,7 @@ export async function shutdownApplication(input: {
 	conversation: Pick<ConversationCoordinator, "drain" | "stopIntake">;
 	dashboardClose(): Promise<void>;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
+	homeAssistant: Readonly<{ stopIntake(): void; failPending(): void; stop(): void }>;
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
 	httpClose(): Promise<void>;
 	httpFailPending(): void;
@@ -506,6 +587,7 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.gateway.stop()),
 			runCleanup(() => input.conversation.stopIntake()),
 			runCleanup(() => input.http.stopIntake()),
+			runCleanup(() => input.homeAssistant.stopIntake()),
 			runCleanup(() => input.tasks.stopIntake()),
 			input.automation.stopIntake(),
 		],
@@ -518,6 +600,8 @@ export async function shutdownApplication(input: {
 	await settleCleanup(
 		[
 			runCleanup(() => input.httpFailPending()),
+			runCleanup(() => input.homeAssistant.failPending()),
+			runCleanup(() => input.homeAssistant.stop()),
 			input.httpClose(),
 			input.dashboardClose(),
 			runCleanup(() => input.typingRelease()),
@@ -561,4 +645,39 @@ function logCleanupFailures(
 function requireTasks(tasks: TaskService | undefined): TaskService {
 	if (tasks === undefined) throw new Error("Task service is not ready");
 	return tasks;
+}
+
+function createHomeAssistant(
+	input: Readonly<{
+		url: URL;
+		token: string;
+		accept(input: AcceptedConversationEvent): boolean;
+		logger: LoggerPort;
+		watchConfigPath: string;
+	}>,
+) {
+	const clock = new SystemAutomationClock();
+	let watcher: StateChangeWatcher | undefined;
+	const connection = new HomeAssistantConnection({
+		url: input.url,
+		token: input.token,
+		createSocket: createNodeHomeAssistantSocket,
+		logger: input.logger,
+		now: () => clock.now(),
+		setTimer: (delayMs, callback) => clock.setTimer(delayMs, callback),
+		onStateChanged: (change) => watcher?.handle(change),
+	});
+	watcher = new StateChangeWatcher({
+		config: new WatchConfigFile(input.watchConfigPath, input.logger),
+		conversation: { accept: input.accept },
+		connectionStatus: () => connection.status(),
+		createId: randomUUID,
+		logger: input.logger,
+		now: () => clock.now(),
+	});
+	const tools = createHomeAssistantToolProvider({
+		rest: new HomeAssistantRestClient({ baseUrl: input.url, token: input.token, fetch }),
+		registry: new HomeAssistantRegistry({ connection, now: () => clock.now() }),
+	});
+	return { connection, tools, watcher };
 }

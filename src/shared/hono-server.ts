@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 
 export type HonoServerHandle = Readonly<{
 	port: number;
@@ -37,4 +37,25 @@ export async function listenHono(
 			});
 		},
 	};
+}
+
+export type JsonRequestBody =
+	| Readonly<{ kind: "parsed"; body: unknown }>
+	| Readonly<{ kind: "rejected"; response: Response }>;
+
+export async function readJsonRequestBody(context: Context): Promise<JsonRequestBody> {
+	if (
+		context.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
+		"application/json"
+	) {
+		return {
+			kind: "rejected",
+			response: context.json({ error: "content_type_must_be_json" }, 415),
+		};
+	}
+	try {
+		return { kind: "parsed", body: await context.req.json() };
+	} catch {
+		return { kind: "rejected", response: context.json({ error: "invalid_json" }, 400) };
+	}
 }
