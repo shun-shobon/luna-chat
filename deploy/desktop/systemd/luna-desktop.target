@@ -1,0 +1,6 @@
+[Unit]
+Description=Luna desktop
+Wants=luna-desktop-dbus.service luna-desktop-xvfb.service luna-desktop-openbox.service luna-desktop-pulseaudio.service luna-desktop-chrome.service luna-desktop-neko.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+# LAN の IP（webrtc.nat1to1）とパスワードはホストの /etc/luna-desktop/neko.env で渡す。
+server:
+  bind: 0.0.0.0:8080
+  static: /opt/luna-desktop/neko/www
+desktop:
+  display: ":99"
+  screen: 1440x900@25
+  input:
+    # タッチ入力用の独自 X ドライバを入れていないため。既定の true だと起動時に落ちる。
+    enabled: false
+capture:
+  video:
+    # xdotool で動かしたポインタを、見ている人にも見せるため。
+    show_pointer: true
+member:
+  provider: multiuser
+session:
+  # 操作権の受け渡しをせず、操作した人がそのまま操作できるようにする。
+  implicit_hosting: true
+webrtc:
+  udpmux: 59000

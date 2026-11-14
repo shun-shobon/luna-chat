@@ -1,0 +1,11 @@
+[Unit]
+Description=Luna desktop X server
+PartOf=luna-desktop.target
+
+[Service]
+User=luna
+Group=luna
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -noreset
+ExecStartPost=/bin/sh -c 'for i in $(seq 50); do [ -S /tmp/.X11-unix/X99 ] && exit 0; sleep 0.1; done; exit 1'
+Restart=always
+RestartSec=2

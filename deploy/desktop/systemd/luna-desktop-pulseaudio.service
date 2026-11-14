@@ -1,0 +1,13 @@
+[Unit]
+Description=Luna desktop audio
+PartOf=luna-desktop.target
+Requires=luna-desktop-dbus.service
+After=luna-desktop-dbus.service
+
+[Service]
+User=luna
+Group=luna
+EnvironmentFile=/opt/luna-desktop/etc/session.env
+ExecStart=/usr/bin/pulseaudio --daemonize=no --exit-idle-time=-1 --disallow-exit --log-target=stderr -n -F /opt/luna-desktop/etc/default.pa
+Restart=always
+RestartSec=2

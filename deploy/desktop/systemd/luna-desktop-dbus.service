@@ -1,0 +1,12 @@
+[Unit]
+Description=Luna desktop D-Bus session bus
+PartOf=luna-desktop.target
+
+[Service]
+User=luna
+Group=luna
+EnvironmentFile=/opt/luna-desktop/etc/session.env
+ExecStart=/usr/bin/dbus-daemon --session --nofork --nopidfile --address=${DBUS_SESSION_BUS_ADDRESS}
+ExecStartPost=/bin/sh -c 'for i in $(seq 50); do [ -S /run/luna-desktop/bus ] && exit 0; sleep 0.1; done; exit 1'
+Restart=always
+RestartSec=2
