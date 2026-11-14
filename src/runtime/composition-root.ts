@@ -41,7 +41,6 @@ import {
 } from "../modules/discord/adapters/discord-tool-provider";
 import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-file-resolver";
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
-import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
 import {
 	createDiscordConversationSession,
 	isDiscordGuildSession,
@@ -62,10 +61,6 @@ import {
 	createTaskReportToolProvider,
 } from "../modules/task/adapters/task-tool-provider";
 import { TaskService } from "../modules/task/application/task-service";
-import {
-	TASK_BOARD_INSTRUCTIONS,
-	TASK_WORKER_INSTRUCTIONS,
-} from "../modules/task/task-instructions";
 import { createWaitToolProvider } from "../modules/tool/adapters/wait-tool-provider";
 import { createToolSet } from "../modules/tool/application/tool-set";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
@@ -82,14 +77,9 @@ import {
 	createPiAgentRuntime,
 	validateModelSelections,
 } from "./agent-runtime";
-import {
-	EVENT_INSTRUCTIONS,
-	LUNA_CONVERSATION_GUIDE,
-	LUNA_CORE_INSTRUCTIONS,
-	SESSION_END_INSTRUCTIONS,
-} from "./developer-instructions";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { createSessionFactory } from "./session-factory";
+import { SESSION_DEVELOPER_INSTRUCTIONS } from "./session-instructions";
 
 const TYPING_REFRESH_INTERVAL_MS = 8_000;
 const SCHEDULE_RELOAD_DEBOUNCE_MS = 250;
@@ -202,31 +192,19 @@ export async function startLunaApplication(
 		agent,
 		profiles: {
 			conversation: {
-				developerInstructions: [
-					LUNA_CORE_INSTRUCTIONS,
-					LUNA_CONVERSATION_GUIDE,
-					SESSION_END_INSTRUCTIONS,
-					DISCORD_CAPABILITY_INSTRUCTIONS,
-					TASK_BOARD_INSTRUCTIONS,
-				],
+				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.conversation,
 				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.conversation,
 				tools,
 			},
 			event: {
-				developerInstructions: [
-					LUNA_CORE_INSTRUCTIONS,
-					LUNA_CONVERSATION_GUIDE,
-					EVENT_INSTRUCTIONS,
-					DISCORD_CAPABILITY_INSTRUCTIONS,
-					TASK_BOARD_INSTRUCTIONS,
-				],
+				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.event,
 				includeWorkspaceInstructions: true,
 				model: () => workspace.config.models.event,
 				tools,
 			},
 			worker: {
-				developerInstructions: [TASK_WORKER_INSTRUCTIONS],
+				developerInstructions: SESSION_DEVELOPER_INSTRUCTIONS.worker,
 				includeWorkspaceInstructions: false,
 				model: () => workspace.config.models.worker,
 				tools: workerTools,
