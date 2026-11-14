@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -348,6 +349,14 @@ def cmd_activate(args):
     after_action({"ok": True, "window": args.window}, args.settle)
 
 
+def cmd_wallpaper(args):
+    wallpaper = os.path.expanduser("~/.luna/desktop/wallpaper")
+    shutil.copyfile(args.image, wallpaper + ".new")
+    os.replace(wallpaper + ".new", wallpaper)
+    subprocess.run(["feh", "--no-fehbg", "--bg-fill", wallpaper], check=True)
+    after_action({"ok": True, "wallpaper": wallpaper}, args.settle)
+
+
 def point(value):
     x, y = value.split(",")
     return int(x), int(y)
@@ -404,6 +413,8 @@ def main():
     p.set_defaults(handler=cmd_screenshot)
     p = action("activate", cmd_activate, "bring an X window (id from `apps`) to the front")
     p.add_argument("--window", required=True)
+    p = action("wallpaper", cmd_wallpaper, "set the desktop wallpaper (kept across restarts)")
+    p.add_argument("--image", required=True, help="image file; it is scaled to cover the 1440x900 screen")
 
     args = parser.parse_args()
     try:
