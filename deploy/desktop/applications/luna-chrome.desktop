@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Google Chrome
+Comment=ルナの Chrome に新しいウィンドウを開く
+Icon=google-chrome
+# 常駐の Chrome と同じプロファイルを指定し、別の Chrome ではなく常駐の Chrome にウィンドウを開かせる。
+Exec=/usr/bin/google-chrome-stable --user-data-dir=/home/luna/.luna/desktop/chrome-profile --new-window %U
+Terminal=false
+Categories=Network;WebBrowser;
