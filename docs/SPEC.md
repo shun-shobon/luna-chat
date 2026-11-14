@@ -31,6 +31,8 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 
 ダッシュボード（§21）は閲覧専用で認証を行わない。会話本文、ツールの入力、タスクの指示と報告を表示するため、到達できる者はそれらを読める。既定では `127.0.0.1` にバインドし、`LUNA_DASHBOARD_HOST=0.0.0.0` を指定した場合は到達可能なネットワーク内の全員が閲覧できる。
 
+デスクトップ（§23）を入れた場合、neko のパスワードを知る者は、ルナのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
+
 エージェントの実行環境には以下の権限が与えられる。
 
 - サンドボックス: なし
@@ -661,3 +663,31 @@ type AssistResponse = { speech: string | null; continue_conversation: boolean };
 - エージェントは `assist_respond`（入力 `{ request_id: string, speech: string(1〜2000文字), continue_conversation?: boolean }`、省略時 `false`）で読み上げる文を返す。呼ばれた時点でHTTPの応答を返し、実行は続く。同じリクエストIDへの2回目以降、応答待ちでないリクエストIDへの呼び出しはツールの失敗とする。`assist_respond` は会話とイベント実行に渡す。
 - `assist_respond` がないまま実行が正常に終わったら `200 {"speech":null,"continue_conversation":false}`、実行が失敗したら `500 {"error":"execution_failed"}` を返す。
 - JSON形式が不正またはスキーマに合わない入力は `400 {"error":"invalid_request"}`、JSON以外のContent-Typeは `415`、受付停止中は `503 {"error":"unavailable"}` を返す。シャットダウン時に応答待ちのリクエストには `500 {"error":"execution_failed"}` を返す。
+
+## 23. デスクトップ
+
+ルナ専用のデスクトップを任意で入れられる。人は neko（WebRTCの画面共有）で同じ画面を見て、マウスとキーボードで操作に加われる。Lunaのプロセスとは独立した systemd のサービス群で、Linux（Ubuntu 24.04）のホストに `deploy/desktop/install.sh` を root で実行して入れる。Lunaはデスクトップの有無に依存せず、ルナはワークスペースのskillを通じてだけ使う。
+
+| サービス                  | 内容                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `luna-desktop-xvfb`       | 画面 `:99`（1440×900）。解像度は固定                                                                                                                                             |
+| `luna-desktop-openbox`    | ウィンドウマネージャー                                                                                                                                                           |
+| `luna-desktop-dbus`       | デスクトップのD-Busセッション。AT-SPI（アクセシビリティ）のバスもここから起動する                                                                                                |
+| `luna-desktop-pulseaudio` | 音声の出力先（null sink）                                                                                                                                                        |
+| `luna-desktop-chrome`     | Google Chrome。プロファイルは `LUNA_HOME/desktop/chrome-profile` でログイン状態を保つ。CDPを `127.0.0.1:9222` で待ち受け、アクセシビリティツリーを公開する。終了すると再起動する |
+| `luna-desktop-neko`       | neko。`8080/tcp` で閲覧画面とAPI、`59000/udp` でWebRTCを待ち受ける                                                                                                               |
+| `luna-desktop.target`     | 上記をまとめて起動・停止する                                                                                                                                                     |
+
+すべて実行ユーザー `luna` で動く。共通の環境変数（`DISPLAY`、`XDG_RUNTIME_DIR=/run/luna-desktop`、D-BusとPulseAudioのソケット）は `/opt/luna-desktop/etc/session.env` に置く。
+
+neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値を持つ `/etc/luna-desktop/neko.env`（root のみ読める）に分ける。`neko.env` には WebRTC で広告するホストのLANのIP（`NEKO_WEBRTC_NAT1TO1`）、閲覧・操作用と管理者用のパスワードを書く。`install.sh` は `neko.env` がなければ、ホストの最初のIPと乱数のパスワードで作る。
+
+- 認証: neko の multiuser。どちらかのパスワードと任意の表示名でログインする
+- 操作権: 操作した人がそのまま操作権を得る（`implicit_hosting`）。ルナの操作（CDP・AT-SPI・xdotool）は neko の操作権を経由せず、人の操作と排他にしない
+- 配信: 誰かが見ている間だけ映像をエンコードする。ポインタを映像に描き込み、ルナが動かしたポインタも見える
+
+`install.sh` は skill `luna-desktop`（`SKILL.md`、操作用の `scripts/desktop.py`、CDP用の `playwright-core`）を `LUNA_HOME/workspace/.agents/skills/luna-desktop/` に上書きで置く。
+
+- `desktop.py` は AT-SPI でアプリの部品を番号付きで一覧し、番号を指定して操作する。部品が操作に応じない時はポインタやキーの入力に切り替える。ASCII以外の文字はクリップボードからの貼り付けで入力する
+- 各操作のあとに画面全体のスクリーンショットを `/run/luna-desktop/screens/`（直近30枚）に保存し、直前の画面から変わったかを返す
+- 入力欄の値を置き換えた時は、値を読み直して一致したかを返す
