@@ -201,6 +201,12 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - ChatGPTのバックエンド（`wham/usage`、`codex/alpha/search`、`codex/images/generations`）は、同じ資格情報で直接呼ぶ。
 - 使用枠は定期的に取得し、`AgentRuntimeStatus.usage` と `LUNA_HOME/state/usage.json` に反映する。
 
+### 8.5 再生
+
+- `luna-chat replay`（`src/runtime/replay.ts`）は、常駐プロセスとは別のプロセスで `PiAgentRuntime` を作り、場面ごと・指示の組ごとにセッションを開いて閉じる。会話の開発者指示は常駐側と同じ `SESSION_DEVELOPER_INSTRUCTIONS` を使う。
+- Lunaのツールは本物の定義を、ポートだけ記録用の偽物に差し替えて組み立てる。汎用ツールは `createReplayHarnessTools` が、読み取りとWeb検索だけ本物、それ以外を記録して成功を返すスタブにする。
+- 記録は一時ディレクトリへ書き、終了時に消す。本物の会話記録に混ぜると、ルナが次に記録を見直す時に再生を本物の会話と取り違えるため。
+
 ## 9. Discord アダプター
 
 - **Gateway**: `messageCreate` やタイピングイベントを購読し、正規化されたドメインイベントへ変換する。
