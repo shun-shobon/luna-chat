@@ -1,0 +1,23 @@
+[Unit]
+Description=Luna desktop Chrome
+PartOf=luna-desktop.target
+Requires=luna-desktop-xvfb.service luna-desktop-dbus.service
+After=luna-desktop-xvfb.service luna-desktop-dbus.service luna-desktop-openbox.service luna-desktop-pulseaudio.service
+
+[Service]
+User=luna
+Group=luna
+EnvironmentFile=/opt/luna-desktop/etc/session.env
+# Chrome は起動時に AT-SPI が有効な時だけアクセシビリティツリーを公開する。
+ExecStartPre=/usr/bin/gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus --method org.freedesktop.DBus.Properties.Set org.a11y.Status IsEnabled "<true>"
+# Chrome 136 以降は既定のプロファイルの場所では CDP を受け付けないため、別の場所を指定する。
+ExecStart=/usr/bin/google-chrome-stable \
+  --user-data-dir=/home/luna/.luna/desktop/chrome-profile \
+  --remote-debugging-port=9222 \
+  --force-renderer-accessibility \
+  --password-store=basic \
+  --no-first-run \
+  --no-default-browser-check \
+  --start-maximized
+Restart=always
+RestartSec=5

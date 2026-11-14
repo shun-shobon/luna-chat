@@ -1,0 +1,3 @@
+load-module module-null-sink sink_name=audio_output sink_properties=device.description="Virtual_Audio_Output"
+load-module module-native-protocol-unix socket=/run/luna-desktop/pulse
+load-module module-always-sink
