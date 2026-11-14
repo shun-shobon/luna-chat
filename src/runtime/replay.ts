@@ -13,6 +13,7 @@ import type {
 	ModelSelection,
 } from "../modules/agent/ports/outbound/agent-session-port";
 import { createDiscordToolProvider } from "../modules/discord/adapters/discord-tool-provider";
+import { createAssistToolProvider } from "../modules/home-assistant/adapters/assist-tool-provider";
 import { createHttpResponseToolProvider } from "../modules/http/adapters/http-response-tool-provider";
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
@@ -263,6 +264,11 @@ function createRecordingToolSet(record: (tool: string, argumentsValue: unknown) 
 				},
 			}),
 			createHttpResponseToolProvider(new HttpResponseRegistry()),
+			createAssistToolProvider({
+				respond: (requestId, speech, continueConversation) => {
+					record("assist_respond", { requestId, speech, continueConversation });
+				},
+			}),
 			createTaskBoardToolProvider({
 				create: async (_origin, taskInput) =>
 					await recorded("task_create", taskInput, {

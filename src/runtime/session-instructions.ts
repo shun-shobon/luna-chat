@@ -1,5 +1,6 @@
 import type { AgentSessionKind } from "../modules/agent/ports/outbound/agent-session-port";
 import { DISCORD_CAPABILITY_INSTRUCTIONS } from "../modules/discord/discord-capability-instructions";
+import { ASSIST_INSTRUCTIONS } from "../modules/home-assistant/home-assistant-instructions";
 import {
 	TASK_BOARD_INSTRUCTIONS,
 	TASK_WORKER_INSTRUCTIONS,
@@ -19,6 +20,7 @@ export const SESSION_DEVELOPER_INSTRUCTIONS: Readonly<Record<AgentSessionKind, r
 			SESSION_END_INSTRUCTIONS,
 			DISCORD_CAPABILITY_INSTRUCTIONS,
 			TASK_BOARD_INSTRUCTIONS,
+			ASSIST_INSTRUCTIONS,
 		],
 		event: [
 			LUNA_CORE_INSTRUCTIONS,

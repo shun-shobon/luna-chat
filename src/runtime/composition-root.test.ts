@@ -35,6 +35,17 @@ describe("application composition lifecycle", () => {
 					calls.push("gateway.stop");
 				}),
 			},
+			homeAssistant: {
+				stopIntake: () => {
+					calls.push("homeAssistant.stopIntake");
+				},
+				failPending: () => {
+					calls.push("homeAssistant.failPending");
+				},
+				stop: () => {
+					calls.push("homeAssistant.stop");
+				},
+			},
 			http: {
 				stopIntake: vi.fn(() => calls.push("http.stopIntake")),
 				drain: vi.fn(async () => {
@@ -72,12 +83,15 @@ describe("application composition lifecycle", () => {
 				"conversation.stopIntake",
 				"automation.stopIntake",
 				"http.stopIntake",
+				"homeAssistant.stopIntake",
 				"tasks.stopIntake",
 				"conversation.drain",
 				"automation.drain",
 				"http.drain",
 				"tasks.drain",
 				"http.failPending",
+				"homeAssistant.failPending",
+				"homeAssistant.stop",
 				"http.close",
 				"dashboard.close",
 				"typing.release",
