@@ -1,4 +1,4 @@
-export type RecurringScheduleJob = {
+type RecurringScheduleJob = {
 	check?: string;
 	cron: string;
 	enabled: boolean;
@@ -7,7 +7,7 @@ export type RecurringScheduleJob = {
 	prompt: string;
 };
 
-export type OneShotScheduleJob = {
+type OneShotScheduleJob = {
 	at: string;
 	enabled: boolean;
 	id: string;

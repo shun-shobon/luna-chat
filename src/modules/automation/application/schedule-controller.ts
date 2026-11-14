@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import type { JsonObject } from "../../../shared/json";
 import { SerialQueue } from "../../../shared/serial-queue";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type {
-	OneShotScheduleJob,
-	RecurringScheduleJob,
 	WorkspaceSchedule,
 	WorkspaceScheduleJob,
 } from "../../workspace/domain/workspace-schedule";
@@ -176,7 +175,7 @@ export class ScheduleController {
 		const nextById = new Map(schedulableJobs.map((job) => [job.id, job]));
 		for (const [jobId, registered] of this.#jobs) {
 			const next = nextById.get(jobId);
-			if (next === undefined || !isSameDefinition(registered.definition, next)) {
+			if (next === undefined || !isDeepStrictEqual(registered.definition, next)) {
 				registered.timer.stop();
 				this.#jobs.delete(jobId);
 			}
@@ -308,33 +307,4 @@ export class ScheduleController {
 	async #enqueueReload(operation: () => Promise<void> | void): Promise<void> {
 		await this.#reloadQueue.run(operation);
 	}
-}
-
-function isSameDefinition(left: WorkspaceScheduleJob, right: WorkspaceScheduleJob): boolean {
-	if (
-		left.id !== right.id ||
-		left.kind !== right.kind ||
-		left.enabled !== right.enabled ||
-		left.prompt !== right.prompt
-	) {
-		return false;
-	}
-	if (left.kind === "recurring" && right.kind === "recurring") {
-		return isSameRecurringDefinition(left, right);
-	}
-	if (left.kind === "one_shot" && right.kind === "one_shot") {
-		return isSameOneShotDefinition(left, right);
-	}
-	return false;
-}
-
-function isSameRecurringDefinition(
-	left: RecurringScheduleJob,
-	right: RecurringScheduleJob,
-): boolean {
-	return left.cron === right.cron && left.check === right.check;
-}
-
-function isSameOneShotDefinition(left: OneShotScheduleJob, right: OneShotScheduleJob): boolean {
-	return left.at === right.at;
 }
