@@ -237,7 +237,7 @@ Ubuntu 24.04 のホスト（native、実行ユーザー `luna`、ログインシ
 deploy/desktop/install.sh
 ```
 
-Google Chrome、neko、AT-SPI などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、ルナの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとルナが使えます。構成は [SPEC.md](./docs/SPEC.md#23-デスクトップ) を参照してください。
+Google Chrome、neko、AT-SPI、上のバーと下のドック（tint2）などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、ルナの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとルナが使えます。構成は [SPEC.md](./docs/SPEC.md#23-デスクトップ) を参照してください。
 
 ### 指示の比較（再生）
 
