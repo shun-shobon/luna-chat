@@ -38,7 +38,8 @@ EOF
 apt-get update
 apt-get install -y --no-install-recommends \
 	google-chrome-stable xvfb openbox xdotool wmctrl xclip dbus-x11 pulseaudio \
-	at-spi2-core python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gdkpixbuf-2.0 fonts-noto-cjk \
+	at-spi2-core python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gdkpixbuf-2.0 fonts-noto-cjk language-pack-ja \
+	tint2 feh hsetroot papirus-icon-theme xfce4-terminal pcmanfm mousepad ristretto \
 	gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
 	gstreamer1.0-pulseaudio gstreamer1.0-x libxcvt0 \
 	libx11-dev libxrandr-dev libxtst-dev libgtk-3-dev libxcvt-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -51,7 +52,7 @@ if [[ ! -x $GO_ROOT/bin/go ]]; then
 	tar -C "$GO_ROOT" --strip-components=1 -xzf "$BUILD/go.tar.gz"
 fi
 
-install -d -m 0755 "$PREFIX/neko/bin" "$PREFIX/neko/www" "$PREFIX/etc"
+install -d -m 0755 "$PREFIX/neko/bin" "$PREFIX/neko/www" "$PREFIX/etc/tint2" "$PREFIX/share/applications"
 
 # 公開イメージは Debian trixie 向けにビルドされていて glibc が合わないため、サーバーはこのホストでビルドする。
 mkdir "$BUILD/neko"
@@ -72,7 +73,9 @@ rm -rf "${PREFIX:?}/neko/www"
 cp -a "$BUILD/www/var/www" "$PREFIX/neko/www"
 chown -R root:root "$PREFIX"
 
-install -m 0644 "$HERE/session.env" "$HERE/default.pa" "$HERE/neko.yaml" "$PREFIX/etc/"
+install -m 0644 "$HERE/session.env" "$HERE/default.pa" "$HERE/neko.yaml" "$HERE/openbox-rc.xml" "$PREFIX/etc/"
+install -m 0644 "$HERE"/tint2/*.tint2rc "$PREFIX/etc/tint2/"
+install -m 0644 "$HERE"/applications/*.desktop "$PREFIX/share/applications/"
 install -m 0644 "$HERE/tmpfiles.conf" /etc/tmpfiles.d/luna-desktop.conf
 install -m 0644 "$HERE"/systemd/luna-desktop* /etc/systemd/system/
 systemd-tmpfiles --create /etc/tmpfiles.d/luna-desktop.conf

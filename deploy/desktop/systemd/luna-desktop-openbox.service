@@ -8,6 +8,6 @@ After=luna-desktop-xvfb.service luna-desktop-dbus.service
 User=luna
 Group=luna
 EnvironmentFile=/opt/luna-desktop/etc/session.env
-ExecStart=/usr/bin/openbox
+ExecStart=/usr/bin/openbox --config-file /opt/luna-desktop/etc/openbox-rc.xml
 Restart=always
 RestartSec=2

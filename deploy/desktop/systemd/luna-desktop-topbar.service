@@ -1,0 +1,14 @@
+[Unit]
+Description=Luna desktop top bar
+PartOf=luna-desktop.target
+Requires=luna-desktop-xvfb.service luna-desktop-dbus.service
+After=luna-desktop-xvfb.service luna-desktop-dbus.service luna-desktop-openbox.service luna-desktop-wallpaper.service
+
+[Service]
+User=luna
+Group=luna
+EnvironmentFile=/opt/luna-desktop/etc/session.env
+WorkingDirectory=/home/luna
+ExecStart=/usr/bin/tint2 -c /opt/luna-desktop/etc/tint2/topbar.tint2rc
+Restart=always
+RestartSec=2

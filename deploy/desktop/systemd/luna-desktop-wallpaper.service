@@ -1,0 +1,13 @@
+[Unit]
+Description=Luna desktop wallpaper
+PartOf=luna-desktop.target luna-desktop-xvfb.service
+Requires=luna-desktop-xvfb.service
+After=luna-desktop-xvfb.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=luna
+Group=luna
+EnvironmentFile=/opt/luna-desktop/etc/session.env
+ExecStart=/bin/sh -c 'if [ -f /home/luna/.luna/desktop/wallpaper ]; then exec /usr/bin/feh --no-fehbg --bg-fill /home/luna/.luna/desktop/wallpaper; else exec /usr/bin/hsetroot -solid "#1d2140"; fi'

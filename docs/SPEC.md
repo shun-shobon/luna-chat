@@ -678,7 +678,7 @@ type AssistResponse = { speech: string | null; continue_conversation: boolean };
 | `luna-desktop-neko`       | neko。`8080/tcp` で閲覧画面とAPI、`59000/udp` でWebRTCを待ち受ける                                                                                                               |
 | `luna-desktop.target`     | 上記をまとめて起動・停止する                                                                                                                                                     |
 
-すべて実行ユーザー `luna` で動く。共通の環境変数（`DISPLAY`、`XDG_RUNTIME_DIR=/run/luna-desktop`、D-BusとPulseAudioのソケット）は `/opt/luna-desktop/etc/session.env` に置く。
+すべて実行ユーザー `luna` で動く。共通の環境変数（`DISPLAY`、`XDG_RUNTIME_DIR=/run/luna-desktop`、D-BusとPulseAudioのソケット、`LANG=ja_JP.UTF-8`）は `/opt/luna-desktop/etc/session.env` に置く。
 
 neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値を持つ `/etc/luna-desktop/neko.env`（root のみ読める）に分ける。`neko.env` には WebRTC で広告するホストのLANのIP（`NEKO_WEBRTC_NAT1TO1`）、閲覧・操作用と管理者用のパスワードを書く。`install.sh` は `neko.env` がなければ、ホストの最初のIPと乱数のパスワードで作る。
 
@@ -691,3 +691,4 @@ neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値�
 - `desktop.py` は AT-SPI でアプリの部品を番号付きで一覧し、番号を指定して操作する。部品が操作に応じない時はポインタやキーの入力に切り替える。ASCII以外の文字はクリップボードからの貼り付けで入力する
 - 各操作のあとに画面全体のスクリーンショットを `/run/luna-desktop/screens/`（直近30枚）に保存し、直前の画面から変わったかを返す
 - 入力欄の値を置き換えた時は、値を読み直して一致したかを返す
+- `wallpaper` は指定した画像を `LUNA_HOME/desktop/wallpaper` へコピーして、すぐに貼り替える

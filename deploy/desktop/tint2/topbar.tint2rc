@@ -1,0 +1,70 @@
+# 画面上のバー: 開いているウィンドウと時計
+
+# 背景 1: バー
+rounded = 0
+border_width = 0
+background_color = #161a33 88
+border_color = #000000 0
+
+# 背景 2: 前面のウィンドウ
+rounded = 6
+border_width = 1
+background_color = #c9b26b 28
+border_color = #c9b26b 60
+
+# 背景 3: マウスを重ねたウィンドウ
+rounded = 6
+border_width = 0
+background_color = #ffffff 12
+border_color = #000000 0
+
+panel_items = TSC
+panel_size = 100% 30
+panel_margin = 0 0
+panel_padding = 8 3 10
+panel_background_id = 1
+panel_position = top center horizontal
+panel_layer = top
+panel_monitor = all
+panel_window_name = luna-topbar
+strut_policy = follow_size
+wm_menu = 1
+panel_dock = 0
+mouse_effects = 1
+
+taskbar_mode = single_desktop
+taskbar_padding = 0 0 6
+taskbar_background_id = 0
+taskbar_active_background_id = 0
+taskbar_name = 0
+taskbar_hide_inactive_tasks = 0
+
+task_text = 1
+task_icon = 1
+task_centered = 0
+task_maximum_size = 240 24
+task_padding = 8 2 6
+task_font = Noto Sans CJK JP 9
+task_font_color = #e8e6f0 75
+task_active_font_color = #ffffff 100
+task_iconified_font_color = #e8e6f0 45
+task_background_id = 0
+task_active_background_id = 2
+task_iconified_background_id = 0
+task_hover_background_id = 3
+task_tooltip = 1
+mouse_left = toggle_iconify
+mouse_middle = close
+mouse_scroll_up = none
+mouse_scroll_down = none
+
+systray_padding = 4 0 4
+systray_background_id = 0
+systray_icon_size = 18
+
+time1_format = %-m月%-d日(%a) %H:%M
+time1_font = Noto Sans CJK JP Bold 10
+clock_font_color = #f3e9c6 100
+clock_padding = 6 0
+clock_background_id = 0
+clock_tooltip = %Y年%-m月%-d日 %A
