@@ -83,7 +83,7 @@ export class ScheduleController {
 				this.#debounceReload();
 			},
 			onError: (error) => {
-				this.#logger.log("error", "automation.schedule.watcher_failed", {}, { error });
+				this.#logger.error("automation.schedule.watcher_failed", { error });
 			},
 		});
 	}
@@ -94,7 +94,7 @@ export class ScheduleController {
 			try {
 				schedule = await this.#workspace.readSchedule();
 			} catch (error: unknown) {
-				this.#logger.log("error", "automation.schedule.reload_failed", {}, { error });
+				this.#logger.error("automation.schedule.reload_failed", { error });
 				return;
 			}
 			this.#applySchedule(schedule);
@@ -106,7 +106,7 @@ export class ScheduleController {
 		this.#reloadTimer?.cancel();
 		this.#reloadTimer = undefined;
 		await this.#watcher.close().catch((error: unknown) => {
-			this.#logger.log("error", "automation.schedule.watcher_close_failed", {}, { error });
+			this.#logger.error("automation.schedule.watcher_close_failed", { error });
 		});
 		await this.#enqueueReload(() => {
 			for (const job of this.#jobs.values()) {
@@ -140,7 +140,7 @@ export class ScheduleController {
 		this.#reloadTimer = this.#clock.setTimer(this.#reloadDebounceMs, () => {
 			this.#reloadTimer = undefined;
 			void this.reloadSchedule().catch((error: unknown) => {
-				this.#logger.log("error", "automation.schedule.apply_failed", {}, { error });
+				this.#logger.error("automation.schedule.apply_failed", { error });
 			});
 		});
 	}
@@ -201,12 +201,9 @@ export class ScheduleController {
 		try {
 			this.#workspace.removeScheduleJob(jobId);
 		} catch (error: unknown) {
-			this.#logger.log(
-				"error",
-				"automation.schedule.past_one_shot_delete_failed",
-				{ jobId },
-				{ error },
-			);
+			this.#logger.child({ jobId }).error("automation.schedule.past_one_shot_delete_failed", {
+				error,
+			});
 		}
 	}
 
@@ -271,11 +268,10 @@ export class ScheduleController {
 
 	async #runCheck(jobId: string, command: string): Promise<JsonObject | undefined> {
 		const result = await this.#checkRunner.run(command);
+		const logger = this.#logger.child({ jobId });
 		if (result.status === "failed") {
-			this.#logger.log(
-				"error",
+			logger.error(
 				"automation.schedule.check_failed",
-				{ jobId },
 				{
 					error: result.error,
 					exitCode: result.exitCode,
@@ -288,7 +284,7 @@ export class ScheduleController {
 		}
 		const output = result.stdout.trim();
 		if (output.length === 0) {
-			this.#logger.log("info", "automation.schedule.check_skipped", { jobId });
+			logger.info("automation.schedule.check_skipped");
 			return undefined;
 		}
 		if (output.length > CHECK_OUTPUT_MAX_LENGTH) {
@@ -305,7 +301,7 @@ export class ScheduleController {
 		try {
 			this.#workspace.removeScheduleJob(jobId);
 		} catch (error: unknown) {
-			this.#logger.log("error", "automation.schedule.one_shot_delete_failed", { jobId }, { error });
+			this.#logger.child({ jobId }).error("automation.schedule.one_shot_delete_failed", { error });
 		}
 	}
 

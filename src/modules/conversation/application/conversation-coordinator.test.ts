@@ -10,7 +10,8 @@ import type {
 	ModelSelection,
 } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
-import type { LoggerPort } from "../../observability/ports/logger-port";
+import type { LogEntry, LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
 import type { ConversationSession } from "../domain/conversation-session";
 import type { ConversationHistoryPort } from "../ports/conversation-history-port";
@@ -126,7 +127,7 @@ describe("ConversationCoordinator", () => {
 				"discord_message",
 				"task_board",
 			]);
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("history/fetch", failure));
+			expect(harness.logs).toContainEqual(operationFailed("history/fetch", failure));
 		});
 
 		it("最初のイベントより前に始まったtypingが途切れるまでbatchを待つ", async () => {
@@ -339,7 +340,7 @@ describe("ConversationCoordinator", () => {
 			harness.finishRun(1, { status: "failed", reason: "fatal", message: "boom" });
 			await harness.flush();
 
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("session/run"));
+			expect(harness.logs).toContainEqual(operationFailed("session/run"));
 			expect(harness.sessions[0]?.close).toHaveBeenCalledOnce();
 			expect(harness.coordinator.snapshot()).toEqual([]);
 		});
@@ -477,7 +478,7 @@ describe("ConversationCoordinator", () => {
 			harness.accept("100", "2026-07-23T00:00:00.000Z");
 			await harness.advance(100);
 
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("session/open", failure));
+			expect(harness.logs).toContainEqual(operationFailed("session/open", failure));
 			expect(harness.onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], false);
 			expect(harness.coordinator.snapshot()).toEqual([]);
 			harness.accept("101", "2026-07-23T00:00:01.000Z");
@@ -503,7 +504,7 @@ describe("ConversationCoordinator", () => {
 				fail(harness);
 				await harness.flush();
 
-				expect(harness.log).toHaveBeenCalledWith(...operationFailed("session/run"));
+				expect(harness.logs).toContainEqual(operationFailed("session/run"));
 				expect(harness.onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100", "101"], false);
 				expect(harness.sessions[0]?.close).toHaveBeenCalledOnce();
 				expect(harness.runs.filter((run) => run.sessionId === "session-1")).toHaveLength(1);
@@ -532,23 +533,21 @@ describe("ConversationCoordinator", () => {
 
 			await harness.advance(1_000);
 
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("tools/release"));
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("session/close"));
+			expect(harness.logs).toContainEqual(operationFailed("tools/release"));
+			expect(harness.logs).toContainEqual(operationFailed("session/close"));
 			expect(harness.coordinator.snapshot()).toEqual([]);
 		});
 
 		it("コマンド処理の例外を記録し、会話を閉じる", async () => {
 			const failure = new Error("handler failed");
 			const harness = createHarness({
-				log: (_level, name) => {
-					if (name === "conversation.session_opened") throw failure;
-				},
+				wrapLogger: (logger) => failingLogger(logger, "conversation.session_opened", failure),
 			});
 
 			harness.accept("100", "2026-07-23T00:00:00.000Z");
 			await harness.advance(100);
 
-			expect(harness.log).toHaveBeenCalledWith(...operationFailed("actor/mailbox", failure));
+			expect(harness.logs).toContainEqual(operationFailed("actor/mailbox", failure));
 			expect(harness.coordinator.hasSession(session.key)).toBe(false);
 			expect(harness.onBatchSettled).toHaveBeenCalledExactlyOnceWith(["100"], false);
 		});
@@ -668,7 +667,7 @@ function createHarness(
 	options: {
 		history?: ConversationHistoryPort;
 		intents?: ConversationIntentPort;
-		log?: LoggerPort["log"];
+		wrapLogger?: (logger: LoggerPort) => LoggerPort;
 		sessionMemoryEnabled?: boolean;
 	} = {},
 ) {
@@ -729,14 +728,14 @@ function createHarness(
 	const releaseTools = vi.fn(async (ownerId: string) => {
 		calls.push(`release:${ownerId}`);
 	});
-	const log = vi.fn<LoggerPort["log"]>(options.log);
+	const logger = createRecordingLogger();
 	const onBatchSettled = vi.fn<(eventIds: readonly string[], succeeded: boolean) => void>();
 	const listFor = vi.fn(() => [{ id: "task-1", status: "running" }]);
 	const coordinator = new ConversationCoordinator(
 		{
 			history: options.history ?? { fetchBefore: vi.fn(async () => []) },
 			intents: options.intents ?? { match: () => [] },
-			logger: { log },
+			logger: options.wrapLogger?.(logger) ?? logger,
 			now: () => new Date(),
 			onBatchSettled,
 			openSession,
@@ -777,7 +776,7 @@ function createHarness(
 		},
 		flush,
 		listFor,
-		log,
+		logs: logger.entries,
 		onBatchSettled,
 		openSession,
 		releaseTools,
@@ -807,13 +806,28 @@ function eventMessage(input: LunaEvent): AgentInputMessage {
 	return { kind: "discord_message", text: JSON.stringify(input) };
 }
 
-function operationFailed(operation: string, error: unknown = expect.any(Error)) {
-	return [
-		"error",
-		"conversation.operation_failed",
-		{ conversationSession: session.key },
-		{ error, operation },
-	] as const;
+function operationFailed(operation: string, error: unknown = expect.any(Error)): LogEntry {
+	return {
+		level: "error",
+		event: "conversation.operation_failed",
+		context: { conversationSession: session.key },
+		details: { error, operation },
+	};
+}
+
+function failingLogger(logger: LoggerPort, failingEvent: string, error: Error): LoggerPort {
+	const guard =
+		(method: LoggerPort["info"]): LoggerPort["info"] =>
+		(name, details, payload) => {
+			if (name === failingEvent) throw error;
+			method(name, details, payload);
+		};
+	return {
+		child: (context) => failingLogger(logger.child(context), failingEvent, error),
+		info: guard(logger.info),
+		warn: guard(logger.warn),
+		error: guard(logger.error),
+	};
 }
 
 function createDeferred<Value>(): { promise: Promise<Value>; resolve: (value: Value) => void } {

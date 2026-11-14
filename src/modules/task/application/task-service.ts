@@ -263,7 +263,7 @@ export class TaskService {
 			while (messages !== undefined) messages = await this.#runOnce(taskId, run, opened, messages);
 		} catch (error: unknown) {
 			if (isStopped(run)) return;
-			this.dependencies.logger.log("error", "task.run_failed", { taskId }, { error });
+			this.dependencies.logger.child({ taskId }).error("task.run_failed", { error });
 			this.#fail(taskId, error instanceof Error ? error.message : String(error));
 		} finally {
 			this.#runs.delete(taskId);
@@ -377,12 +377,9 @@ export class TaskService {
 		const delivery = this.dependencies.delivery.deliver(task.origin, event).then(
 			(outcome) => {
 				if (outcome === "rejected") {
-					this.dependencies.logger.log(
-						"warn",
-						"task.delivery_rejected",
-						{ taskId },
-						{ reportSeq: report.seq },
-					);
+					this.dependencies.logger
+						.child({ taskId })
+						.warn("task.delivery_rejected", { reportSeq: report.seq });
 					return;
 				}
 				const latest = this.#require(taskId);
@@ -394,12 +391,9 @@ export class TaskService {
 				});
 			},
 			(error: unknown) => {
-				this.dependencies.logger.log(
-					"error",
-					"task.delivery_failed",
-					{ taskId },
-					{ error, reportSeq: report.seq },
-				);
+				this.dependencies.logger
+					.child({ taskId })
+					.error("task.delivery_failed", { error, reportSeq: report.seq });
 			},
 		);
 		this.#track(delivery);
@@ -409,19 +403,19 @@ export class TaskService {
 		const opened = run.opened;
 		if (opened === undefined) return;
 		void this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+			this.dependencies.logger.error("task.tools_release_failed", { error });
 		});
 		void opened.session.abort().catch((error: unknown) => {
-			this.dependencies.logger.log("warn", "task.abort_failed", {}, { error });
+			this.dependencies.logger.warn("task.abort_failed", { error });
 		});
 	}
 
 	async #closeSession(opened: OpenedAgentSession): Promise<void> {
 		await this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.tools_release_failed", {}, { error });
+			this.dependencies.logger.error("task.tools_release_failed", { error });
 		});
 		await opened.session.close().catch((error: unknown) => {
-			this.dependencies.logger.log("error", "task.session_close_failed", {}, { error });
+			this.dependencies.logger.error("task.session_close_failed", { error });
 		});
 	}
 
@@ -450,7 +444,7 @@ export class TaskService {
 			const latest = this.#tasks.get(taskId);
 			if (latest === undefined) return;
 			await this.dependencies.store.save(latest).catch((error: unknown) => {
-				this.dependencies.logger.log("error", "task.save_failed", { taskId }, { error });
+				this.dependencies.logger.child({ taskId }).error("task.save_failed", { error });
 			});
 		});
 		this.#writes.set(taskId, write);

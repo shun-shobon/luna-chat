@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { JsonValue } from "../../../shared/json";
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import { createToolSet } from "../../tool/application/tool-set";
 import type { ToolProvider } from "../../tool/ports/tool-provider";
 import type { DiscordActionPort } from "../ports/discord-action-port";
@@ -264,7 +265,7 @@ function createProvider(
 }
 
 function bind(provider: ToolProvider): readonly AgentTool[] {
-	return createToolSet([provider], { log: vi.fn() }).bind({
+	return createToolSet([provider], createRecordingLogger()).bind({
 		ownerId: "owner-1",
 		origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
 	});

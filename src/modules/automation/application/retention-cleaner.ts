@@ -51,7 +51,7 @@ export class RetentionCleaner {
 		const cleanup = this.#pruner
 			.prune(this.#clock.now(), this.#retentionMs)
 			.catch((error: unknown) => {
-				this.#logger.log("error", this.#failureEvent, {}, { error });
+				this.#logger.error(this.#failureEvent, { error });
 			})
 			.finally(() => {
 				if (!this.#accepting) return;

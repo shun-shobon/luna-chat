@@ -2,8 +2,9 @@ import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { createRecordingLogger } from "../../../../observability/testing/recording-logger";
 import { pruneTranscripts, TranscriptWriter } from "./pi-transcript";
 
 const DAY_MS = 86_400_000;
@@ -65,7 +66,7 @@ describe("TranscriptWriter", () => {
 	it("消された日付ディレクトリを作り直して追記を続ける", async () => {
 		const root = await createRoot();
 		const filePath = path.join(root, "2026-11-14", "session.jsonl");
-		const logger = { log: vi.fn() };
+		const logger = createRecordingLogger();
 		const writer = new TranscriptWriter({ filePath, logger, sessionId: "session" });
 
 		writer.append({ type: "a" });
@@ -75,14 +76,14 @@ describe("TranscriptWriter", () => {
 		await writer.flush();
 
 		expect(await readFile(filePath, "utf8")).toBe('{"type":"b"}\n');
-		expect(logger.log).not.toHaveBeenCalled();
+		expect(logger.entries).toEqual([]);
 	});
 
 	it("書き込みに失敗してもログに残して後続を止めない", async () => {
 		const root = await createRoot();
 		const blocker = path.join(root, "blocker");
 		await writeFile(blocker, "");
-		const logger = { log: vi.fn() };
+		const logger = createRecordingLogger();
 		const writer = new TranscriptWriter({
 			filePath: path.join(blocker, "session.jsonl"),
 			logger,
@@ -92,11 +93,11 @@ describe("TranscriptWriter", () => {
 		writer.append({ type: "a" });
 		await writer.flush();
 
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"agent.pi.transcript_write_failed",
-			undefined,
-			expect.objectContaining({ sessionId: "session" }),
-		);
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "agent.pi.transcript_write_failed",
+			context: {},
+			details: expect.objectContaining({ sessionId: "session" }),
+		});
 	});
 });

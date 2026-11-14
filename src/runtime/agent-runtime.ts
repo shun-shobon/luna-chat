@@ -78,7 +78,7 @@ export function createPiAgentRuntime(input: {
 }): PiAgentRuntime {
 	const recordSkillUse = (names: readonly string[]): void => {
 		input.skillUsage.record(names, new Date()).catch((error: unknown) => {
-			input.logger.log("error", "workspace.skill_usage_write_failed", undefined, {
+			input.logger.error("workspace.skill_usage_write_failed", {
 				error: error instanceof Error ? error.message : String(error),
 			});
 		});

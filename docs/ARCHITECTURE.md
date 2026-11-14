@@ -76,7 +76,7 @@ src/
 | `intent`        | 話題をきっかけにする予定の照合、発火回数とcooldown                                | `match`                                                                                     | `intents.toml`、状態のJSONファイル                        |
 | `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録 | 初期化、プロンプト読み込み、スケジュール読み書き                                            | ファイルシステム、`smol-toml`、Zod                        |
 | `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                                            | `snapshot`                                                                                  | Hono（`/`、`/api/snapshot`）                              |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                | 標準出力（JSON Lines）、メモリ上のリングバッファ          |
+| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ    |
 | `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                          | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）               | シグナルハンドラー                                        |
 
 ## 5. 依存関係の方向
@@ -98,6 +98,8 @@ dashboard    ──► agent / automation / conversation / event / task / observ
 all          ──► observability
 runtime      ──► 全モジュール (composition root)
 ```
+
+- 各モジュールは `LoggerPort` に依存する。会話セッション・イベント・ジョブ・タスクの識別子は `child(context)` で束ね、出力は `info`・`warn`・`error` の詳細（常に出す）と本文（`LOG_LEVEL` が `debug` 以下のときだけ標準出力に出す）で渡す。標準出力への書き出しは pino が担う。秘匿フィールドは任意の深さで大文字小文字を問わず伏せる必要があり、パス指定の pino の redact では表せないため、自前の直列化で伏せる。
 
 ## 6. ドメインモデルと状態管理
 

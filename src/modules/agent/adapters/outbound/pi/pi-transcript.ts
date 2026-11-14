@@ -31,7 +31,7 @@ export class TranscriptWriter {
 				await mkdir(path.dirname(this.#filePath), { recursive: true });
 				await appendFile(this.#filePath, line, "utf8");
 			} catch (error: unknown) {
-				this.#logger.log("error", "agent.pi.transcript_write_failed", undefined, {
+				this.#logger.error("agent.pi.transcript_write_failed", {
 					error: error instanceof Error ? error.message : String(error),
 					filePath: this.#filePath,
 					sessionId: this.#sessionId,

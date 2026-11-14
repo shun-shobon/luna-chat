@@ -62,10 +62,9 @@ export class EventExecutor implements EventExecutionPort {
 			opened: undefined,
 		};
 		this.#running.add(running);
-		this.dependencies.logger.log(
-			"info",
+		const logger = this.dependencies.logger.child({ eventId: event.id });
+		logger.info(
 			"event.execution_started",
-			{ eventId: event.id },
 			{ eventSource: event.source, eventType: event.type, subject: event.subject },
 			event,
 		);
@@ -92,43 +91,27 @@ export class EventExecutor implements EventExecutionPort {
 			const completed = await run;
 			if (completed.status !== "completed") throw new Error(describeRunFailure(completed));
 			result = { status: "completed" };
-			this.dependencies.logger.log(
-				"info",
-				"event.execution_completed",
-				{ eventId: event.id },
-				{ sessionId: opened.session.id },
-			);
+			logger.info("event.execution_completed", { sessionId: opened.session.id });
 		} catch (error: unknown) {
-			this.dependencies.logger.log(
-				"error",
-				"event.execution_failed",
-				{ eventId: event.id },
-				{ error, eventSource: event.source, eventType: event.type },
-			);
+			logger.error("event.execution_failed", {
+				error,
+				eventSource: event.source,
+				eventType: event.type,
+			});
 			result = { error, status: "failed" };
 		} finally {
 			this.#running.delete(running);
-			if (running.opened !== undefined) await this.#close(running.opened);
+			if (running.opened !== undefined) await this.#close(running.opened, logger);
 		}
 		return result;
 	}
 
-	async #close(opened: OpenedAgentSession): Promise<void> {
+	async #close(opened: OpenedAgentSession, logger: LoggerPort): Promise<void> {
 		await this.dependencies.releaseTools(opened.ownerId).catch((error: unknown) => {
-			this.dependencies.logger.log(
-				"error",
-				"event.operation_failed",
-				{},
-				{ error, operation: "tools/release" },
-			);
+			logger.error("event.operation_failed", { error, operation: "tools/release" });
 		});
 		await opened.session.close().catch((error: unknown) => {
-			this.dependencies.logger.log(
-				"error",
-				"event.operation_failed",
-				{},
-				{ error, operation: "session/close" },
-			);
+			logger.error("event.operation_failed", { error, operation: "session/close" });
 		});
 	}
 }

@@ -36,7 +36,7 @@ export class IntentMatcher {
 			intents = this.store.readIntents();
 			states = { ...this.store.readStates() };
 		} catch (error: unknown) {
-			this.logger.log("error", "intent.read_failed", undefined, {
+			this.logger.error("intent.read_failed", {
 				error: error instanceof Error ? error.message : String(error),
 			});
 			return [];
@@ -63,14 +63,14 @@ export class IntentMatcher {
 						firesRemaining: intent.maxFires - fires,
 					}),
 				});
-				this.logger.log("info", "intent.fired", undefined, { intentId: intent.id, keyword });
+				this.logger.info("intent.fired", { intentId: intent.id, keyword });
 			}
 		}
 		if (inputs.length > 0) {
 			try {
 				this.store.writeStates(states);
 			} catch (error: unknown) {
-				this.logger.log("error", "intent.state_write_failed", undefined, {
+				this.logger.error("intent.state_write_failed", {
 					error: error instanceof Error ? error.message : String(error),
 				});
 			}

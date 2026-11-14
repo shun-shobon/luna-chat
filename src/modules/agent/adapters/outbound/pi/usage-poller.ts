@@ -48,7 +48,7 @@ export class UsagePoller {
 			await writeFileAtomic(this.input.filePath, `${JSON.stringify(usage, null, 2)}\n`);
 		} catch (error: unknown) {
 			if (this.#controller.signal.aborted) return;
-			this.input.logger.log("warn", "agent.usage_fetch_failed", {}, { error });
+			this.input.logger.warn("agent.usage_fetch_failed", { error });
 		}
 	}
 }

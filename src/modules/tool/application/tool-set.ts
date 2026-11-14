@@ -40,12 +40,11 @@ export function createToolSet(providers: readonly ToolProvider[], logger: Logger
 			);
 			settled.forEach((result, providerIndex) => {
 				if (result.status === "fulfilled") return;
-				logger.log(
-					"warn",
-					"tool.provider_release_failed",
-					{},
-					{ error: result.reason, ownerId, providerIndex },
-				);
+				logger.warn("tool.provider_release_failed", {
+					error: result.reason,
+					ownerId,
+					providerIndex,
+				});
 			});
 		},
 	});
@@ -59,20 +58,16 @@ async function invoke(
 ): Promise<AgentToolResult> {
 	try {
 		const invocation = await definition.invoke(value, execution);
-		logger.log(
-			"info",
+		logger.info(
 			"tool.succeeded",
-			{},
 			{ ownerId: execution.ownerId, target: invocation.target, toolName: definition.name },
 			{ input: value, result: invocation.value },
 		);
 		return { text: JSON.stringify(invocation.value), images: [], isError: false };
 	} catch (error: unknown) {
 		const message = error instanceof z.ZodError ? z.prettifyError(error) : errorMessage(error);
-		logger.log(
-			"warn",
+		logger.warn(
 			"tool.failed",
-			{},
 			{ error: message, ownerId: execution.ownerId, toolName: definition.name },
 			{ input: value },
 		);

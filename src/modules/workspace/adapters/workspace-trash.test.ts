@@ -2,8 +2,9 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import { WorkspaceTrash } from "./workspace-trash";
 
 const directories: string[] = [];
@@ -19,13 +20,13 @@ async function setup(folders: Readonly<Record<string, readonly string[]>>) {
 		await mkdir(join(workspace, ".trash", folder), { recursive: true });
 		for (const entry of entries) await writeFile(join(workspace, ".trash", folder, entry), "x");
 	}
-	const log = vi.fn();
-	return { trash: new WorkspaceTrash(workspace, { log }), workspace, log };
+	const logger = createRecordingLogger();
+	return { trash: new WorkspaceTrash(workspace, logger), workspace, logger };
 }
 
 describe("WorkspaceTrash", () => {
 	it("捨てた日から14日経った日付フォルダだけを消し、日付でない名前は記録して残す", async () => {
-		const { trash, workspace, log } = await setup({
+		const { trash, workspace, logger } = await setup({
 			"2026-10-31": ["old.txt"],
 			"2026-11-01": ["recent.txt"],
 			misc: ["unknown.txt"],
@@ -34,11 +35,17 @@ describe("WorkspaceTrash", () => {
 		await trash.prune(new Date("2026-11-14T12:00:00"));
 
 		expect((await readdir(join(workspace, ".trash"))).toSorted()).toEqual(["2026-11-01", "misc"]);
-		expect(log).toHaveBeenCalledWith("warn", "workspace.trash.unknown_entry", undefined, {
-			name: "misc",
+		expect(logger.entries).toContainEqual({
+			level: "warn",
+			event: "workspace.trash.unknown_entry",
+			context: {},
+			details: { name: "misc" },
 		});
-		expect(log).toHaveBeenCalledWith("info", "workspace.trash.deleted", undefined, {
-			folder: "2026-10-31",
+		expect(logger.entries).toContainEqual({
+			level: "info",
+			event: "workspace.trash.deleted",
+			context: {},
+			details: { folder: "2026-10-31" },
 		});
 	});
 

@@ -56,7 +56,7 @@ export type ReplayResult = Readonly<{
 	calls: readonly ReplayCall[];
 }>;
 
-const silentLogger: LoggerPort = { log: () => {} };
+const silentLogger: LoggerPort = { child: () => silentLogger, info() {}, warn() {}, error() {} };
 const REPLAY_ORIGIN = { kind: "event", eventId: "replay", eventType: "replay" } as const;
 const REPLAY_SCOPE = { kind: "guild_channel", guildId: "0", channelId: "0" } as const;
 

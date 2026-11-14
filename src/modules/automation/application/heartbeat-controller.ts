@@ -86,7 +86,7 @@ export class HeartbeatController {
 		try {
 			context = await this.#workspace.readHeartbeatContext();
 		} catch (error: unknown) {
-			this.#logger.log("error", "automation.heartbeat.context_read_failed", {}, { error });
+			this.#logger.error("automation.heartbeat.context_read_failed", { error });
 			return;
 		}
 

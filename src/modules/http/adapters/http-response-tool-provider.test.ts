@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import { createToolSet } from "../../tool/application/tool-set";
 import { HttpResponseRegistry } from "../application/http-response-registry";
 import { createHttpResponseToolProvider } from "./http-response-tool-provider";
@@ -72,7 +73,10 @@ describe("http_respond tool", () => {
 });
 
 function bindRespond(registry: HttpResponseRegistry): AgentTool {
-	const [tool] = createToolSet([createHttpResponseToolProvider(registry)], { log: vi.fn() }).bind({
+	const [tool] = createToolSet(
+		[createHttpResponseToolProvider(registry)],
+		createRecordingLogger(),
+	).bind({
 		ownerId: "owner-1",
 		origin: { kind: "event", eventId: REQUEST_ID, eventType: "http.request.v1" },
 	});

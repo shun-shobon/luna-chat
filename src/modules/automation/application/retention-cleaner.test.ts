@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { RetentionPrunerPort } from "../ports/retention-pruner-port";
 import { RetentionCleaner } from "./retention-cleaner";
@@ -45,18 +46,20 @@ describe("RetentionCleaner", () => {
 		const pruner = createPruner();
 		pruner.prune.mockRejectedValueOnce(failure);
 		const clock = new FakeClock(NOW);
-		const logger = { log: vi.fn<LoggerPort["log"]>() };
+		const logger = createRecordingLogger();
 		const cleaner = createCleaner({ clock, logger, pruner });
 
 		cleaner.start();
 		await cleaner.drain();
 
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.transcript_retention.prune_failed",
-			{},
-			{ error: failure },
-		);
+		expect(logger.entries).toEqual([
+			{
+				level: "error",
+				event: "automation.transcript_retention.prune_failed",
+				context: {},
+				details: { error: failure },
+			},
+		]);
 		expect(clock.delays).toEqual([1_000]);
 		await clock.fireNext();
 		await cleaner.drain();
@@ -108,7 +111,7 @@ function createCleaner(input: {
 		cleanupIntervalMs: 1_000,
 		clock: input.clock,
 		failureEvent: "automation.transcript_retention.prune_failed",
-		logger: input.logger ?? { log: vi.fn() },
+		logger: input.logger ?? createRecordingLogger(),
 		pruner: input.pruner,
 		retentionMs: 100_000,
 	});

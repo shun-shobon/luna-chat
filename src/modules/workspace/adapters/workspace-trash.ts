@@ -25,12 +25,12 @@ export class WorkspaceTrash {
 		for (const name of await this.#folderNames()) {
 			const deleteOn = deleteDateOf(name);
 			if (deleteOn === undefined) {
-				this.logger.log("warn", "workspace.trash.unknown_entry", undefined, { name });
+				this.logger.warn("workspace.trash.unknown_entry", { name });
 				continue;
 			}
 			if (now.getTime() < Date.parse(`${deleteOn}T00:00:00`)) continue;
 			await rm(join(this.#trashDir, name), { recursive: true, force: true });
-			this.logger.log("info", "workspace.trash.deleted", undefined, { folder: name });
+			this.logger.info("workspace.trash.deleted", { folder: name });
 		}
 	}
 

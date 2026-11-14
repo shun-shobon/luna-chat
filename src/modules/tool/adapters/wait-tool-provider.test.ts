@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import { createToolSet } from "../application/tool-set";
 import { createWaitToolProvider } from "./wait-tool-provider";
 
@@ -11,7 +12,10 @@ afterEach(() => vi.useRealTimers());
 describe("wait tool", () => {
 	it("指定した秒数だけ待ってから待機秒数を返す", async () => {
 		vi.useFakeTimers();
-		const wait = bindWait(createToolSet([createWaitToolProvider()], { log: vi.fn() }), "owner-1");
+		const wait = bindWait(
+			createToolSet([createWaitToolProvider()], createRecordingLogger()),
+			"owner-1",
+		);
 		const execution = wait.execute({ duration_seconds: 60 }, new AbortController().signal);
 		const settled = track(execution);
 
@@ -28,7 +32,7 @@ describe("wait tool", () => {
 
 	it("同じ実行元のreleaseで待機を打ち切り、他の実行元の待機は続ける", async () => {
 		vi.useFakeTimers();
-		const toolSet = createToolSet([createWaitToolProvider()], { log: vi.fn() });
+		const toolSet = createToolSet([createWaitToolProvider()], createRecordingLogger());
 		const cancelled = bindWait(toolSet, "owner-1").execute(
 			{ duration_seconds: 60 },
 			new AbortController().signal,
@@ -54,7 +58,10 @@ describe("wait tool", () => {
 
 	it("実行中のabortで待機を打ち切り、タイマーを残さない", async () => {
 		vi.useFakeTimers();
-		const wait = bindWait(createToolSet([createWaitToolProvider()], { log: vi.fn() }), "owner-1");
+		const wait = bindWait(
+			createToolSet([createWaitToolProvider()], createRecordingLogger()),
+			"owner-1",
+		);
 		const controller = new AbortController();
 		const execution = wait.execute({ duration_seconds: 60 }, controller.signal);
 
@@ -70,7 +77,10 @@ describe("wait tool", () => {
 
 	it("abort済みのsignalでは待たずに打ち切る", async () => {
 		vi.useFakeTimers();
-		const wait = bindWait(createToolSet([createWaitToolProvider()], { log: vi.fn() }), "owner-1");
+		const wait = bindWait(
+			createToolSet([createWaitToolProvider()], createRecordingLogger()),
+			"owner-1",
+		);
 		const controller = new AbortController();
 		controller.abort();
 
@@ -83,7 +93,10 @@ describe("wait tool", () => {
 
 	it.each([0, -1, 1.5, "60", 2_147_484])("不正な秒数 %s を待たずに拒否する", async (duration) => {
 		vi.useFakeTimers();
-		const wait = bindWait(createToolSet([createWaitToolProvider()], { log: vi.fn() }), "owner-1");
+		const wait = bindWait(
+			createToolSet([createWaitToolProvider()], createRecordingLogger()),
+			"owner-1",
+		);
 
 		await expect(
 			wait.execute({ duration_seconds: duration }, new AbortController().signal),

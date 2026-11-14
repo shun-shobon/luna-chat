@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
-import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
 import { HeartbeatController } from "./heartbeat-controller";
@@ -20,7 +20,7 @@ describe("HeartbeatController", () => {
 			createEventId: () => "heartbeat-event-1",
 			enabled: true,
 			executor,
-			logger: createLogger(),
+			logger: createRecordingLogger(),
 			nextDelayMs: () => 15,
 			workspace: createWorkspace(),
 		});
@@ -56,7 +56,7 @@ describe("HeartbeatController", () => {
 				await completion.promise;
 				return { status: "completed" };
 			}),
-			logger: createLogger(),
+			logger: createRecordingLogger(),
 			nextDelayMs: () => 60_000,
 			workspace: createWorkspace(),
 		});
@@ -77,7 +77,7 @@ describe("HeartbeatController", () => {
 
 	it("checklistまたはagendaの読込失敗を記録し、次回を予約する", async () => {
 		const clock = new FakeClock();
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const executor = createExecutor();
 		const workspace = createWorkspace({
 			readHeartbeatContext: vi.fn(async () => {
@@ -100,12 +100,12 @@ describe("HeartbeatController", () => {
 			expect(clock.delays).toEqual([10]);
 		});
 		expect(executor.execute).not.toHaveBeenCalled();
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.heartbeat.context_read_failed",
-			{},
-			expect.any(Object),
-		);
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "automation.heartbeat.context_read_failed",
+			context: {},
+			details: { error: expect.any(Error) },
+		});
 	});
 
 	it("無効時は開始せず、stop後はactive実行完了を待っても再予約しない", async () => {
@@ -115,7 +115,7 @@ describe("HeartbeatController", () => {
 			createEventId: () => "heartbeat-event-disabled",
 			enabled: false,
 			executor: createExecutor(),
-			logger: createLogger(),
+			logger: createRecordingLogger(),
 			nextDelayMs: () => 10,
 			workspace: createWorkspace(),
 		}).start();
@@ -131,7 +131,7 @@ describe("HeartbeatController", () => {
 				await completion.promise;
 				return { status: "completed" };
 			}),
-			logger: createLogger(),
+			logger: createRecordingLogger(),
 			nextDelayMs: () => 10,
 			workspace: createWorkspace(),
 		});
@@ -184,10 +184,6 @@ function createExecutor(
 	implementation: EventExecutionPort["execute"] = async () => ({ status: "completed" }),
 ): { execute: Mock<EventExecutionPort["execute"]> } {
 	return { execute: vi.fn(implementation) };
-}
-
-function createLogger(): { log: Mock<LoggerPort["log"]> } {
-	return { log: vi.fn() };
 }
 
 function createWorkspace(

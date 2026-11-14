@@ -3,6 +3,7 @@ import type { Mock } from "vitest";
 
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
+import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { WorkspaceSchedule } from "../../workspace/domain/workspace-schedule";
 import type {
 	AutomationCheckResult,
@@ -191,7 +192,7 @@ describe("ScheduleController", () => {
 	it("checkの標準出力が空白だけならCodexを起動せずskipを記録する", async () => {
 		const checkRunner = createCheckRunner(async () => ({ status: "succeeded", stdout: " \n\t\n" }));
 		const executor = createExecutor();
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const scheduleTimer = new FakeScheduleTimer();
 		const controller = createController({ checkRunner, executor, logger, scheduleTimer });
 		await controller.start({ jobs: [withCheck(recurring("quiet", true), "check")] });
@@ -199,8 +200,10 @@ describe("ScheduleController", () => {
 		await scheduleTimer.recurring[0]?.onTick();
 
 		expect(executor.execute).not.toHaveBeenCalled();
-		expect(logger.log).toHaveBeenCalledWith("info", "automation.schedule.check_skipped", {
-			jobId: "quiet",
+		expect(logger.entries).toContainEqual({
+			level: "info",
+			event: "automation.schedule.check_skipped",
+			context: { jobId: "quiet" },
 		});
 	});
 
@@ -231,7 +234,7 @@ describe("ScheduleController", () => {
 	])("checkの%sではCodexを起動せずerrorを記録する", async (_title, result) => {
 		const checkRunner = createCheckRunner(async () => result);
 		const executor = createExecutor();
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const scheduleTimer = new FakeScheduleTimer();
 		const controller = createController({ checkRunner, executor, logger, scheduleTimer });
 		await controller.start({ jobs: [withCheck(recurring("broken", true), "check")] });
@@ -239,18 +242,18 @@ describe("ScheduleController", () => {
 		await scheduleTimer.recurring[0]?.onTick();
 
 		expect(executor.execute).not.toHaveBeenCalled();
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.schedule.check_failed",
-			{ jobId: "broken" },
-			{
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "automation.schedule.check_failed",
+			context: { jobId: "broken" },
+			details: {
 				error: result.error,
 				exitCode: result.exitCode,
 				signal: result.signal,
 				timedOut: result.timedOut,
 			},
-			{ stderr: result.stderr },
-		);
+			payload: { stderr: result.stderr },
+		});
 	});
 
 	it("check失敗時の標準エラー出力は末尾2000文字だけをpayloadに渡す", async () => {
@@ -261,20 +264,20 @@ describe("ScheduleController", () => {
 			stderr: `${"x".repeat(10)}${"y".repeat(2_000)}`,
 			timedOut: false,
 		}));
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const scheduleTimer = new FakeScheduleTimer();
 		const controller = createController({ checkRunner, logger, scheduleTimer });
 		await controller.start({ jobs: [withCheck(recurring("noisy", true), "check")] });
 
 		await scheduleTimer.recurring[0]?.onTick();
 
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.schedule.check_failed",
-			{ jobId: "noisy" },
-			expect.any(Object),
-			{ stderr: "y".repeat(2_000) },
-		);
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "automation.schedule.check_failed",
+			context: { jobId: "noisy" },
+			details: expect.any(Object),
+			payload: { stderr: "y".repeat(2_000) },
+		});
 	});
 
 	it("check実行中の次の発火も前回を待たずに独立してcheckから実行する", async () => {
@@ -393,7 +396,7 @@ describe("ScheduleController", () => {
 
 	it("one-shot削除失敗を記録し、同じprocessでは再実行しない", async () => {
 		const scheduleTimer = new FakeScheduleTimer();
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const workspace = createWorkspace({
 			removeScheduleJob: vi.fn(() => {
 				throw new Error("write failed");
@@ -410,12 +413,12 @@ describe("ScheduleController", () => {
 		await scheduleTimer.oneShots[0]?.onTick();
 
 		expect(executor.execute).toHaveBeenCalledTimes(1);
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.schedule.one_shot_delete_failed",
-			{ jobId: "once" },
-			expect.any(Object),
-		);
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "automation.schedule.one_shot_delete_failed",
+			context: { jobId: "once" },
+			details: { error: expect.any(Error) },
+		});
 	});
 
 	it("発火後のreloadはturn/start応答を待ち、同じIDの更新版を登録しない", async () => {
@@ -446,7 +449,7 @@ describe("ScheduleController", () => {
 
 	it("valid reloadだけを反映し、変更jobのtimerを差し替える", async () => {
 		const scheduleTimer = new FakeScheduleTimer();
-		const logger = createLogger();
+		const logger = createRecordingLogger();
 		const workspace = createWorkspace({
 			readSchedule: vi
 				.fn<AutomationWorkspacePort["readSchedule"]>()
@@ -461,12 +464,12 @@ describe("ScheduleController", () => {
 		await controller.reloadSchedule();
 		expect(scheduleTimer.recurring).toHaveLength(1);
 		expect(scheduleTimer.recurring[0]?.stop).not.toHaveBeenCalled();
-		expect(logger.log).toHaveBeenCalledWith(
-			"error",
-			"automation.schedule.reload_failed",
-			{},
-			expect.any(Object),
-		);
+		expect(logger.entries).toContainEqual({
+			level: "error",
+			event: "automation.schedule.reload_failed",
+			context: {},
+			details: { error: expect.any(Error) },
+		});
 
 		await controller.reloadSchedule();
 		expect(scheduleTimer.recurring).toHaveLength(2);
@@ -599,7 +602,7 @@ function createController(
 		clock: input.clock ?? new FakeClock(),
 		createEventId: () => `schedule-event-${String(++eventSequence)}`,
 		executor: input.executor ?? createExecutor(),
-		logger: input.logger ?? createLogger(),
+		logger: input.logger ?? createRecordingLogger(),
 		reloadDebounceMs: 25,
 		scheduleTimer: input.scheduleTimer ?? new FakeScheduleTimer(),
 		watcher: input.watcher ?? new FakeWatcher(),
@@ -620,10 +623,6 @@ function createCheckRunner(
 	}),
 ): { run: Mock<AutomationCheckRunnerPort["run"]> } {
 	return { run: vi.fn(implementation) };
-}
-
-function createLogger(): { log: Mock<LoggerPort["log"]> } {
-	return { log: vi.fn() };
 }
 
 function createWorkspace(overrides: Partial<AutomationWorkspacePort> = {}): {
