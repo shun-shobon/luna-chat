@@ -60,15 +60,15 @@ describe("readRuntimeEnvironment", () => {
 		const environment = readRuntimeEnvironment({
 			DISCORD_BOT_TOKEN: "token",
 			HOME_ASSISTANT_TOKEN: "ha-token",
-			HOME_ASSISTANT_URL: "http://192.168.0.104:8123",
+			HOME_ASSISTANT_URL: "http://homeassistant.local:8123",
 		});
 
-		expect(environment.homeAssistant?.url.href).toBe("http://192.168.0.104:8123/");
+		expect(environment.homeAssistant?.url.href).toBe("http://homeassistant.local:8123/");
 		expect(environment.homeAssistant?.token).toBe("ha-token");
 	});
 
 	it.each([
-		[{ HOME_ASSISTANT_URL: "http://192.168.0.104:8123" }],
+		[{ HOME_ASSISTANT_URL: "http://homeassistant.local:8123" }],
 		[{ HOME_ASSISTANT_TOKEN: "ha-token" }],
 	])("HAの設定が片方だけなら拒否する (%o)", (homeAssistant) => {
 		expect(() => readRuntimeEnvironment({ DISCORD_BOT_TOKEN: "token", ...homeAssistant })).toThrow(
@@ -81,7 +81,7 @@ describe("readRuntimeEnvironment", () => {
 			readRuntimeEnvironment({
 				DISCORD_BOT_TOKEN: "token",
 				HOME_ASSISTANT_TOKEN: "ha-token",
-				HOME_ASSISTANT_URL: "ws://192.168.0.104:8123",
+				HOME_ASSISTANT_URL: "ws://homeassistant.local:8123",
 			}),
 		).toThrow("at HOME_ASSISTANT_URL");
 	});

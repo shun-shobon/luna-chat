@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HomeAssistantRequestError, HomeAssistantRestClient } from "./home-assistant-rest-client";
 
-const BASE_URL = new URL("http://192.168.0.104:8123");
+const BASE_URL = new URL("http://homeassistant.local:8123");
 
 describe("HomeAssistantRestClient", () => {
 	it("Bearerトークン付きで/api/statesを取得し、状態を内部の形に変換する", async () => {
@@ -10,7 +10,7 @@ describe("HomeAssistantRestClient", () => {
 
 		const states = await client.listStates(new AbortController().signal);
 
-		expect(requests[0]?.url).toBe("http://192.168.0.104:8123/api/states");
+		expect(requests[0]?.url).toBe("http://homeassistant.local:8123/api/states");
 		expect(requests[0]?.init.method).toBe("GET");
 		expect(requests[0]?.init.headers).toEqual({ authorization: "Bearer secret" });
 		expect(states).toEqual([
@@ -30,7 +30,7 @@ describe("HomeAssistantRestClient", () => {
 		await expect(client.getState("light.kitchen", new AbortController().signal)).resolves.toBe(
 			undefined,
 		);
-		expect(requests[0]?.url).toBe("http://192.168.0.104:8123/api/states/light.kitchen");
+		expect(requests[0]?.url).toBe("http://homeassistant.local:8123/api/states/light.kitchen");
 	});
 
 	it("2xx以外は応答本文を含むエラーにする", async () => {
@@ -106,7 +106,7 @@ describe("HomeAssistantRestClient", () => {
 			new AbortController().signal,
 		);
 
-		expect(requests[0]?.url).toBe("http://192.168.0.104:8123/api/services/light/turn_off");
+		expect(requests[0]?.url).toBe("http://homeassistant.local:8123/api/services/light/turn_off");
 		expect(requests[0]?.init).toMatchObject({
 			method: "POST",
 			headers: { authorization: "Bearer secret", "content-type": "application/json" },
@@ -130,7 +130,7 @@ describe("HomeAssistantRestClient", () => {
 		);
 
 		expect(requests[0]?.url).toBe(
-			"http://192.168.0.104:8123/api/services/weather/get_forecasts?return_response",
+			"http://homeassistant.local:8123/api/services/weather/get_forecasts?return_response",
 		);
 		expect(result).toEqual({
 			changedStates: [],

@@ -320,7 +320,7 @@ class FakeSocket {
 	}
 }
 
-function createHarness(url = "http://192.168.0.104:8123") {
+function createHarness(url = "http://homeassistant.local:8123") {
 	let now = new Date("2026-11-14T00:00:00.000Z");
 	const timers: FakeTimer[] = [];
 	const sockets: FakeSocket[] = [];
