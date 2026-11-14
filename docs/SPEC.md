@@ -6,7 +6,7 @@
 
 ## 2. 製品の責務と対象範囲
 
-Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向けの自律ワークスペースエージェントである。1つの配置につき、1つのDiscord Bot、1つのワークスペース、1つのChatGPTの資格情報を持つ。
+Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単一ユーザー向けの自律ワークスペースエージェントである。1つの配置につき、1つのDiscord Bot、1つのワークスペース、1つのChatGPTの資格情報を持つ。
 
 ### 主な責務
 
@@ -18,6 +18,7 @@ Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向�
 - アイドル終了前の会話ログを日次記憶に保存し、定期cronにより記憶とワークスペースを自律的に整理する。
 - 長い作業をバックグラウンドタスクとして作業エージェントへ委任し、会話を止めずに進捗・質問・結果を依頼元へ届ける。
 - 会話・イベント実行・タスク・オートメーションの現在の状態と直近の出来事を、閲覧専用のWebダッシュボードで示す。
+- Home Assistantの状態の取得と操作、状態変化をきっかけにした実行、Assistの会話エージェントとしての応答を行う（§22）。
 
 ### 非対象範囲
 
@@ -26,7 +27,7 @@ Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向�
 ## 3. 信頼境界とセキュリティ
 
 本システムは、Discordの参加者を非特権ユーザーとして隔離しない。Botと対話可能なすべてのユーザー、他のBot、Webhookは、エージェントを介して実行環境の権限を間接的に行使できる。
-ローカルHTTP APIも認証を行わず、呼び出し元に同じ権限を与える。Native起動では `127.0.0.1` にバインドし、Docker Composeではホスト側の `127.0.0.1` にのみ公開する。
+ローカルHTTP APIも認証を行わず、呼び出し元に同じ権限を与える。Native起動では既定で `127.0.0.1` にバインドし、Docker Composeではホスト側の `127.0.0.1` にのみ公開する。別ホストのHome AssistantからAssistの会話エージェント（§22.4）として使う場合は `LUNA_HTTP_HOST=0.0.0.0` とし、到達可能なネットワーク内の全員に同じ権限を与える。
 
 ダッシュボード（§21）は閲覧専用で認証を行わない。会話本文、ツールの入力、タスクの指示と報告を表示するため、到達できる者はそれらを読める。既定では `127.0.0.1` にバインドし、`LUNA_DASHBOARD_HOST=0.0.0.0` を指定した場合は到達可能なネットワーク内の全員が閲覧できる。
 
@@ -37,6 +38,7 @@ Lunaは、DiscordとローカルHTTP APIを入力とする単一ユーザー向�
 - ファイルシステム: 実行ユーザーがアクセス可能な全範囲の読み書き
 - コマンド実行: ホストネットワークの利用、パスワードなしsudoを含む特権昇格
 - Discord操作: Botがアクセス可能なすべてのチャンネル、スレッド、DMへの読み書き・送信
+- Home Assistant操作: 設定したトークンのユーザーが行えるすべての操作（§22）
 
 実行前の確認プロンプトや、管理者限定コマンド、コマンドやファイルパスのホワイトリストは設けない。Discordのメンション機能も標準準拠であるため、Botの権限範囲内において `@everyone` や各ロールへの通知が可能である。
 
@@ -93,18 +95,20 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 
 エージェントへの入力は種類（`kind`）付きのメッセージとして渡す。各メッセージはモデルには `<luna_input kind="...">` で包んだuserメッセージとして見え、本文は検証済みのオブジェクトを `JSON.stringify` したものとする。
 
-| `kind`                                            | 本文                                               | 渡す場面                                                 |
-| ------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
-| `discord_message`                                 | `discord.message.created.v1` の `LunaEvent`        | 会話への投稿                                             |
-| `delegated_conversation`                          | `discord.conversation.delegated.v1` の `LunaEvent` | 会話委譲                                                 |
-| `task_report`                                     | `luna.task.reported.v1` の `LunaEvent`             | タスクの報告の通知（§20.6）                              |
-| `heartbeat` / `schedule` / `memory_maintenance`   | 各 `system.*.fired.v1` の `LunaEvent`              | オートメーション                                         |
-| `http_request`                                    | `source: "http"` の `LunaEvent`                    | HTTPイベント                                             |
-| `event`                                           | 上記以外の `LunaEvent`                             | その他のイベント                                         |
-| `history`                                         | `LunaEvent[]`                                      | 会話セッションの最初の実行（初回コンテキストがある場合） |
-| `task_board`                                      | `TaskSummary[]`（§20.5）                           | 会話とイベント実行の各実行の開始時                       |
-| `session_end`                                     | `{ date: string }`（ローカル日付）                 | セッション記憶保存                                       |
-| `task_assignment` / `task_message` / `task_check` | §20.3                                              | 作業エージェント                                         |
+| `kind`                                            | 本文                                                | 渡す場面                                                 |
+| ------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `discord_message`                                 | `discord.message.created.v1` の `LunaEvent`         | 会話への投稿                                             |
+| `delegated_conversation`                          | `discord.conversation.delegated.v1` の `LunaEvent`  | 会話委譲                                                 |
+| `task_report`                                     | `luna.task.reported.v1` の `LunaEvent`              | タスクの報告の通知（§20.6）                              |
+| `heartbeat` / `schedule` / `memory_maintenance`   | 各 `system.*.fired.v1` の `LunaEvent`               | オートメーション                                         |
+| `http_request`                                    | `source: "http"` の `LunaEvent`                     | HTTPイベント                                             |
+| `home_assistant_state`                            | `home_assistant.state_changed.v1` の `LunaEvent`    | Home Assistantの状態変化（§22.3）                        |
+| `assist_request`                                  | `home_assistant.assist.requested.v1` の `LunaEvent` | Assistへの発話（§22.4）                                  |
+| `event`                                           | 上記以外の `LunaEvent`                              | その他のイベント                                         |
+| `history`                                         | `LunaEvent[]`                                       | 会話セッションの最初の実行（初回コンテキストがある場合） |
+| `task_board`                                      | `TaskSummary[]`（§20.5）                            | 会話とイベント実行の各実行の開始時                       |
+| `session_end`                                     | `{ date: string }`（ローカル日付）                  | セッション記憶保存                                       |
+| `task_assignment` / `task_message` / `task_check` | §20.3                                               | 作業エージェント                                         |
 
 - HTTPイベントの `data` は `{ payload: 送信されたevent.data, response_mode }` であり、IDと受信時刻はLunaが生成する。
 - 添付ファイルはURLやメタデータのみを渡し、ランタイム側でのファイル自動ダウンロードは行わない。
@@ -145,17 +149,19 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 - `.agents/skills/self-review/`: 週次の見直しの手順とスクリプト。作業エージェントが直近7日の会話から苛立ちや喜ばれた場面を拾い、`LUNA.md`・`MEMORY.md` の変更案を作り、`luna-chat replay`（§8.2）で現行と盲検で比べる。悪くなった場面がなく、狙った場面がよくなった時だけ、元のファイルを作業ディレクトリへ控えてから反映する。
 - `.agents/skills/x-status-fetch/`: XのURLや投稿IDから投稿をFxEmbedのAPI（`api.fxtwitter.com`）で取得する手順とスクリプト。
 
-`intents.toml`（話題をきっかけにする予定、§13.2）は任意で、初回には生成しない。同梱のスクリプトはPython 3で実行する。
+`intents.toml`（話題をきっかけにする予定、§13.2）と `home-assistant.toml`（状態変化をきっかけにする実行、§22.3）は任意で、初回には生成しない。同梱のスクリプトはPython 3で実行する。
 
 エージェントのセッションを開くたびに、固定の開発者指示、`.agents/skills/` 配下のskill一覧（Agent Skillsの `SKILL.md` の名前・説明・パス）、`LUNA.md` と `MEMORY.md` の全文をこの順に連結してシステムプロンプトとする。作業エージェント（§20）は `LUNA.md` と `MEMORY.md` を読み込まず、タスクに必要な時に自分で読む。skillの本文は事前に読み込まず、エージェントが必要な時に `SKILL.md` を読む。日次記憶 `memory/YYYY-MM-DD.md` とトピック記憶 `memory/topics/*.md` も事前に読み込まず、エージェントが必要な時に検索して該当部分だけを読む。
 
 固定の開発者指示は、実行の種類ごとに次を含む。
 
-| 種類             | 開発者指示                                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------------------- |
-| 会話             | 共通の指示、会話の指針、記憶保存（`session_end`）の手順、Discordの使い方、依頼元としてのタスクの使い方    |
-| イベント実行     | 共通の指示、会話の指針、HTTP・ハートビート・日次整理の手順、Discordの使い方、依頼元としてのタスクの使い方 |
-| 作業エージェント | 作業エージェントの指示                                                                                    |
+| 種類             | 開発者指示                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 会話             | 共通の指示、会話の指針、記憶保存（`session_end`）の手順、Discordの使い方、依頼元としてのタスクの使い方、Assistへの返答の仕方 |
+| イベント実行     | 共通の指示、会話の指針、HTTP・ハートビート・日次整理の手順、Discordの使い方、依頼元としてのタスクの使い方                    |
+| 作業エージェント | 作業エージェントの指示                                                                                                       |
+
+Home Assistantの接続を設定した場合（§22）は、どの種類にもHome Assistantのツールの使い方を加え、会話とイベント実行には `home-assistant.toml` と状態変化の入力の扱い方も加える。
 
 会話の指針は、禁止の一覧ではなく振る舞い方として書く。依頼は実行して結果で返す、依頼の範囲や条件を自分で変えない、確かめられることは確かめてから話す、相手が今ほしいことだけを書く、呼ばれたら必ず応える、指摘はその場で直して自由を保つ、の各項目からなる。唯一の禁止として、体調・怪我・気分の落ち込みの話では、どれほど深刻に見えても緊急・医療の案内（119・#7119、受診の勧め、相談窓口、安全確認、症状の確認項目）をせず、友人として会話で応じる。
 
@@ -193,7 +199,7 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 - 場面ファイルはJSONの配列で、各場面は `{ id, note?, inputs: [{ kind, text }] }`。`inputs` は会話の記録（§15）の `luna_input` と同じ形で、1回の実行に渡す入力の列とする。
 - 位置引数の指示の組（`<名前>=<ディレクトリ>`）ごとに、そのディレクトリの `LUNA.md` と `MEMORY.md` を、会話と同じ開発者指示と現在のワークスペースのskill一覧に連結してシステムプロンプトとする。指示の組は1つ以上、名前は重複不可。
 - モデルは `[models.conversation]`、リクエストのタイムアウトは `request_timeout_ms` を使う。資格情報は通常の実行と同じものを使う。
-- ツールは会話と同じものを渡すが、外へ作用させない。Discordへの投稿・リアクション、会話の委任、タスクの作成・指示・取消は呼び出しを記録して成功を返す。`exec_command`・`write_stdin`・`edit`・`write`・`image_gen` は実行せずに記録して成功を返す。`read`・`view_image`・`web_run` は実際に実行する。Discordの履歴の読み取りは空を返す。
+- ツールは会話と同じものを渡すが、外へ作用させない。Discordへの投稿・リアクション、会話の委任、タスクの作成・指示・取消、Assistへの返答は呼び出しを記録して成功を返す。Home Assistantのツール（§22.1）は渡さない。`exec_command`・`write_stdin`・`edit`・`write`・`image_gen` は実行せずに記録して成功を返す。`read`・`view_image`・`web_run` は実際に実行する。Discordの履歴の読み取りは空を返す。
 - 1つの場面でツール呼び出しが12回に達したら、その場面の実行を打ち切る。
 - 出力先に、全結果の `results.json`（場面・指示の組・終了状態・ツール呼び出しの列）、場面ごとに候補の並びを無作為に入れ替えて A, B… と名付けた `blind.json`、その対応の `blind-key.json` を書く。再生の会話記録は残さない。
 
@@ -215,8 +221,10 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 | `task_report`                                                                                          | 作業エージェントからの報告（§20.3）                                                                                     | ×              | ◯                |
 | `http_respond`                                                                                         | HTTPの完了待ちリクエストへの応答（§10.1）                                                                               | ◯              | ×                |
 | `wait`                                                                                                 | 指定秒数の待機（§10.2）                                                                                                 | ◯              | ◯                |
+| `ha_list_entities` / `ha_get_state` / `ha_list_services` / `ha_call_service`                           | Home Assistantの状態の取得と操作（§22.1）。HAの接続を設定した場合のみ                                                   | ◯              | ◯                |
+| `assist_respond`                                                                                       | Assistへの返答（§22.4）                                                                                                 | ◯              | ×                |
 
-- シェルツールの子プロセスには `DISCORD_BOT_TOKEN` を渡さない。
+- シェルツールの子プロセスには `DISCORD_BOT_TOKEN` を渡さない（`HOME_ASSISTANT_TOKEN` は渡す）。
 - Discordへの送信・返信では、文字数上限やファイルの存在・読み取り可否を事前に検証する。失敗はツールの失敗として返し、自動分割や平文変換は行わない。
 - `start_typing` で始めたタイピング表示は、`stop_typing` または実行の完了で止まる。
 
@@ -377,16 +385,18 @@ max_concurrent = 2
 
 ### 14.2 環境変数
 
-| 変数名                | 必須   | デフォルト値 | 説明                                                                                               |
-| --------------------- | ------ | ------------ | -------------------------------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`   | はい   | なし         | Discord Botトークン。シェルツールとcheckの子プロセスには渡されない。                               |
-| `LUNA_HOME`           | いいえ | `~/.luna`    | データ保存ディレクトリの絶対パス。                                                                 |
-| `LOG_LEVEL`           | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                                      |
-| `LUNA_HTTP_HOST`      | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。`127.0.0.1`または`0.0.0.0`。Docker Composeでは後者をコンテナ内で指定。 |
-| `LUNA_HTTP_PORT`      | いいえ | `3000`       | HTTP APIの待ち受けポート（1〜65535）。Docker Composeではホスト側公開ポート。                       |
-| `LUNA_DASHBOARD_HOST` | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。`127.0.0.1`または`0.0.0.0`。                                     |
-| `LUNA_DASHBOARD_PORT` | いいえ | `3001`       | ダッシュボードの待ち受けポート（1〜65535）。Docker Composeではホスト側公開ポート。                 |
-| `TZ`                  | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。                                                               |
+| 変数名                 | 必須   | デフォルト値 | 説明                                                                                                                     |
+| ---------------------- | ------ | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botトークン。シェルツールとcheckの子プロセスには渡されない。                                                     |
+| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存ディレクトリの絶対パス。                                                                                       |
+| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                                                            |
+| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。`127.0.0.1`または`0.0.0.0`。Docker Composeでは後者をコンテナ内で指定。                       |
+| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIの待ち受けポート（1〜65535）。Docker Composeではホスト側公開ポート。                                             |
+| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。`127.0.0.1`または`0.0.0.0`。                                                           |
+| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードの待ち受けポート（1〜65535）。Docker Composeではホスト側公開ポート。                                       |
+| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。                                                                                     |
+| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://192.168.0.104:8123`）。`http` か `https`。`HOME_ASSISTANT_TOKEN` と組で指定する（§22）。 |
+| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。`HOME_ASSISTANT_URL` と組で指定する。                                              |
 
 ## 15. 記録の保持とクリーンアップ
 
@@ -416,7 +426,7 @@ SIGINTまたはSIGTERMを受信すると、新規メッセージとHTTPイベン
 
 ## 18. HTTPイベントAPI
 
-`POST /events` に `Content-Type: application/json` で以下のオブジェクトを送る。その他のパスやメソッドは提供しない。
+`POST /events` に `Content-Type: application/json` で以下のオブジェクトを送る。同じサーバーはAssistの会話エージェントの `POST /home-assistant/conversation`（§22.4）も受け付ける。その他のパスやメソッドは提供しない。
 
 ```ts
 type HttpEventRequest =
@@ -570,14 +580,84 @@ Lunaは起動中常に、HTTP APIとは別のポートで閲覧専用のダッ�
 
 スナップショットは取得時点のメモリ上の状態であり、永続化しない。
 
-| 項目            | 内容                                                                                                                                                                    |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`         | ChatGPTの認証状態（認証済み・再ログインが必要・未ログイン）、最新の使用枠、直近の障害、開いているエージェントのセッション（種類・ラベル・モデル・フェーズ・再試行回数） |
-| `conversations` | 開いている会話セッションごとのフェーズとその開始時刻、未処理の入力件数、セッションID、再試行回数、モデル設定、待機中ならアイドル期限                                    |
-| `events`        | 実行中のワンショット実行（ハートビート・スケジュール・日次整理・タスク報告・HTTP）のイベント、フェーズ、開始時刻                                                        |
-| `tasks`         | 実行枠の上限と使用数、未完了のタスクと終了から24時間以内のタスク（最新50件）の全内容                                                                                    |
-| `automation`    | ハートビートの次回発火時刻、日次整理のcronと次回発火時刻、登録済みスケジュールジョブの定義と次回発火時刻                                                                |
-| `workspace`     | ワークスペースのあるファイルシステムの全容量と空き容量、ゴミ箱の日付フォルダごとの削除日と中身（直下の名前）                                                            |
-| `activity`      | 直近の出来事（info以上のログ）最大500件。`LOG_LEVEL` に関係なく本文（payload）を含み、詳細と本文はそれぞれ4000文字で切り詰める                                          |
+| 項目            | 内容                                                                                                                                                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent`         | ChatGPTの認証状態（認証済み・再ログインが必要・未ログイン）、最新の使用枠、直近の障害、開いているエージェントのセッション（種類・ラベル・モデル・フェーズ・再試行回数）                                                                                            |
+| `conversations` | 開いている会話セッションごとのフェーズとその開始時刻、未処理の入力件数、セッションID、再試行回数、モデル設定、待機中ならアイドル期限                                                                                                                               |
+| `events`        | 実行中のワンショット実行（ハートビート・スケジュール・日次整理・タスク報告・HTTP）のイベント、フェーズ、開始時刻                                                                                                                                                   |
+| `tasks`         | 実行枠の上限と使用数、未完了のタスクと終了から24時間以内のタスク（最新50件）の全内容                                                                                                                                                                               |
+| `automation`    | ハートビートの次回発火時刻、日次整理のcronと次回発火時刻、登録済みスケジュールジョブの定義と次回発火時刻                                                                                                                                                           |
+| `workspace`     | ワークスペースのあるファイルシステムの全容量と空き容量、ゴミ箱の日付フォルダごとの削除日と中身（直下の名前）                                                                                                                                                       |
+| `homeAssistant` | HAの接続を設定していなければ `null`。設定していれば、WebSocketの接続状態（接続中・接続済み・再接続待ち）とその開始時刻、再接続の予定時刻、直近のエラー、`home-assistant.toml` の状態（なし・有効・不正）と内容または検証エラー、状態変化で起動した回数と最後の時刻 |
+| `activity`      | 直近の出来事（info以上のログ）最大500件。`LOG_LEVEL` に関係なく本文（payload）を含み、詳細と本文はそれぞれ4000文字で切り詰める                                                                                                                                     |
 
 ハートビートの次回発火時刻は、実行中（完了後に次の間隔を抽選する前）は持たない。
+
+## 22. Home Assistant 連携
+
+環境変数 `HOME_ASSISTANT_URL` と `HOME_ASSISTANT_TOKEN`（§14.2）を両方指定すると、Home Assistant（以下HA）の状態の取得と操作、状態変化をきっかけにした実行が有効になる。片方だけの指定は起動を中止する。どちらも指定しなければ、この節の22.1〜22.3は無効となる。Assistの会話エージェント（22.4）はHAへの接続を使わないため、指定の有無にかかわらず受け付ける。
+
+HAのトークンを持つユーザーの権限で、すべてのドメイン・サービス・エンティティを操作できる。呼べるサービスや対象の制限、実行前の確認は設けない（§3）。トークンは `DISCORD_BOT_TOKEN` と違い、シェルツールとcheckの子プロセスにも渡す。
+
+### 22.1 ツール
+
+会話・イベント実行・作業エージェントのすべてに渡す。HAへのリクエストはREST API（`/api/...`）に `Authorization: Bearer <トークン>` を付けて送り、15秒でタイムアウトする。HAが2xx以外を返した場合と、タイムアウト・接続の失敗は、HAの応答本文（あれば）を含めたツールの失敗とする。
+
+| ツール             | 入力                                                                                            | 結果                                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `ha_list_entities` | `{ domain?, area?, name?, entity_ids?: string[], max?: 1以上の整数 }`                           | `{ entities: [{ entity_id, state, friendly_name, area?, device? }], total, truncated }`                                |
+| `ha_get_state`     | `{ entity_id }`                                                                                 | HAの状態オブジェクト（`entity_id`、`state`、`attributes`、`last_changed`、`last_updated`）。存在しなければツールの失敗 |
+| `ha_list_services` | `{ domain? }`                                                                                   | `[{ domain, services: { <サービス名>: { description?, fields: { <フィールド名>: 説明 } } } }]`                         |
+| `ha_call_service`  | `{ domain, service, entity_id?: string \| string[], data?: object, return_response?: boolean }` | `{ changed_states: [{ entity_id, state }], service_response? }`                                                        |
+
+- `domain` と `service` は `^[a-z0-9_]+$`、`entity_id` は `^[a-z0-9_]+\.[a-z0-9_]+$` に合わなければ検証エラーとする。
+- `ha_list_entities` は `entity_ids`（指定時は他の条件より優先）、`domain`（完全一致）、`area`、`name`（`entity_id` か `friendly_name` に大文字小文字を区別せず含む）の順に絞り込み、`max`（省略時200）件までを返す。`total` は絞り込み後の件数、`truncated` は `max` で切ったかどうか。各要素は属性を含めない。
+- `area` を指定した場合だけ、WebSocket API（22.2）でエリア・デバイス・エンティティの登録情報を取得し、エンティティのエリア（エンティティ自身のエリア、なければデバイスのエリア）の名前かIDが一致するものを残す。このとき各要素に `area` と `device`（デバイス名）を付ける。登録情報は5分間キャッシュし、WebSocketが接続していなければツールの失敗とする。
+- `ha_call_service` は `data` に `entity_id` を加えた本文を `POST /api/services/<domain>/<service>` に送る。`return_response` が真ならクエリ `?return_response` を付け、HAが返す `service_response` を結果に含める。
+
+### 22.2 WebSocket接続
+
+起動時に `HOME_ASSISTANT_URL` から導いた `ws(s)://.../api/websocket` へ接続し、`auth_required` に対してトークンで認証してから、`state_changed` イベントを購読する。
+
+- 30秒ごとに `ping` を送り、10秒以内に `pong` がなければ切断して再接続する。
+- 切断・認証の失敗・接続の失敗では、5秒・10秒・30秒・60秒（以後60秒）待って再接続する。認証が成功したら待ち時間を最初に戻す。切断中に起きた状態変化は補完しない。
+- 接続・切断・認証の失敗はログ（`home_assistant.ws.*`）に記録し、状態をダッシュボード（§21）に示す。
+
+### 22.3 状態変化をきっかけにした実行
+
+ワークスペースの `home-assistant.toml` に、どのエンティティの状態変化でルナを起動するかを書く。エージェントが自分で編集する。ファイルがなければ何も起動しない。
+
+```toml
+watch = ["binary_sensor.front_door", "climate.*"]
+ignore = ["sensor.*_battery"]
+cooldown_seconds = 30   # 省略時30
+```
+
+- `watch` と `ignore` は `entity_id` のパターンの配列（省略時は空）。`*` は任意の文字列（`.` を含む）に一致し、それ以外の文字は完全一致とする。`cooldown_seconds` は0以上の数。
+- 状態変化を受けるたびにファイルの更新時刻を確かめ、変わっていれば読み直す（再起動は不要）。不正なファイルはその更新時刻につき1回だけエラーログ `home_assistant.watch_config_invalid` を記録し、何も起動しないものとして扱う。
+- 次をすべて満たす状態変化を起動の対象とする: 変化前と変化後の状態がどちらもある、`state` の値が変わった（属性だけの変化は対象外）、`watch` のいずれかに一致し `ignore` のどれにも一致しない、同じエンティティの前回の起動から `cooldown_seconds` 以上経った。前回の起動時刻はメモリ上に持ち、再起動で消える。
+- 対象の状態変化は `home_assistant.state_changed.v1` イベント（`source: "home_assistant"`、`subject` はエンティティID、`occurredAt` は変化後の `last_changed`、`data` は `{ entity_id, friendly_name, old_state, new_state, unit, device_class }`。値がない項目は `null`）として、キー `home_assistant:state_changes` の会話セッションへ渡す。入力の種類は `home_assistant_state`（§5.5）。集約・steer・アイドル終了・セッション記憶保存はDiscordの会話と同じとし、初回履歴は空とする。
+
+### 22.4 Assistの会話エージェント
+
+HAのカスタム統合 [ha-luna](https://github.com/shun-shobon/ha-luna) を入れると、HAのAssist（音声・テキスト）で会話エージェントとしてLunaを選べる。統合はHTTP API（§18と同じサーバー）の `POST /home-assistant/conversation` を呼ぶ。HAとLunaが別のホストにある場合は `LUNA_HTTP_HOST=0.0.0.0` が必要で、認証は行わない（§3）。
+
+```ts
+type AssistRequest = {
+	text: string; // 1文字以上
+	language: string;
+	conversation_id: string; // 1〜128文字
+	device_id: string | null;
+	satellite_id: string | null;
+	device_name: string | null;
+	area_name: string | null;
+	user_name: string | null;
+};
+type AssistResponse = { speech: string | null; continue_conversation: boolean };
+```
+
+- 受け付けた発話は `home_assistant.assist.requested.v1` イベント（`source: "home_assistant"`、`id` はリクエストID、`data` はリクエスト本文）として会話セッションへ渡す。入力の種類は `assist_request`。
+- 会話セッションは `device_id` があれば端末ごと（キー `home_assistant:assist:device:<device_id>`）、なければHAの会話IDごと（キー `home_assistant:assist:conversation:<conversation_id>`）とする。集約の待機（`debounce_ms`）は行わず、受け付けたらすぐに実行する。それ以外（steer・アイドル終了・セッション記憶保存）はDiscordの会話と同じとし、初回履歴は空とする。
+- エージェントは `assist_respond`（入力 `{ request_id: string, speech: string(1〜2000文字), continue_conversation?: boolean }`、省略時 `false`）で読み上げる文を返す。呼ばれた時点でHTTPの応答を返し、実行は続く。同じリクエストIDへの2回目以降、応答待ちでないリクエストIDへの呼び出しはツールの失敗とする。`assist_respond` は会話とイベント実行に渡す。
+- `assist_respond` がないまま実行が正常に終わったら `200 {"speech":null,"continue_conversation":false}`、実行が失敗したら `500 {"error":"execution_failed"}` を返す。
+- JSON形式が不正またはスキーマに合わない入力は `400 {"error":"invalid_request"}`、JSON以外のContent-Typeは `415`、受付停止中は `503 {"error":"unavailable"}` を返す。シャットダウン時に応答待ちのリクエストには `500 {"error":"execution_failed"}` を返す。

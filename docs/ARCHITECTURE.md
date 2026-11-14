@@ -19,6 +19,7 @@ Discord Gateway ─► discord ─► conversation ─────────�
 ローカルHTTP ────► http ─────► conversation ──────────┤
                            └──► event executor ───────┼─► AgentRuntimePort ─► pi Agent ─► ChatGPT（openai-codex）
 automation sources ──────────► event executor ────────┤        │ セッションごとのツール
+Home Assistant ──► home-assistant ─► conversation ──────┤        │
 task service（作業エージェント）──────────────────────┘         ▼
       ▲  task_create / task_message / task_cancel          tool（Discord・タスク・HTTP応答・待機）
       └──────────────────────────────────────────────────── と汎用ツール（シェル・ファイル・Web・画像）
@@ -26,7 +27,7 @@ task service（作業エージェント）────────────�
 ブラウザ ─► dashboard ─► 各モジュールの snapshot / 直近ログ（読み取りのみ）
 
 Lunaプロセス内: 上記各モジュール、observability、runtime
-外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド
+外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Home Assistant（REST・WebSocket）
 ```
 
 - **エージェントの実行**: Lunaのプロセス内で、セッションごとに pi の `Agent` を1つ持つ。認証とモデルのカタログを持つ pi-ai の `Models` は全セッションで共有する。子プロセスやRPCは使わない。
@@ -52,6 +53,7 @@ src/
 │   ├── automation/      # ハートビート, スケジュール, 日次整理, 記録の掃除
 │   ├── task/            # バックグラウンドタスク, 作業エージェントの実行, 依頼元への通知
 │   ├── intent/          # 話題をきっかけにする予定の照合と発火の記録
+│   ├── home-assistant/  # HAのツール, WebSocket購読, 状態変化の起動, Assistの会話エージェント
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
 │   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
@@ -63,21 +65,22 @@ src/
 
 ## 4. モジュールの責務 (Capability Ownership)
 
-| モジュール      | 主な責務・所有する概念                                                            | 公開インターフェース（ポート）                                                              | 主なアダプター                                            |
-| --------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `discord`       | メッセージ正規化、スコープ判定、Discordツール、タイピング管理                     | イベント変換、ツールプロバイダ、Discord API呼び出し、Gateway購読                            | discord.js Gateway/REST                                   |
-| `conversation`  | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定                    | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`                        | Discordコントローラー、履歴取得                           |
-| `agent`         | エージェントのセッション、再試行、圧縮、記録、汎用ツール、認証と使用枠            | `open`（セッションの `run`・`steer`・`abort`・`setModel`・`close`）、`listModels`、`status` | pi-agent-core、pi-ai、pi-coding-agent、ファイル           |
-| `event`         | 共通イベント（`LunaEvent`）と入力メッセージへの変換、ワンショット実行             | `execute`                                                                                   | なし（EventExecutorがセッションを開いて実行する）         |
-| `http`          | HTTPイベントの検証、受付、完了待ち応答                                            | `submit`、`stopIntake`、`drain`                                                             | Hono、`http_respond` ツール                               |
-| `tool`          | ツールの定義、実行元（`ToolOrigin`）、ツール集合、待機                            | `defineTool`、`createToolSet`（`bind`・`release`）、`OpenAgentSession`                      | 待機ツール                                                |
-| `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定、記録の掃除       | `startAutomation`、`stopIntake`、`drain`                                                    | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
-| `task`          | タスク状態、作業エージェントの実行枠と実行の続け方、公開範囲、通知                | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`          | JSONファイルストア、`task_*` ツール                       |
-| `intent`        | 話題をきっかけにする予定の照合、発火回数とcooldown                                | `match`                                                                                     | `intents.toml`、状態のJSONファイル                        |
-| `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録 | 初期化、プロンプト読み込み、スケジュール読み書き                                            | ファイルシステム、`smol-toml`、Zod                        |
-| `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                                            | `snapshot`                                                                                  | Hono（`/`、`/api/snapshot`）                              |
-| `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ    |
-| `runtime`       | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                          | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）               | シグナルハンドラー                                        |
+| モジュール       | 主な責務・所有する概念                                                            | 公開インターフェース（ポート）                                                                                 | 主なアダプター                                                                |
+| ---------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `discord`        | メッセージ正規化、スコープ判定、Discordツール、タイピング管理                     | イベント変換、ツールプロバイダ、Discord API呼び出し、Gateway購読                                               | discord.js Gateway/REST                                                       |
+| `conversation`   | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定                    | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`                                           | Discordコントローラー、履歴取得                                               |
+| `agent`          | エージェントのセッション、再試行、圧縮、記録、汎用ツール、認証と使用枠            | `open`（セッションの `run`・`steer`・`abort`・`setModel`・`close`）、`listModels`、`status`                    | pi-agent-core、pi-ai、pi-coding-agent、ファイル                               |
+| `event`          | 共通イベント（`LunaEvent`）と入力メッセージへの変換、ワンショット実行             | `execute`                                                                                                      | なし（EventExecutorがセッションを開いて実行する）                             |
+| `http`           | HTTPイベントの検証、受付、完了待ち応答                                            | `submit`、`stopIntake`、`drain`                                                                                | Hono、`http_respond` ツール                                                   |
+| `tool`           | ツールの定義、実行元（`ToolOrigin`）、ツール集合、待機                            | `defineTool`、`createToolSet`（`bind`・`release`）、`OpenAgentSession`                                         | 待機ツール                                                                    |
+| `automation`     | ハートビート、スケジュール、日次整理のイベント発火、checkの判定、記録の掃除       | `startAutomation`、`stopIntake`、`drain`                                                                       | タイマー、cronスケジューラ、ファイル監視、check子プロセス                     |
+| `task`           | タスク状態、作業エージェントの実行枠と実行の続け方、公開範囲、通知                | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`                             | JSONファイルストア、`task_*` ツール                                           |
+| `intent`         | 話題をきっかけにする予定の照合、発火回数とcooldown                                | `match`                                                                                                        | `intents.toml`、状態のJSONファイル                                            |
+| `home-assistant` | HAのツール、WebSocketの接続、状態変化の絞り込みとcooldown、Assistの発話と応答待ち | ツールプロバイダ、`StateChangeWatcher`（`start`・`stop`・`status`）、`AssistService`（`submit`・`stopIntake`） | fetch（REST）、Node.js標準の `WebSocket`、`home-assistant.toml`、Honoのルート |
+| `workspace`      | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録 | 初期化、プロンプト読み込み、スケジュール読み書き                                                               | ファイルシステム、`smol-toml`、Zod                                            |
+| `dashboard`      | 各モジュールの状態の集約、閲覧用ページ                                            | `snapshot`                                                                                                     | Hono（`/`、`/api/snapshot`）                                                  |
+| `observability`  | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                                   | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ                        |
+| `runtime`        | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                          | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）                                  | シグナルハンドラー                                                            |
 
 ## 5. 依存関係の方向
 
@@ -89,12 +92,13 @@ src/
 ```text
 discord      ──► event / tool
 http         ──► conversation / event / tool
+home-assistant ──► conversation（型のみ） / event（型のみ） / tool
 conversation ──► event / tool / agent（型のみ）
 automation   ──► event / workspace
 event        ──► tool / agent（型のみ）
 task         ──► tool / event（型のみ） / agent（型のみ）
 tool         ──► agent（型のみ）
-dashboard    ──► agent / automation / conversation / event / task / observability（型のみ）
+dashboard    ──► agent / automation / conversation / event / task / home-assistant / observability（型のみ）
 all          ──► observability
 runtime      ──► 全モジュール (composition root)
 ```
@@ -220,7 +224,24 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - `ConversationCoordinator` は実行に渡す入力を組み立てる時と steer する時に、`ConversationIntentPort.match(events)` の結果を該当メッセージの後に加える。
 - `IntentMatcher`（application）はイベントから人のDiscordメッセージだけを取り出し、`findFiringIntents`（domain）で期限・発火回数・cooldown・キーワードを判定する。`IntentFileStore`（adapter）は `intents.toml` を毎回読み、発火の状態を `LUNA_HOME/state/intents-state.json` に書く。予定の読み込みに失敗した時はログに残して発火させず、会話は止めない。
 
-## 9.1 Discord アダプター
+## 9.1 Home Assistant（home-assistant モジュール）
+
+```text
+HA REST ◄── HomeAssistantRestClient ◄── ha_* ツール
+HA WebSocket ◄─► HomeAssistantConnection ──state_changed──► StateChangeWatcher ──accept──► ConversationCoordinator
+                     ▲ 登録情報（area 指定時）               │ home-assistant.toml（更新時刻で読み直し）
+                     └──── ha_list_entities                  ▼ cooldown（メモリ）
+ha-luna ──POST /home-assistant/conversation──► AssistService ──accept──► ConversationCoordinator（集約なし）
+        ◄──────────── speech ──────────────── AssistResponseRegistry ◄── assist_respond ツール
+```
+
+- `HomeAssistantConnection` は1本のWebSocketで認証・購読・ping・再接続を担い、`id` で応答を対応づける要求（登録情報の取得）も同じ接続で送る。再接続は待ち時間の表に従って自分でタイマーを仕掛け、`stop` で止める。接続状態はダッシュボード用に保持する。
+- `StateChangeWatcher`（application）は受けた状態変化を `findStateChangeTrigger`（domain）で判定し、`ConversationCoordinator.accept` で `home_assistant:state_changes` の会話へ渡す。`home-assistant.toml` の読み込みは `WatchConfigPort` 越しで、アダプターは更新時刻が変わった時だけ読み直す。毎回のファイル読みを避けるのは、`state_changed` がセンサーの数だけ頻繁に届くため。
+- Assistの会話は集約の待機をしない。`ConversationCoordinator` の `debounceMs` をセッションの関数とし、コンポジションルートがAssistのセッションに0を返す。
+- `AssistResponseRegistry` は `assist_respond` の時点で応答待ちのPromiseを解決する。`http_respond` と違い実行の完了を待たないのは、音声の応答待ちを縮め、返答の後も実行を続けられるようにするため。実行の完了は `onBatchSettled` で受け、未応答なら `speech: null` または失敗で解決する。
+- ルートはHTTPイベントAPIと同じHonoアプリに `registerAssistRoute` で加える。JSONの読み取りとContent-Typeの判定は `shared/hono-server` の共通関数を使う。
+
+## 9.2 Discord アダプター
 
 - **Gateway**: `messageCreate` やタイピングイベントを購読し、正規化されたドメインイベントへ変換する。
 - **スラッシュコマンド**: `/luna` コマンドを受け付け、セッション設定やチャンネルの許可リスト更新を処理する。
@@ -271,6 +292,7 @@ EventExecutor.snapshot ───────────┤
 TaskService.snapshot ─────────────┤
 AutomationService.snapshot ───────┼─► DashboardService.snapshot ─► GET /api/snapshot ─► ページ（3秒ごとに取得）
 AgentRuntimePort.status ──────────┤
+StateChangeWatcher.status ────────┤
 RecentLogBuffer.list ─────────────┘
 ```
 
@@ -292,16 +314,16 @@ RecentLogBuffer.list ─────────────┘
 6. Discordへの接続ログイン
 7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
 8. 期限切れの記録の削除をバックグラウンドで開始
-9. Gateway受信、HTTP API、ダッシュボード、ハートビート、日次整理、cron監視の開始
+9. Gateway受信、HTTP API（Assistのルートを含む）、ダッシュボード、ハートビート、日次整理、cron監視、HAのWebSocket接続の開始
 
 ### 終了 (Shutdown)
 
 1. SIGINT / SIGTERM を受信
-2. Gatewayからの新規メッセージ、HTTPイベントの受付および新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す
+2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中の処理がすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したセッションを閉じる（記録を確定し、汎用ツールのプロセスを終わらせる）
-6. 待機中HTTPリクエストの完了を確認し、HTTPサーバー、ダッシュボード、タイピングリース、ファイル監視、使用枠の取得、Discord接続を停止
+6. 待機中のHTTPリクエストとAssistのリクエストの完了を確認し、HTTPサーバー、ダッシュボード、タイピングリース、ファイル監視、使用枠の取得、HAのWebSocket接続、Discord接続を停止
 7. ログをフラッシュして終了
 
 ## 13. テスト方針

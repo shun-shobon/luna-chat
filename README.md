@@ -11,6 +11,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - 実行ユーザーがアクセス可能なすべてのファイルシステムの読み書き
 - 任意のシェルコマンドの実行、ネットワーク通信、パスワードなしsudo
 - Botがアクセス可能なすべてのチャンネル・スレッド・DMへの操作
+- Home Assistantを接続した場合、そのトークンのユーザーが行えるすべての操作（鍵やアラームを含む）
 - ローカルファイルのDiscordへの添付送信
 - `@everyone` を含むDiscordの各種メンション通知
 
@@ -26,6 +27,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - **話題をきっかけにする予定**：「旅行の話が出たら感想を聞く」のように、キーワードが会話に出た時に動く予定を、Luna自身が `intents.toml` に書いて管理します。
 - **バックグラウンドタスク**：長い調査や制作を作業エージェントへ任せ、会話を止めずに進捗と結果を受け取ります。
 - **HTTP API**：ローカルのHTTPでイベントを受け、単発の実行や会話として処理します。
+- **Home Assistant**：家の機器の状態を読み、操作します。見ておきたい機器の変化（玄関が開いた、洗濯機が終わったなど）をLuna自身が `home-assistant.toml` に書き、変化があると起きて動きます。HAのAssistの会話エージェントとしても選べ、音声で話しかけられます。
 - **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
 
 ## 動作要件
@@ -74,16 +76,18 @@ DISCORD_BOT_TOKEN=... pnpm start
 
 ### 環境変数
 
-| 変数名                | 必須   | デフォルト値 | 説明                                                                        |
-| --------------------- | ------ | ------------ | --------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`   | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。          |
-| `LUNA_HOME`           | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                    |
-| `LOG_LEVEL`           | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。               |
-| `LUNA_HTTP_HOST`      | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。 |
-| `LUNA_HTTP_PORT`      | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。            |
-| `LUNA_DASHBOARD_HOST` | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。            |
-| `LUNA_DASHBOARD_PORT` | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。      |
-| `TZ`                  | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。    |
+| 変数名                 | 必須   | デフォルト値 | 説明                                                                          |
+| ---------------------- | ------ | ------------ | ----------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。            |
+| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                      |
+| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                 |
+| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。   |
+| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。              |
+| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。              |
+| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。        |
+| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。      |
+| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://192.168.0.104:8123`）。トークンと組で指定。   |
+| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。シェルやcheckの子プロセスにも渡ります。 |
 
 `LOG_LEVEL` を `debug` または `trace` にすると、メッセージ本文やプロンプト、ツール引数などが標準出力に出ます。既知のトークン等はマスクしますが、平文に含まれる機密情報を完全に取り除けるとは限りません。
 
@@ -111,7 +115,8 @@ DISCORD_BOT_TOKEN=... pnpm start
     │   ├── self-review/   # * 週次の見直し（会話を振り返ってLUNA.md・MEMORY.mdを直す）
     │   └── x-status-fetch/  # * Xの投稿の取得
     ├── cron.toml          # 定期実行タスクの設定（週次の見直しを含む）
-    └── intents.toml       # 話題をきっかけにする予定（任意。初回には生成しない）
+    ├── intents.toml       # 話題をきっかけにする予定（任意。初回には生成しない）
+    └── home-assistant.toml  # 状態変化で起動するHome Assistantのエンティティ（任意。初回には生成しない）
 ```
 
 週次の見直しは、毎週日曜15:00に直近7日の会話から人の反応を拾い、`LUNA.md`・`MEMORY.md` の変更案を `luna-chat replay` で現行と比べ、よくなった時だけルナ自身が反映します。変更前のファイルと比較の結果は `workspace/output/self-review/<日付>/` に残ります。止めたい時は `cron.toml` の `self-review-weekly` を `enabled = false` にしてください。
@@ -194,6 +199,20 @@ curl -i http://127.0.0.1:3000/events \
   -d '{"execution":"conversation","response_mode":"async","session_id":"home-automation","event":{"type":"sensor.changed.v1","data":{"value":25}}}'
 ```
 
+### Home Assistant
+
+`HOME_ASSISTANT_URL` と `HOME_ASSISTANT_TOKEN` を設定すると、LunaがHome Assistantのエンティティを調べて操作できるようになります。トークンはHAのプロフィール画面の「長期アクセストークン」で作ります。呼べるサービスや対象は制限しないので、操作させたくない機器がある場合は、権限を絞ったHAのユーザーでトークンを作ってください。
+
+状態変化で起動する対象は、ワークスペースの `home-assistant.toml` にLuna自身が書きます。手で書いても構いません。
+
+```toml
+watch = ["binary_sensor.front_door", "climate.*"]   # * は任意の文字列
+ignore = ["sensor.*_battery"]
+cooldown_seconds = 30   # 同じエンティティで起動する最短の間隔（省略時30）
+```
+
+Assistの会話エージェントとして使うには、HAにカスタム統合 [ha-luna](https://github.com/shun-shobon/ha-luna) を入れ、Luna の HTTP API のURL（例 `http://192.168.0.103:3000`）を設定します。HAが別のホストにある場合は `LUNA_HTTP_HOST=0.0.0.0` が必要です。HTTP APIには認証がないため、そのネットワーク内の全員がLunaを動かせます。HA側の設定方法はha-lunaのREADMEを参照してください。
+
 ### ダッシュボード
 
 `http://127.0.0.1:3001/` を開くと、Lunaのいまの状態を確認できます（3秒ごとに自動更新、閲覧のみ）。
@@ -203,6 +222,7 @@ curl -i http://127.0.0.1:3000/events \
 - 実行中のハートビート・スケジュール・日次整理などのイベント実行
 - タスクボード（実行枠、各タスクの指示・報告・追加指示）
 - 次のハートビート・日次整理・スケジュールの発火予定
+- Home Assistantとの接続状態と、状態変化の監視の設定
 - 最近の出来事（受信メッセージやツールの入力・結果を含むログ）
 
 認証はありません。会話本文やタスクの内容が表示されるため、`LUNA_DASHBOARD_HOST=0.0.0.0` でLANへ公開する場合は、そのネットワーク内の全員が閲覧できます。Docker Composeではホストのループバックにのみ公開します。
