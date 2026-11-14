@@ -206,6 +206,17 @@ def resolve(index):
     return node, record
 
 
+def focused_text_node(app):
+    stack, seen = [app], 0
+    while stack and seen < MAX_NODES:
+        node = stack.pop()
+        seen += 1
+        if has_state(node, Atspi.StateType.FOCUSED) and attempt(node.get_text_iface):
+            return node
+        stack.extend(reversed(children(node)))
+    return None
+
+
 def center(record):
     x, y, w, h = record["box"]
     return x + w // 2, y + h // 2
@@ -281,9 +292,18 @@ def cmd_set_value(args):
             xdotool("click", 1)
         xdotool("key", "ctrl+a")
         enter_text(text)
+    app = find_app(json.load(open(ELEMENTS_FILE, encoding="utf-8"))["app"])
+
+    def current_value():
+        # Why the focused node: web inputs such as search boxes turn into a new combo box node once text is typed.
+        value = value_of(node, record["role"])
+        if value is None and (focused := focused_text_node(app)) is not None:
+            value = value_of(focused, attempt(focused.get_role_name, ""))
+        return value
+
     # Why poll: Chrome updates its accessibility tree asynchronously, so an immediate read returns the old value.
     deadline = time.monotonic() + 2
-    while (current := value_of(node, record["role"])) != text and time.monotonic() < deadline:
+    while (current := current_value()) != text and time.monotonic() < deadline:
         time.sleep(0.2)
     after_action({"ok": True, "via": via, "index": args.index, "verified": current == text, "value": current}, args.settle)
 
