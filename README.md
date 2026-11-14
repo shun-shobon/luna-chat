@@ -34,7 +34,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - Discord Bot Token（Message Content、Guild/DM Messages、Typing などのIntentが必要）
 - ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
 - Docker で動かす場合：Docker Engine と Docker Compose
-- native で動かす場合：[mise](https://mise.jdx.dev/)（Node.js と pnpm を導入します）、ripgrep（エージェントが記憶やワークスペースの検索に使います）
+- native で動かす場合：[mise](https://mise.jdx.dev/)（Node.js と pnpm を導入します）、ripgrep（エージェントが記憶やワークスペースの検索に使います）、Python 3（同梱のskillのスクリプトに使います）
 - Git（任意。日次整理のたびにワークスペースのコミットを残します）
 
 Windows、ダッシュボード以外のWeb UI、HTTPヘルスチェックエンドポイントは提供していません。
@@ -89,7 +89,7 @@ DISCORD_BOT_TOKEN=... pnpm start
 
 ### `LUNA_HOME` の中身
 
-初回起動時、足りないディレクトリやファイルを生成します（既存のファイルは上書きしません）。
+起動時、足りないディレクトリやファイルを生成します（既存のファイルは上書きしません）。`*` を付けたものは、ワークスペースを新しく作る初回だけ生成します。
 
 ```text
 ~/.luna/
@@ -100,15 +100,21 @@ DISCORD_BOT_TOKEN=... pnpm start
 └── workspace/
     ├── LUNA.md            # エージェントの人格や会話方針
     ├── MEMORY.md          # 長期記憶
-    ├── memory/            # 日次記憶とトピック記憶（初回の記憶保存時に生成）
+    ├── memory/            # 日次記憶とトピック記憶
+    │   └── topics/know-how.md  # * 調べ方・作業のコツ
+    ├── users/README.md    # * 利用者ごとのメモの書き方
     ├── HEARTBEAT.md       # ハートビートで確認するチェックリスト
     ├── AGENDA.md          # 続けたいこと・約束・関心の一覧
-    ├── .agents/skills/    # cronやheartbeatの運用手順
-    │   ├── cron/SKILL.md
-    │   └── heartbeat/SKILL.md
-    ├── cron.toml          # 定期実行タスクの設定
+    ├── .agents/skills/    # エージェントが必要な時に読む手順
+    │   ├── cron/          # cron.tomlの編集
+    │   ├── heartbeat/     # HEARTBEAT.mdの運用
+    │   ├── self-review/   # * 週次の見直し（会話を振り返ってLUNA.md・MEMORY.mdを直す）
+    │   └── x-status-fetch/  # * Xの投稿の取得
+    ├── cron.toml          # 定期実行タスクの設定（週次の見直しを含む）
     └── intents.toml       # 話題をきっかけにする予定（任意。初回には生成しない）
 ```
+
+週次の見直しは、毎週日曜15:00に直近7日の会話から人の反応を拾い、`LUNA.md`・`MEMORY.md` の変更案を `luna-chat replay` で現行と比べ、よくなった時だけルナ自身が反映します。変更前のファイルと比較の結果は `workspace/output/self-review/<日付>/` に残ります。止めたい時は `cron.toml` の `self-review-weekly` を `enabled = false` にしてください。
 
 ### `config.toml`
 
