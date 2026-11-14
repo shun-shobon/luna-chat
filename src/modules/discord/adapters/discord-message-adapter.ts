@@ -1,4 +1,4 @@
-import { ChannelType } from "discord.js";
+import { ChannelType, Constants } from "discord.js";
 import { z } from "zod";
 
 import { conversationScopeSchema } from "../domain/conversation-scope";
@@ -8,14 +8,8 @@ import { discordMessageSchema } from "../domain/discord-message";
 import type { DiscordMessage } from "../domain/discord-message";
 import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
 
-type CollectionLike = Readonly<{ values: () => unknown }>;
-
-const collectionSchema = z.custom<CollectionLike>(
-	(value) =>
-		typeof value === "object" &&
-		value != null &&
-		typeof Reflect.get(value, "values") === "function",
-);
+// discord.js の Collection は Map を継承している。
+const collectionSchema = z.custom<ReadonlyMap<unknown, unknown>>((value) => value instanceof Map);
 const userSchema = z.object({
 	id: z.string(),
 	username: z.string(),
@@ -258,26 +252,12 @@ function toReaction(value: unknown): DiscordMessage["reactions"][number] {
 	};
 }
 
-function collectionValues(collection: CollectionLike): unknown[] {
-	const result = Reflect.apply(collection.values, collection, []);
-	if (!isIterable(result)) throw new Error("Discord SDK collection is not iterable");
-	return Array.from(result);
-}
-
-function isIterable(value: unknown): value is Iterable<unknown> {
-	return (
-		typeof value === "object" &&
-		value != null &&
-		typeof Reflect.get(value, Symbol.iterator) === "function"
-	);
+function collectionValues(collection: ReadonlyMap<unknown, unknown>): unknown[] {
+	return Array.from(collection.values());
 }
 
 export function isThreadChannel(type: ChannelType): boolean {
-	return (
-		type === ChannelType.AnnouncementThread ||
-		type === ChannelType.PublicThread ||
-		type === ChannelType.PrivateThread
-	);
+	return Constants.ThreadChannelTypes.some((threadType) => threadType === type);
 }
 
 function isDmChannel(type: ChannelType): boolean {
