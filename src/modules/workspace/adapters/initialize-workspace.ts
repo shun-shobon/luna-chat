@@ -7,15 +7,28 @@ import { hasErrorCode } from "../../../shared/error-code";
 import type { WorkspaceConfig } from "../domain/workspace-config";
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 import { createWorkspaceConfigFile, readWorkspaceConfig } from "./config-toml";
-import { createWorkspaceScheduleFile, readWorkspaceSchedule } from "./schedule-toml";
+import { readWorkspaceSchedule } from "./schedule-toml";
 
-const INITIAL_WORKSPACE_FILES = [
+const REQUIRED_WORKSPACE_FILES = [
 	"LUNA.md",
 	"MEMORY.md",
 	"HEARTBEAT.md",
 	"AGENDA.md",
+	"cron.toml",
 	".agents/skills/cron/SKILL.md",
 	".agents/skills/heartbeat/SKILL.md",
+] as const;
+
+// ルナが整理で移動・改名・アーカイブし得るため、作り直すのは新しいワークスペースの時だけにする。
+const STARTER_WORKSPACE_FILES = [
+	"memory/topics/know-how.md",
+	"users/README.md",
+	".agents/skills/self-review/SKILL.md",
+	".agents/skills/self-review/scripts/negatives.py",
+	".agents/skills/self-review/scripts/runs.py",
+	".agents/skills/self-review/scripts/scene.py",
+	".agents/skills/x-status-fetch/SKILL.md",
+	".agents/skills/x-status-fetch/scripts/fetch_x_status.py",
 ] as const;
 
 type InitializedWorkspace = {
@@ -47,6 +60,7 @@ export async function initializeWorkspace(input: {
 	const cronPath = resolve(workspaceDir, "cron.toml");
 
 	try {
+		const isNewWorkspace = !(await exists(workspaceDir));
 		await Promise.all([
 			mkdir(workspaceDir, { recursive: true }),
 			mkdir(tasksDir, { recursive: true }),
@@ -54,14 +68,14 @@ export async function initializeWorkspace(input: {
 		await createIfMissing(async () => {
 			await createWorkspaceConfigFile(configPath);
 		});
+		const templateFiles: readonly string[] = isNewWorkspace
+			? [...REQUIRED_WORKSPACE_FILES, ...STARTER_WORKSPACE_FILES]
+			: REQUIRED_WORKSPACE_FILES;
 		await Promise.all(
-			INITIAL_WORKSPACE_FILES.map(async (fileName) => {
+			templateFiles.map(async (fileName) => {
 				await copyTemplateIfMissing(templatesDir, workspaceDir, fileName);
 			}),
 		);
-		await createIfMissing(async () => {
-			await createWorkspaceScheduleFile(cronPath);
-		});
 
 		const [config, schedule] = await Promise.all([
 			readWorkspaceConfig(configPath),
@@ -97,18 +111,24 @@ export function resolveLunaHome(rawLunaHome: string | undefined): string {
 	return resolve(rawLunaHome);
 }
 
+async function exists(path: string): Promise<boolean> {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 async function copyTemplateIfMissing(
 	templatesDir: string,
 	workspaceDir: string,
-	fileName: (typeof INITIAL_WORKSPACE_FILES)[number],
+	fileName: string,
 ): Promise<void> {
 	const destinationPath = resolve(workspaceDir, fileName);
 	await mkdir(dirname(destinationPath), { recursive: true });
-	try {
-		await access(destinationPath);
+	if (await exists(destinationPath)) {
 		return;
-	} catch {
-		// The destination is missing or inaccessible; copyFile below reports the actionable cause.
 	}
 	try {
 		await copyFile(resolve(templatesDir, fileName), destinationPath, constants.COPYFILE_EXCL);

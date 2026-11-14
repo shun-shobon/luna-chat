@@ -20,7 +20,3 @@ export type WorkspaceScheduleJob = RecurringScheduleJob | OneShotScheduleJob;
 export type WorkspaceSchedule = {
 	jobs: WorkspaceScheduleJob[];
 };
-
-export const EMPTY_WORKSPACE_SCHEDULE: WorkspaceSchedule = {
-	jobs: [],
-};

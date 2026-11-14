@@ -1,0 +1,6 @@
+[[jobs]]
+id = "self-review-weekly"
+enabled = true
+kind = "recurring"
+cron = "0 15 * * 0"
+prompt = "self-review skillの「1. 始まった時」に従って、週次の見直しを作業エージェントへ任せてください。"

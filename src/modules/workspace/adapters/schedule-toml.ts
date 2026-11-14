@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
-import { readFile as readFileAsync, writeFile as writeFileAsync } from "node:fs/promises";
+import { readFile as readFileAsync } from "node:fs/promises";
 
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
 import { writeFileAtomicSync } from "../../../shared/atomic-file";
 import { isValidFiveFieldCron } from "../domain/cron-expression";
-import { EMPTY_WORKSPACE_SCHEDULE } from "../domain/workspace-schedule";
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 
 const ScheduleJobBaseSchema = z.strictObject({
@@ -89,12 +88,6 @@ export function parseWorkspaceSchedule(source: string): WorkspaceSchedule {
 
 export function serializeWorkspaceSchedule(schedule: WorkspaceSchedule): string {
 	return stringify({ jobs: schedule.jobs });
-}
-
-export async function createWorkspaceScheduleFile(schedulePath: string): Promise<void> {
-	await writeFileAsync(schedulePath, serializeWorkspaceSchedule(EMPTY_WORKSPACE_SCHEDULE), {
-		flag: "wx",
-	});
 }
 
 function writeWorkspaceSchedule(schedulePath: string, schedule: WorkspaceSchedule): void {
