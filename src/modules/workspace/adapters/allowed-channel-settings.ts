@@ -1,14 +1,14 @@
-import { randomUUID } from "node:crypto";
-import { chmod, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { stat } from "node:fs/promises";
 
+import { writeFileAtomic } from "../../../shared/atomic-file";
+import { SerialQueue } from "../../../shared/serial-queue";
 import { readWorkspaceConfig, serializeWorkspaceConfig } from "./config-toml";
 
 export type AllowedChannelChange = "add" | "remove";
 
 export class AllowedChannelSettings {
 	readonly #ids: Set<string>;
-	#pending: Promise<void> = Promise.resolve();
+	readonly #queue = new SerialQueue();
 
 	constructor(
 		private readonly configPath: string,
@@ -22,7 +22,7 @@ export class AllowedChannelSettings {
 	}
 
 	change(action: AllowedChannelChange, channelId: string): Promise<boolean> {
-		const operation = this.#pending.then(async () => {
+		return this.#queue.run(async () => {
 			const config = await readWorkspaceConfig(this.configPath);
 			const ids = new Set(config.discord.allowedChannelIds);
 			const changed = action === "add" ? !ids.has(channelId) : ids.has(channelId);
@@ -30,28 +30,14 @@ export class AllowedChannelSettings {
 				if (action === "add") ids.add(channelId);
 				else ids.delete(channelId);
 				config.discord.allowedChannelIds = [...ids];
-				await writeConfig(this.configPath, serializeWorkspaceConfig(config));
+				const { mode } = await stat(this.configPath);
+				await writeFileAtomic(this.configPath, serializeWorkspaceConfig(config), {
+					mode: mode & 0o777,
+				});
 			}
 			this.#ids.clear();
 			for (const id of ids) this.#ids.add(id);
 			return changed;
 		});
-		this.#pending = operation.then(
-			() => undefined,
-			() => undefined,
-		);
-		return operation;
-	}
-}
-
-async function writeConfig(path: string, source: string): Promise<void> {
-	const temporaryPath = join(dirname(path), `.config.toml.${randomUUID()}.tmp`);
-	const { mode } = await stat(path);
-	try {
-		await writeFile(temporaryPath, source, { flag: "wx", mode: mode & 0o777 });
-		await chmod(temporaryPath, mode & 0o777);
-		await rename(temporaryPath, path);
-	} finally {
-		await rm(temporaryPath, { force: true });
 	}
 }

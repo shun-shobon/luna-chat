@@ -1,9 +1,10 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { parse } from "smol-toml";
 import { z } from "zod";
 
+import { writeFileAtomicSync } from "../../../shared/atomic-file";
 import type { IntentFireStates, StandingIntent } from "../domain/standing-intent";
 import type { IntentStorePort } from "../ports/intent-store-port";
 
@@ -74,9 +75,7 @@ export class IntentFileStore implements IntentStorePort {
 
 	writeStates(states: IntentFireStates): void {
 		mkdirSync(dirname(this.statePath), { recursive: true });
-		const temporary = join(dirname(this.statePath), `.intents-state.${String(process.pid)}.tmp`);
-		writeFileSync(temporary, `${JSON.stringify(states, null, "\t")}\n`);
-		renameSync(temporary, this.statePath);
+		writeFileAtomicSync(this.statePath, `${JSON.stringify(states, null, "\t")}\n`);
 	}
 }
 

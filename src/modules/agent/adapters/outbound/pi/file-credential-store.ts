@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -9,6 +8,8 @@ import type {
 	CredentialStore,
 } from "@earendil-works/pi-ai";
 import { z } from "zod";
+
+import { writeFileAtomic } from "../../../../../shared/atomic-file";
 
 const credentialSchema = z.discriminatedUnion("type", [
 	z.looseObject({
@@ -146,24 +147,9 @@ export class FileCredentialStore implements CredentialStore {
 		await mkdir(directory, { recursive: true, mode: 0o700 });
 		// mkdir の mode は既存ディレクトリと umask に効かないため、明示的に絞る。
 		await chmod(directory, 0o700);
-		const temporaryPath = path.join(
-			directory,
-			`.${path.basename(this.filePath)}.${randomUUID()}.tmp`,
-		);
-		try {
-			const handle = await open(temporaryPath, "wx", 0o600);
-			try {
-				await handle.chmod(0o600);
-				await handle.writeFile(`${JSON.stringify(credentials, null, "\t")}\n`, "utf8");
-				await handle.sync();
-			} finally {
-				await handle.close();
-			}
-			await rename(temporaryPath, this.filePath);
-		} catch (error) {
-			await rm(temporaryPath, { force: true });
-			throw error;
-		}
+		await writeFileAtomic(this.filePath, `${JSON.stringify(credentials, null, "\t")}\n`, {
+			mode: 0o600,
+		});
 	}
 }
 

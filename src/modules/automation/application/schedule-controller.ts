@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { JsonObject } from "../../../shared/json";
+import { SerialQueue } from "../../../shared/serial-queue";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type {
@@ -45,7 +46,7 @@ export class ScheduleController {
 	readonly #jobs = new Map<string, RegisteredScheduleJob>();
 	readonly #firedOneShots = new Map<string, FiredOneShotState>();
 	#accepting = false;
-	#reloadChain: Promise<void> = Promise.resolve();
+	readonly #reloadQueue = new SerialQueue();
 	#reloadTimer: AutomationTimerHandle | undefined;
 
 	constructor(input: {
@@ -309,12 +310,7 @@ export class ScheduleController {
 	}
 
 	async #enqueueReload(operation: () => Promise<void> | void): Promise<void> {
-		const execution = this.#reloadChain.then(operation, operation);
-		this.#reloadChain = execution.then(
-			() => undefined,
-			() => undefined,
-		);
-		await execution;
+		await this.#reloadQueue.run(operation);
 	}
 }
 
