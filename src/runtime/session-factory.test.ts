@@ -50,7 +50,7 @@ describe("buildSystemPrompt", () => {
 });
 
 describe("createSessionFactory", () => {
-	it.each<[string, ToolOrigin, AgentSessionKind, string]>([
+	it.each<[string, ToolOrigin, AgentSessionKind, string, string]>([
 		[
 			"会話",
 			{
@@ -59,17 +59,25 @@ describe("createSessionFactory", () => {
 			},
 			"conversation",
 			"discord:dm:3:4",
+			"CONVERSATION PROTOCOL\n\nSKILLS\n\n# LUNA.md\n\nI am Luna.\n\n# MEMORY.md\n\nRemember.",
 		],
 		[
 			"イベント",
 			{ kind: "event", eventId: "event-1", eventType: "system.heartbeat.fired.v1" },
 			"event",
 			"system.heartbeat.fired.v1",
+			"EVENT PROTOCOL\n\nSKILLS\n\n# LUNA.md\n\nI am Luna.\n\n# MEMORY.md\n\nRemember.",
 		],
-		["タスク", { kind: "task", taskId: "task-1" }, "worker", "task:task-1"],
+		[
+			"タスク",
+			{ kind: "task", taskId: "task-1" },
+			"worker",
+			"task:task-1",
+			"WORKER PROTOCOL\n\nSKILLS",
+		],
 	])(
 		"%sの実行元を種類ごとのプロファイルでセッションにする",
-		async (_label, origin, kind, label) => {
+		async (_label, origin, kind, label, systemPrompt) => {
 			const workspaceDir = await createWorkspace({
 				"LUNA.md": "I am Luna.",
 				"MEMORY.md": "Remember.",
@@ -83,7 +91,7 @@ describe("createSessionFactory", () => {
 				kind,
 				label,
 				cwd: workspaceDir,
-				systemPrompt: `${kind.toUpperCase()} PROTOCOL\n\nSKILLS\n\n# LUNA.md\n\nI am Luna.\n\n# MEMORY.md\n\nRemember.`,
+				systemPrompt,
 				model: harness.models[kind],
 				tools: [harness.tools[kind]],
 				harnessTools: [
@@ -113,7 +121,7 @@ describe("createSessionFactory", () => {
 	it("開くたびにownerIdを発行し、LUNA.md・MEMORY.md・skillsを読み直す", async () => {
 		const workspaceDir = await createWorkspace({});
 		const harness = createHarness(workspaceDir);
-		const origin: ToolOrigin = { kind: "task", taskId: "task-1" };
+		const origin: ToolOrigin = { kind: "event", eventId: "event-1", eventType: "test.v1" };
 
 		const first = await harness.open(origin);
 		await writeFile(join(workspaceDir, "MEMORY.md"), "New memory.");
@@ -121,8 +129,8 @@ describe("createSessionFactory", () => {
 
 		expect([first.ownerId, second.ownerId]).toEqual(["owner-1", "owner-2"]);
 		expect(harness.agent.open.mock.calls.map(([spec]) => spec.systemPrompt)).toEqual([
-			"WORKER PROTOCOL\n\nSKILLS",
-			"WORKER PROTOCOL\n\nSKILLS\n\n# MEMORY.md\n\nNew memory.",
+			"EVENT PROTOCOL\n\nSKILLS",
+			"EVENT PROTOCOL\n\nSKILLS\n\n# MEMORY.md\n\nNew memory.",
 		]);
 		expect(harness.readSkillsPrompt).toHaveBeenCalledTimes(2);
 	});
@@ -199,6 +207,7 @@ function createHarness(workspaceDir: string) {
 	function profile(kind: AgentSessionKind) {
 		return {
 			developerInstructions: [`${kind.toUpperCase()} PROTOCOL`],
+			includeWorkspaceInstructions: kind !== "worker",
 			model: () => models[kind],
 			tools: toolSets[kind],
 		};
