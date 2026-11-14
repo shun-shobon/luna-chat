@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { HeartbeatStatus } from "../ports/automation-status";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
-import { ActiveExecutionSet } from "./active-execution-set";
 
 export class HeartbeatController {
 	readonly #clock: AutomationClockPort;

@@ -1,7 +1,7 @@
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { AutomationClockPort, AutomationTimerHandle } from "../ports/automation-clock-port";
 import type { RetentionPrunerPort } from "../ports/retention-pruner-port";
-import { ActiveExecutionSet } from "./active-execution-set";
 
 // 保持期間を過ぎたものを、起動時と一定間隔ごとに消す。会話記録とワークスペースのゴミ箱で使う。
 export class RetentionCleaner {

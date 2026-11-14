@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { JsonObject } from "../../../shared/json";
 import { SerialQueue } from "../../../shared/serial-queue";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
@@ -18,7 +19,6 @@ import type {
 } from "../ports/automation-schedule-port";
 import type { ScheduleJobStatus } from "../ports/automation-status";
 import type { AutomationWorkspacePort } from "../ports/automation-workspace-port";
-import { ActiveExecutionSet } from "./active-execution-set";
 
 type RegisteredScheduleJob = {
 	definition: WorkspaceScheduleJob;

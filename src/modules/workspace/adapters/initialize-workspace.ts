@@ -3,6 +3,7 @@ import { access, copyFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 
+import { hasErrorCode } from "../../../shared/error-code";
 import type { WorkspaceConfig } from "../domain/workspace-config";
 import type { WorkspaceSchedule } from "../domain/workspace-schedule";
 import { createWorkspaceConfigFile, readWorkspaceConfig } from "./config-toml";
@@ -112,7 +113,7 @@ async function copyTemplateIfMissing(
 	try {
 		await copyFile(resolve(templatesDir, fileName), destinationPath, constants.COPYFILE_EXCL);
 	} catch (error: unknown) {
-		if (hasNodeErrorCode(error, "EEXIST")) {
+		if (hasErrorCode(error, "EEXIST")) {
 			return;
 		}
 		throw new WorkspaceInitializationError(`failed to initialize ${fileName}.`, { cause: error });
@@ -123,16 +124,9 @@ async function createIfMissing(create: () => Promise<void>): Promise<void> {
 	try {
 		await create();
 	} catch (error: unknown) {
-		if (hasNodeErrorCode(error, "EEXIST")) {
+		if (hasErrorCode(error, "EEXIST")) {
 			return;
 		}
 		throw error;
 	}
-}
-
-function hasNodeErrorCode(error: unknown, code: string): boolean {
-	if (!(error instanceof Error) || !("code" in error)) {
-		return false;
-	}
-	return error.code === code;
 }

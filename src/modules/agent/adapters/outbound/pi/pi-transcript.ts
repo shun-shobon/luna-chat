@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readdir, rm, rmdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { hasErrorCode } from "../../../../../shared/error-code";
 import { formatLocalDate } from "../../../../../shared/local-date";
 import type { LoggerPort } from "../../../../observability/ports/logger-port";
 
@@ -74,7 +75,7 @@ export async function pruneTranscripts(
 		}
 		if (remaining === 0) {
 			await rmdir(directoryPath).catch((error: unknown) => {
-				if (!isErrorCode(error, "ENOTEMPTY") && !isErrorCode(error, "ENOENT")) {
+				if (!hasErrorCode(error, "ENOTEMPTY") && !hasErrorCode(error, "ENOENT")) {
 					throw error;
 				}
 			});
@@ -88,13 +89,9 @@ async function readDirectoryNames(root: string): Promise<string[]> {
 		const entries = await readdir(root, { withFileTypes: true });
 		return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 	} catch (error: unknown) {
-		if (isErrorCode(error, "ENOENT")) {
+		if (hasErrorCode(error, "ENOENT")) {
 			return [];
 		}
 		throw error;
 	}
-}
-
-function isErrorCode(error: unknown, code: string): boolean {
-	return error instanceof Error && "code" in error && error.code === code;
 }

@@ -10,6 +10,7 @@ import type {
 import { z } from "zod";
 
 import { writeFileAtomic } from "../../../../../shared/atomic-file";
+import { hasErrorCode } from "../../../../../shared/error-code";
 
 const credentialSchema = z.discriminatedUnion("type", [
 	z.looseObject({
@@ -124,7 +125,7 @@ export class FileCredentialStore implements CredentialStore {
 		try {
 			text = await readFile(this.filePath, "utf8");
 		} catch (error) {
-			if (isNotFound(error)) return {};
+			if (hasErrorCode(error, "ENOENT")) return {};
 			throw error;
 		}
 		let value: unknown;
@@ -170,8 +171,4 @@ async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal | undef
 
 function toError(reason: unknown): Error {
 	return reason instanceof Error ? reason : new Error(String(reason));
-}
-
-function isNotFound(error: unknown): boolean {
-	return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

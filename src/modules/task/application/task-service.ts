@@ -1,3 +1,4 @@
+import { ActiveExecutionSet } from "../../../shared/active-execution-set";
 import type { JsonObject } from "../../../shared/json";
 import type { AgentInputMessage } from "../../agent/ports/outbound/agent-session-port";
 import type { LunaEvent } from "../../event/domain/luna-event";
@@ -64,7 +65,7 @@ class TaskError extends Error {
 }
 
 export class TaskService {
-	readonly #background = new Set<Promise<void>>();
+	readonly #background = new ActiveExecutionSet();
 	readonly #parked = new Map<string, OpenedAgentSession>();
 	readonly #runs = new Map<string, ActiveRun>();
 	readonly #tasks = new Map<string, Task>();
@@ -101,7 +102,7 @@ export class TaskService {
 		const parked = [...this.#parked.values()];
 		this.#parked.clear();
 		await Promise.allSettled(parked.map(async (opened) => await this.#closeSession(opened)));
-		while (this.#background.size > 0) await Promise.allSettled(this.#background);
+		await this.#background.drain();
 		while (this.#writes.size > 0) await Promise.allSettled(this.#writes.values());
 	}
 
@@ -169,7 +170,7 @@ export class TaskService {
 		const parked = this.#parked.get(taskId);
 		if (parked !== undefined) {
 			this.#parked.delete(taskId);
-			this.#track(this.#closeSession(parked));
+			this.#background.track(this.#closeSession(parked));
 		}
 		await this.#persist(taskId);
 		return "cancelled";
@@ -239,7 +240,7 @@ export class TaskService {
 			};
 			this.#parked.delete(task.id);
 			this.#runs.set(task.id, run);
-			this.#track(this.#drive(task.id, run));
+			this.#background.track(this.#drive(task.id, run));
 		}
 	}
 
@@ -396,7 +397,7 @@ export class TaskService {
 					.error("task.delivery_failed", { error, reportSeq: report.seq });
 			},
 		);
-		this.#track(delivery);
+		this.#background.track(delivery);
 	}
 
 	#stop(run: ActiveRun): void {
@@ -463,11 +464,6 @@ export class TaskService {
 		const task = this.#tasks.get(taskId);
 		if (task === undefined) throw new TaskError(`Unknown task ${taskId}`);
 		return task;
-	}
-
-	#track(promise: Promise<void>): void {
-		this.#background.add(promise);
-		void promise.finally(() => this.#background.delete(promise));
 	}
 
 	#timestamp(): string {

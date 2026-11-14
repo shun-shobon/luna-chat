@@ -5,6 +5,7 @@ import { parse } from "smol-toml";
 import { z } from "zod";
 
 import { writeFileAtomicSync } from "../../../shared/atomic-file";
+import { hasErrorCode } from "../../../shared/error-code";
 import type { IntentFireStates, StandingIntent } from "../domain/standing-intent";
 import type { IntentStorePort } from "../ports/intent-store-port";
 
@@ -83,7 +84,7 @@ function readOptional(path: string): string | undefined {
 	try {
 		return readFileSync(path, "utf8");
 	} catch (error: unknown) {
-		if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+		if (hasErrorCode(error, "ENOENT")) return undefined;
 		throw error;
 	}
 }

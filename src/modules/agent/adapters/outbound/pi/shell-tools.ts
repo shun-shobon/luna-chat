@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { z } from "zod";
 
+import { hasErrorCode } from "../../../../../shared/error-code";
 import type { JsonObject } from "../../../../../shared/json";
 import type { AgentTool, AgentToolResult } from "../../../ports/outbound/agent-session-port";
 
@@ -515,7 +516,7 @@ function isProcessGroupAlive(pid: number): boolean {
 		process.kill(-pid, 0);
 		return true;
 	} catch (error) {
-		return error instanceof Error && "code" in error && error.code === "EPERM";
+		return hasErrorCode(error, "EPERM");
 	}
 }
 

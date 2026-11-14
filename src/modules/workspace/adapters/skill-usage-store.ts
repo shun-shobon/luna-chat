@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "../../../shared/atomic-file";
+import { hasErrorCode } from "../../../shared/error-code";
 import { SerialQueue } from "../../../shared/serial-queue";
 
 const usageSchema = z.record(
@@ -44,7 +45,7 @@ export class SkillUsageStore {
 		try {
 			return usageSchema.parse(JSON.parse(await readFile(this.filePath, "utf8")));
 		} catch (error: unknown) {
-			if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
+			if (hasErrorCode(error, "ENOENT")) return {};
 			throw error;
 		}
 	}
