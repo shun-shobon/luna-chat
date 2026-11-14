@@ -97,6 +97,7 @@ describe("createSessionFactory", () => {
 				harnessTools: [
 					"exec_command",
 					"write_stdin",
+					"stop_background",
 					"read",
 					"edit",
 					"write",
@@ -153,6 +154,9 @@ function createHarness(workspaceDir: string) {
 		run: vi.fn(),
 		steer: vi.fn(),
 		abort: vi.fn(),
+		hasBackground: vi.fn(),
+		waitForBackground: vi.fn(),
+		stopBackground: vi.fn(),
 		setModel: vi.fn(),
 		close: vi.fn(),
 		status: vi.fn(),

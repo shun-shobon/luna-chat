@@ -47,8 +47,21 @@ export type PiCompactionSettings = Readonly<{
 // pi は引数をスキーマで検証してから execute へ渡すため、ツールごとの引数型を混ぜて持てる AgentTool<any> で受ける（pi-agent-core の AgentState.tools と同じ）。
 export type AnyPiAgentTool = PiAgentTool<any>;
 
+export type HarnessBackground = Readonly<{
+	count(): number;
+	stopAll(): Promise<void>;
+}>;
+
+export type HarnessBackgroundListener = Readonly<{
+	// 終了したバックグラウンド実行の background_exit 入力。止めたものには呼ばない。
+	exited(message: AgentInputMessage): void;
+	// 通知を出さずに止まった時に呼ぶ。
+	stopped(): void;
+}>;
+
 export type HarnessToolSet = Readonly<{
 	tools: readonly AnyPiAgentTool[];
+	background: HarnessBackground;
 	dispose(): Promise<void>;
 }>;
 
@@ -103,11 +116,14 @@ export class PiAgentSession implements AgentSession {
 	readonly #transcript: TranscriptWriter;
 
 	#abortRequested = false;
+	#backgroundWaiters: Array<(arrived: boolean) => void> = [];
 	#closed = false;
 	#compaction: CompactionState | undefined;
 	// 要約した後も直前の assistant の usage は大きいままなので、同じ usage で二度要約しないよう覚えておく。
 	#compactionCheckedUsage: AgentMessage | undefined;
 	#modelSelection: ModelSelection;
+	// 実行していない間に届いた完了通知。次の run の入力の前に入れる。
+	#pendingBackground: AgentInputMessage[] = [];
 	#phase: AgentSessionPhase = "idle";
 	#phaseSince: string;
 	#retries = 0;
@@ -167,11 +183,16 @@ export class PiAgentSession implements AgentSession {
 		if (this.#running) {
 			throw new SessionBusyError(this.id);
 		}
+		const input = [...this.#pendingBackground, ...messages];
+		if (input.length === 0) {
+			throw new Error(`Agent run requires input: ${this.id}`);
+		}
+		this.#pendingBackground = [];
 		this.#running = true;
 		const settled = Promise.withResolvers<void>();
 		this.#runSettled = settled.promise;
 		try {
-			return await this.#execute(messages);
+			return await this.#execute(input);
 		} finally {
 			this.#running = false;
 			if (!this.#closed) {
@@ -184,6 +205,48 @@ export class PiAgentSession implements AgentSession {
 	steer(message: AgentInputMessage): void {
 		this.#assertOpen();
 		this.#agent.steer(createLunaInputMessage(message, this.#input.now().getTime()));
+	}
+
+	hasBackground(): boolean {
+		return this.#pendingBackground.length > 0 || this.#harness.background.count() > 0;
+	}
+
+	waitForBackground(): Promise<boolean> {
+		if (this.#pendingBackground.length > 0) {
+			return Promise.resolve(true);
+		}
+		if (this.#closed || this.#harness.background.count() === 0) {
+			return Promise.resolve(false);
+		}
+		return new Promise((resolve) => {
+			this.#backgroundWaiters.push(resolve);
+		});
+	}
+
+	async stopBackground(): Promise<void> {
+		this.#pendingBackground = [];
+		await this.#harness.background.stopAll();
+		this.onBackgroundStopped();
+	}
+
+	// 汎用ツールのバックグラウンド実行が終了した時に呼ばれる。
+	// 実行中かどうかは run の持ち主ではなくここで判定し、run の完了直後に届いた通知を取りこぼさない。
+	onBackgroundExit(message: AgentInputMessage): void {
+		if (this.#closed) {
+			return;
+		}
+		if (this.#running) {
+			this.steer(message);
+			return;
+		}
+		this.#pendingBackground.push(message);
+		this.#settleBackgroundWaiters(true);
+	}
+
+	onBackgroundStopped(): void {
+		if (this.#pendingBackground.length === 0 && this.#harness.background.count() === 0) {
+			this.#settleBackgroundWaiters(false);
+		}
 	}
 
 	// web_run と image_gen が直近の会話を参照するため、LLMへ送る形の履歴を返す。
@@ -222,6 +285,7 @@ export class PiAgentSession implements AgentSession {
 		this.#closed = true;
 		await this.abort();
 		this.#setPhase("closed");
+		this.#settleBackgroundWaiters(false);
 		cleanupSessionResources(this.id);
 		try {
 			await this.#transcript.flush();
@@ -299,6 +363,12 @@ export class PiAgentSession implements AgentSession {
 			this.#signals = EMPTY_REQUEST_FAILURE_SIGNALS;
 			this.#setPhase("running");
 			await this.#agent.continue();
+		}
+	}
+
+	#settleBackgroundWaiters(arrived: boolean): void {
+		for (const resolve of this.#backgroundWaiters.splice(0)) {
+			resolve(arrived);
 		}
 	}
 

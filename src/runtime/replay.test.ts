@@ -102,6 +102,7 @@ describe("runReplay", () => {
 			models,
 			requestTimeoutMs: 10_000,
 			scenes: [{ id: "s1", inputs: [{ kind: "discord_message", text: "{}" }] }],
+			scratchRoot: join(transcriptDir, "scratch"),
 			transcriptDir,
 			variants: [
 				{ name: "current", systemPrompt: "OLD" },
@@ -109,7 +110,11 @@ describe("runReplay", () => {
 			],
 		});
 
-		expect(prompts).toEqual(["OLD", "OLD", "NEW"]);
+		expect(prompts).toEqual([
+			expect.stringMatching(/^OLD\n\n# Scratch directory\n/u),
+			expect.stringMatching(/^OLD\n\n# Scratch directory\n/u),
+			expect.stringMatching(/^NEW\n\n# Scratch directory\n/u),
+		]);
 		expect(results).toEqual([
 			{
 				scene: "s1",
@@ -146,6 +151,7 @@ describe("runReplay", () => {
 			models,
 			requestTimeoutMs: 10_000,
 			scenes: [{ id: "s1", inputs: [{ kind: "discord_message", text: "{}" }] }],
+			scratchRoot: join(transcriptDir, "scratch"),
 			transcriptDir,
 			variants: [{ name: "current", systemPrompt: "OLD" }],
 		});

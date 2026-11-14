@@ -7,6 +7,8 @@ import type {
 	AgentSession,
 	AgentSessionPhase,
 } from "../../agent/ports/outbound/agent-session-port";
+import { createFakeBackground } from "../../agent/testing/fake-background";
+import type { FakeBackground } from "../../agent/testing/fake-background";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
 import type { LunaEvent } from "../domain/luna-event";
@@ -54,7 +56,7 @@ describe("EventExecutor", () => {
 			harness.calls.push("afterRunStarted");
 		});
 
-		const execution = harness.executor.execute(event, afterRunStarted);
+		const execution = harness.executor.execute(event, { afterRunStarted });
 		await vi.waitFor(() => expect(afterRunStarted).toHaveBeenCalledOnce());
 		expect(harness.calls).toEqual(["afterRunStarted"]);
 		harness.session.finish({ status: "completed", finalText: null });
@@ -103,8 +105,10 @@ describe("EventExecutor", () => {
 		const failure = new Error("callback failed");
 		const harness = createHarness();
 
-		const outcome = await harness.executor.execute(event, async () => {
-			throw failure;
+		const outcome = await harness.executor.execute(event, {
+			afterRunStarted: async () => {
+				throw failure;
+			},
 		});
 
 		expect(outcome).toEqual({ error: failure, status: "failed" });
@@ -198,10 +202,101 @@ describe("EventExecutor", () => {
 		expect(harness.executor.snapshot()).toEqual([]);
 	});
 
+	describe("バックグラウンド実行", () => {
+		const taskBoard: AgentInputMessage = {
+			kind: "task_board",
+			text: JSON.stringify([{ id: "task-1" }]),
+		};
+
+		it("残っていれば最初の実行の結果を先に知らせ、完了通知を受けて同じセッションで続けてから閉じる", async () => {
+			const harness = createHarness();
+			const afterFirstRun = vi.fn();
+			let resolved = false;
+			const execution = harness.executor.execute(event, { afterFirstRun }).then((outcome) => {
+				resolved = true;
+				return outcome;
+			});
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(1));
+			harness.session.background.start();
+			harness.session.finish({ status: "completed", finalText: null });
+
+			await vi.waitFor(() =>
+				expect(afterFirstRun).toHaveBeenCalledExactlyOnceWith({ status: "completed" }),
+			);
+			expect(harness.session.waitForBackground).toHaveBeenCalledOnce();
+			expect(resolved).toBe(false);
+			expect(harness.calls).toEqual([]);
+
+			harness.session.background.settle(true);
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(2));
+			expect(harness.session.runs[1]).toEqual([taskBoard]);
+			harness.session.finish({ status: "completed", finalText: null });
+
+			await expect(execution).resolves.toEqual({ status: "completed" });
+			expect(harness.calls).toEqual(["release:owner-1", "close"]);
+			expect(afterFirstRun).toHaveBeenCalledOnce();
+		});
+
+		it("続きの実行が失敗したら失敗を返し、最初の実行の結果は変えない", async () => {
+			const harness = createHarness();
+			const afterFirstRun = vi.fn();
+			const execution = harness.executor.execute(event, { afterFirstRun });
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(1));
+			harness.session.background.start();
+			harness.session.finish({ status: "completed", finalText: null });
+			await vi.waitFor(() => expect(harness.session.waitForBackground).toHaveBeenCalledOnce());
+			harness.session.background.settle(true);
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(2));
+			harness.session.finish({ status: "aborted" });
+
+			const outcome = await execution;
+			expect(outcome.status === "failed" && String(outcome.error)).toBe(
+				"Error: Agent run was aborted",
+			);
+			expect(afterFirstRun).toHaveBeenCalledExactlyOnceWith({ status: "completed" });
+			expect(harness.calls).toEqual(["release:owner-1", "close"]);
+		});
+
+		it("最初の実行が失敗したらその失敗を最初の実行の結果として知らせる", async () => {
+			const failure = new Error("open failed");
+			const harness = createHarness();
+			harness.openSession.mockRejectedValueOnce(failure);
+			const afterFirstRun = vi.fn();
+
+			await harness.executor.execute(event, { afterFirstRun });
+
+			expect(afterFirstRun).toHaveBeenCalledExactlyOnceWith({ error: failure, status: "failed" });
+		});
+
+		it("stopBackground後は待ちをやめ、以後の続きの実行もせずに閉じる", async () => {
+			const harness = createHarness();
+			const execution = harness.executor.execute(event);
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(1));
+			harness.session.background.start();
+			harness.session.finish({ status: "completed", finalText: null });
+			await vi.waitFor(() => expect(harness.session.waitForBackground).toHaveBeenCalledOnce());
+
+			await harness.executor.stopBackground();
+
+			await expect(execution).resolves.toEqual({ status: "completed" });
+			expect(harness.session.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.session.runs).toHaveLength(1);
+
+			const next = harness.executor.execute(event);
+			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(2));
+			harness.session.background.start();
+			harness.session.finish({ status: "completed", finalText: null });
+			await expect(next).resolves.toEqual({ status: "completed" });
+			expect(harness.session.waitForBackground).toHaveBeenCalledOnce();
+		});
+	});
+
 	it("afterRunStartedが失敗したら実行を中断し、終わりを待ってから失敗を返す", async () => {
 		const harness = createHarness();
-		const outcome = await harness.executor.execute(event, async () => {
-			throw new Error("job removal failed");
+		const outcome = await harness.executor.execute(event, {
+			afterRunStarted: async () => {
+				throw new Error("job removal failed");
+			},
 		});
 
 		expect(harness.session.abort).toHaveBeenCalledOnce();
@@ -236,14 +331,23 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
+	hasBackground: Mock<AgentSession["hasBackground"]>;
+	waitForBackground: Mock<AgentSession["waitForBackground"]>;
+	stopBackground: Mock<AgentSession["stopBackground"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
+	background: FakeBackground;
 };
 
 function createFakeSession(calls: string[]): FakeSession {
 	const pending: Array<(result: AgentRunResult) => void> = [];
+	const background = createFakeBackground();
 	const fake: FakeSession = {
+		background,
+		hasBackground: background.hasBackground,
+		waitForBackground: background.waitForBackground,
+		stopBackground: background.stopBackground,
 		phase: "idle",
 		runs: [],
 		finish(result: AgentRunResult): void {
@@ -253,6 +357,7 @@ function createFakeSession(calls: string[]): FakeSession {
 		},
 		id: "session-1",
 		run: vi.fn<AgentSession["run"]>(async (messages) => {
+			background.consume();
 			fake.runs.push(messages);
 			fake.phase = "running";
 			const result = await new Promise<AgentRunResult>((resolve) => {

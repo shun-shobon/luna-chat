@@ -14,6 +14,7 @@ import { readWorkspaceBaseInstructions } from "../modules/workspace/application/
 const HARNESS_TOOLS: readonly HarnessToolName[] = [
 	"exec_command",
 	"write_stdin",
+	"stop_background",
 	"read",
 	"edit",
 	"write",

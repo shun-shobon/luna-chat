@@ -40,12 +40,12 @@ export class HttpEventService {
 				return { kind: "unavailable" };
 			}
 		} else {
-			const execution = this.dependencies.executor
-				.execute(event)
-				.then((result) =>
-					this.dependencies.responses.complete(event.id, result.status === "completed"),
-				);
-			this.#executions.track(execution);
+			const execution = this.dependencies.executor.execute(event, {
+				afterFirstRun: (result) => {
+					this.dependencies.responses.complete(event.id, result.status === "completed");
+				},
+			});
+			this.#executions.track(execution.then(() => undefined));
 		}
 
 		if (response === undefined) return { kind: "accepted", requestId: event.id };

@@ -157,6 +157,8 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - 会話スコープごとにアクター（Mailboxパターン）を1つ保持し、状態変更を直列に処理する。
 - 実行中に届いた投稿は、キューに積まずにすぐセッションへ steer する。pi はそれを実行中のツール呼び出しの後、次のLLMリクエストの前に入れる。
 - `RUNNING` の中の再試行待ちと圧縮は、エージェントのセッションの `status()` から読み、ダッシュボードには `retry_wait`・`compacting` として出す。
+- `IDLE` に入る時、バックグラウンド実行が残っていればアイドルタイマーの代わりに `waitForBackground()` を待つ。通知が届けば同じセッションで `RUNNING` に戻り、通知なしにすべて止まっていればアイドルタイマーを始める。待っている間に入力が届いた場合は、トークンを進めて待ちの結果を捨てる。
+- 記憶保存（`session_end`）を始める前に `stopBackground()` を呼ぶ。
 
 ## 7. 実行とツールのオーケストレーション
 
@@ -174,6 +176,8 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
      │
      ├─ ToolSet.release(ownerId)  # タイピングと待機の解放
      │
+     ├─ waitForBackground()  # バックグラウンド実行が残っていれば、通知が届くまで待って同じセッションで続ける
+     │
      └─ 完了 / 失敗 / 中断を実行元へ返す
 ```
 
@@ -181,7 +185,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - `defineTool` はzodの入力スキーマで1回だけ検証し、`describeTarget` でログとダッシュボード用の対象を作る。パラメータのJSON Schemaは `z.toJSONSchema` で作る。ツール名は集合の中で一意でなければならない。
 - ツールの失敗（検証エラー・例外）は `isError` の結果としてエージェントへ返し、実行は止めない。成功と失敗は `tool.succeeded`・`tool.failed` としてログに残す。
 - 最終応答の本文はどこにも送らない。Discordへの発言はツールだけで行う。
-- `http_respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行または会話の実行が完了した時点で、待機中のHTTPリクエストを解決する。会話側は実行に入れたイベントID（最初のバッチと steer したもの）を追跡し、実行の完了時に通知する。
+- `http_respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行の最初の実行、または会話の実行が完了した時点で、待機中のHTTPリクエストを解決する。ワンショット実行がバックグラウンド実行の終了を受けて続く場合も、応答はその続きを待たない（EventExecutor の `afterFirstRun`）。会話側は実行に入れたイベントID（最初のバッチと steer したもの）を追跡し、実行の完了時に通知する。
 
 ## 8. エージェントのアダプター（pi）
 
@@ -191,30 +195,48 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - 入力は独自ロールのメッセージとして記録し、`convertToLlm` で `<luna_input kind="...">` の user メッセージにする。
 - `sessionId`（openai-codex の `prompt_cache_key` と WebSocket の接続キー）はセッションごとに固定し、キャッシュを効かせる。
 - Luna のツールは pi の AgentTool に変換して渡す。汎用ツールは `spec.harnessTools` に応じてアダプターが作る（シェル、`read`/`edit`/`write`、`view_image`、`web_run`、`image_gen`）。
+- `open` はセッションIDを決めた後、`<scratchRoot>/<セッションID>` に一時ディレクトリを作り、汎用ツールに渡す（シェルの `TMPDIR`、`image_gen` とバックグラウンド実行の保存先）。パスはシステムプロンプトの末尾に書き足す。セッションIDがアダプターの中で決まるため、システムプロンプトを組み立てる `session-factory` ではなくアダプターが書き足す。
 
-### 8.2 失敗と再試行
+### 8.2 バックグラウンド実行
+
+```text
+exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表（セッションごと）
+                                         │ 終了（通知あり）       │ stop_background / stopBackground / dispose（通知なし）
+                                         ▼                        ▼
+                         PiAgentSession.onBackgroundExit    PiAgentSession.onBackgroundStopped
+                           ├ 実行中: steer                      └ 残りも通知もなければ待ちを false で解く
+                           └ 実行外: pending に積み、待ちを true で解く ─► 次の run の入力の前に入れる
+```
+
+- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。`stopBackground()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
+- 実行中かどうかの判定はアダプターが持つ。`run` の完了から持ち主の継続までの間に届いた通知を、持ち主ではなくアダプターが `pending` に積むため、取りこぼしが起きない。
+- プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。通知の `output_tail` はファイルの末尾から読む。
+- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（§6.3）。EventExecutor は実行のたびに `waitForBackground()` を待ち、`true` なら `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForBackground()` とメッセージの到着を待つ。
+- シャットダウンでは EventExecutor の `stopBackground()` が実行中のすべてのセッションの `stopBackground()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断（`#stop`）で止める。
+
+### 8.3 失敗と再試行
 
 - pi の Agent は自動では再試行せず、既定ではタイムアウトも持たない。`streamFn` を包んで `request_timeout_ms` と `maxRetries: 0` を渡す。
 - 失敗の種類は、pi のエラー文字列ではなく、レスポンスのHTTPステータスとプロバイダの生のイベントで判定する。一時的な失敗は、エラーで終わったアシスタントメッセージを記録から外して `continue()` で再開する。待機中の steer はキューに残る。
 - 待機時間は 15秒・60秒・180秒（`TURN_RETRY_DELAYS_MS` 相当）。使用上限・認証・それ以外の失敗は再試行しない。
 
-### 8.3 圧縮と記録
+### 8.4 圧縮と記録
 
 - 直近の assistant の `usage` が文脈長から予約分を引いた値を超えたら、`[models.compaction]` のモデルで切り口より前を要約する（pi-coding-agent の `findCutPoint` と `generateSummaryWithUsage`）。切り口と要約はアダプターが保持し、`transformContext` で毎回のリクエストを「システム → 要約 → 切り口以降」に置き換える。記録（`agent.state.messages`）は書き換えない。
 - 記録は `message_end` ごとにJSONLへ追記する。先頭の system メッセージは `message_end` で出ないため、開いた時点で書く。
 - 最終更新から保持期間を過ぎた記録は `RetentionCleaner` が定期的に削除する。同じクリーナーを、ワークスペースのゴミ箱（`WorkspaceTrash`）の日付フォルダの削除にも使う。長く開いているセッションは開いた日のファイルに追記し続けるため、日付ではなく更新時刻で判断する。
 
-### 8.4 認証と使用枠
+### 8.5 認証と使用枠
 
 - 資格情報は自前の `CredentialStore`（ファイル、0600、一時ファイルからの rename、プロバイダごとの直列化）に保存する。トークンの更新は pi-ai がリクエストの直前に行う。
 - ChatGPTのバックエンド（`wham/usage`、`codex/alpha/search`、`codex/images/generations`）は、同じ資格情報で直接呼ぶ。
 - 使用枠は定期的に取得し、`AgentRuntimeStatus.usage` と `LUNA_HOME/state/usage.json` に反映する。
 
-### 8.5 skillの使用記録
+### 8.6 skillの使用記録
 
 - 汎用ツールのうち `read` と `exec_command` を包み、引数に含まれる `.agents/skills/<名前>/SKILL.md` を `SkillUsageStore` に記録する。書き込みはプロセス内で直列化し、一時ファイルからの rename で置き換える。失敗はログに残してツールの実行は止めない。
 
-### 8.6 再生
+### 8.7 再生
 
 - `luna-chat replay`（`src/runtime/replay.ts`）は、常駐プロセスとは別のプロセスで `PiAgentRuntime` を作り、場面ごと・指示の組ごとにセッションを開いて閉じる。会話の開発者指示は常駐側と同じ `SESSION_DEVELOPER_INSTRUCTIONS` を使う。
 - Lunaのツールは本物の定義を、ポートだけ記録用の偽物に差し替えて組み立てる。汎用ツールは `createReplayHarnessTools` が、読み取りとWeb検索だけ本物、それ以外を記録して成功を返すスタブにする。
@@ -280,10 +302,10 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 - `TaskService` はタスクをメモリ上の `Map` で保持し、更新のたびにタスクごとに直列化した書き込みで `TaskStorePort` へ保存する。
 - 作業セッションの開始は実行枠（`max_concurrent`）で制限する。`question` で待機したセッションはプロセス内の `parked` 表に保持し、メッセージが届いたら同じセッションで再開する。
 - 作業セッションのツール集合は、Discordの読み取り、`task_report`、`wait` で構成する（汎用ツールはアダプターが加える）。
-- 実行の完了ごとに、終了報告の有無、未配送のメッセージ、`waiting_input` を見て続け方を決める。終了報告がなければ一度だけ `task_check` を渡す。
+- 実行の完了ごとに、終了報告の有無、未配送のメッセージ、`waiting_input`、バックグラウンド実行の有無を見て続け方を決める。終了報告がなくバックグラウンド実行が残っていれば、`waitForBackground()` とメッセージの到着（`task_message` が起こす）を待つ。どちらもなければ一度だけ `task_check` を渡す。
 - 通知は `TaskDeliveryPort` を介して、会話には `ConversationCoordinator.accept`、イベント起点にはEventExecutorの新規実行として渡す。配送の受理時刻を報告に記録し、未受理の通知は起動時に再配送する。
 - 会話とイベントの入力に同梱するタスク一覧は、`ConversationTaskBoardPort` / `EventTaskBoardPort` を介して `TaskService.listFor` から取得する。conversation・eventモジュールはtaskモジュールに依存しない。
-- 取消・シャットダウンでは、作業セッションの `ownerId` で `ToolSet.release` を呼んで `wait` を打ち切り、セッションを `abort` する。シャットダウンはループ・配送・保存の完了を待つ。
+- 取消・シャットダウンでは、作業セッションの `ownerId` で `ToolSet.release` を呼んで `wait` を打ち切り、セッションを `abort` してバックグラウンド実行を止める。シャットダウンはループ・配送・保存の完了を待つ。
 
 ## 11.2 状態の可視化（ダッシュボード）
 
@@ -320,7 +342,7 @@ RecentLogBuffer.list ─────────────┘
 ### 終了 (Shutdown)
 
 1. SIGINT / SIGTERM を受信
-2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す
+2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す。イベント実行のバックグラウンド実行を止める
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中の処理がすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したセッションを閉じる（記録を確定し、汎用ツールのプロセスを終わらせる）

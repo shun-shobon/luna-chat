@@ -530,6 +530,7 @@ export async function startLunaApplication(
 					clientDestroy: async () => await client.destroy(),
 					conversation: coordinator,
 					dashboardClose: () => dashboardServer.close(),
+					events: executor,
 					gateway: {
 						stop: () => {
 							gateway.stop();
@@ -570,6 +571,7 @@ export async function shutdownApplication(input: {
 	clientDestroy(): Promise<void>;
 	conversation: Pick<ConversationCoordinator, "drain" | "stopIntake">;
 	dashboardClose(): Promise<void>;
+	events: Pick<EventExecutor, "stopBackground">;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
 	homeAssistant: Readonly<{ stopIntake(): void; failPending(): void; stop(): void }>;
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
@@ -590,6 +592,7 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.homeAssistant.stopIntake()),
 			runCleanup(() => input.tasks.stopIntake()),
 			input.automation.stopIntake(),
+			input.events.stopBackground(),
 		],
 		failures,
 	);

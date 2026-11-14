@@ -68,6 +68,7 @@ export async function runReplay(input: {
 	models: Models;
 	requestTimeoutMs: number;
 	scenes: readonly ReplayScene[];
+	scratchRoot: string;
 	transcriptDir: string;
 	variants: readonly ReplayVariant[];
 	onResult?: (result: ReplayResult) => void;
@@ -81,6 +82,7 @@ export async function runReplay(input: {
 	const runtime = new PiAgentRuntime({
 		models: input.models,
 		transcriptDir: input.transcriptDir,
+		scratchRoot: input.scratchRoot,
 		retryDelaysMs: [15_000],
 		requestTimeoutMs: input.requestTimeoutMs,
 		compaction: { model: input.model, reserveTokens: 16_384, keepRecentTokens: 20_000 },
@@ -201,7 +203,7 @@ export async function runReplayCommand(
 
 	const models = createAgentModels(lunaHomeDir);
 	// 再生の記録を本物の会話記録に混ぜないよう、一時ディレクトリへ書いて最後に消す。
-	const transcriptDir = await mkdtemp(join(tmpdir(), "luna-replay-"));
+	const workDir = await mkdtemp(join(tmpdir(), "luna-replay-"));
 	try {
 		const results = await runReplay({
 			backend: createChatGptBackend(models),
@@ -210,7 +212,8 @@ export async function runReplayCommand(
 			models,
 			requestTimeoutMs: config.agent.requestTimeoutMs,
 			scenes,
-			transcriptDir,
+			scratchRoot: join(workDir, "scratch"),
+			transcriptDir: join(workDir, "sessions"),
 			variants,
 			onResult: (result) => {
 				process.stdout.write(
@@ -226,7 +229,7 @@ export async function runReplayCommand(
 			writeJson(join(options.outDir, "blind-key.json"), blind.key),
 		]);
 	} finally {
-		await rm(transcriptDir, { recursive: true, force: true });
+		await rm(workDir, { recursive: true, force: true });
 	}
 }
 

@@ -98,8 +98,8 @@ class ToolInputError extends Error {}
 
 export type ImageGenToolOptions = Readonly<{
 	backend: ChatGptBackend;
-	// 生成した画像を保存するワークスペース。Codex は cwd/generated_images/ に保存する。
-	cwd: string;
+	// 生成した画像はセッションの一時ディレクトリの generated_images/ に保存する（Codex は cwd/generated_images/）。
+	scratchDir: string;
 	// num_last_images_to_include で参照する会話中の画像。
 	conversation: () => readonly Message[];
 }>;
@@ -144,7 +144,7 @@ export function createImageGenTool(options: ImageGenToolOptions): AgentTool {
 
 			const image: AgentImage = { data: result, mimeType: imageFormat(result).mimeType };
 			try {
-				const savedPath = await saveGeneratedImage(options.cwd, randomUUID(), result);
+				const savedPath = await saveGeneratedImage(options.scratchDir, randomUUID(), result);
 				return { text: outputHint(savedPath), images: [image], isError: false };
 			} catch (error) {
 				// Codex と同じく、保存に失敗しても生成した画像は返す。
@@ -258,7 +258,11 @@ function imageFormat(base64: string): { mimeType: string; extension: string } {
 	return { mimeType: "image/png", extension: "png" };
 }
 
-async function saveGeneratedImage(cwd: string, callId: string, base64: string): Promise<string> {
+async function saveGeneratedImage(
+	scratchDir: string,
+	callId: string,
+	base64: string,
+): Promise<string> {
 	if (base64.length > MAX_GENERATED_IMAGE_BASE64_BYTES) {
 		throw new Error("generated image exceeds the executor file size limit");
 	}
@@ -266,9 +270,9 @@ async function saveGeneratedImage(cwd: string, callId: string, base64: string): 
 	if (bytes.length > MAX_GENERATED_IMAGE_BYTES) {
 		throw new Error("generated image exceeds the executor file size limit");
 	}
-	const outputDir = path.join(cwd, GENERATED_IMAGES_DIR);
+	const outputDir = path.join(scratchDir, GENERATED_IMAGES_DIR);
 	await mkdir(outputDir, { recursive: true });
-	// シンボリックリンクを辿ってワークスペースの外へ書かないようにする。
+	// シンボリックリンクを辿って一時ディレクトリの外へ書かないようにする。
 	const stats = await lstat(outputDir);
 	if (stats.isSymbolicLink() || !stats.isDirectory()) {
 		throw new Error("generated image directory is not a real directory");
@@ -277,7 +281,7 @@ async function saveGeneratedImage(cwd: string, callId: string, base64: string): 
 		outputDir,
 		`${sanitizeFileStem(callId)}.${imageFormat(base64).extension}`,
 	);
-	// 既存のハードリンク越しにワークスペース外のファイルを上書きしないよう、新規作成に限る。
+	// 既存のハードリンク越しに一時ディレクトリの外のファイルを上書きしないよう、新規作成に限る。
 	await writeFile(outputPath, bytes, { flag: "wx" });
 	return outputPath;
 }
@@ -288,9 +292,10 @@ function sanitizeFileStem(value: string): string {
 }
 
 // Codex の文言のうち「すでにユーザーに表示済み」の一文は、画像を自動では投稿しない Luna では誤りになるため除いた。
+// 保存先が消える一時ディレクトリなので、残す時はワークスペースへコピーするよう Codex の文言を変えた。
 function outputHint(savedPath: string): string {
 	const hint = `Generated images are saved to ${path.dirname(savedPath)} as ${savedPath} by default.
-If you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.`;
+This is the session's scratch directory, which the system clears eventually. To keep an image, copy it into the workspace and leave the original in place unless the user explicitly asks you to delete it.`;
 	return Buffer.byteLength(hint) <= MAX_OUTPUT_HINT_BYTES ? hint : "";
 }
 

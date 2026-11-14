@@ -115,6 +115,7 @@ type Command =
 	| Readonly<{ kind: "typing_idle"; userId: string; token: number }>
 	| Readonly<{ kind: "debounce"; token: number }>
 	| Readonly<{ kind: "idle"; token: number }>
+	| Readonly<{ kind: "background"; token: number; arrived: boolean }>
 	| Readonly<{
 			kind: "session_ready";
 			token: number;
@@ -257,9 +258,9 @@ class ConversationActor {
 					this.#queue.length === 0
 				) {
 					this.#enter("idle");
-					this.#resetIdleTimer();
+					this.#armIdle();
 				} else if (this.#phase === "idle") {
-					this.#resetIdleTimer();
+					this.#armIdle();
 				}
 				return;
 			case "end":
@@ -302,6 +303,11 @@ class ConversationActor {
 				if (command.token !== this.#idleToken) return;
 				this.#idleTimer = undefined;
 				if (this.#phase === "idle") this.#preserveSessionMemory();
+				return;
+			case "background":
+				if (command.token !== this.#idleToken || this.#phase !== "idle") return;
+				if (command.arrived) this.#startRun([this.#taskBoardMessage()], "conversation");
+				else this.#resetIdleTimer();
 				return;
 			case "session_ready":
 				this.#openingBatch = [];
@@ -447,8 +453,15 @@ class ConversationActor {
 		return [
 			...batch.map(toEventMessage),
 			...this.dependencies.intents.match(batch),
-			{ kind: "task_board", text: JSON.stringify(this.dependencies.tasks.listFor(this.session)) },
+			this.#taskBoardMessage(),
 		];
+	}
+
+	#taskBoardMessage(): AgentInputMessage {
+		return {
+			kind: "task_board",
+			text: JSON.stringify(this.dependencies.tasks.listFor(this.session)),
+		};
 	}
 
 	#startRun(messages: readonly AgentInputMessage[], purpose: ConversationRunPurpose): void {
@@ -491,7 +504,7 @@ class ConversationActor {
 		if (this.#queue.length > 0) this.#beginCollecting(true);
 		else {
 			this.#enter("idle");
-			this.#resetIdleTimer();
+			this.#armIdle();
 		}
 	}
 
@@ -500,8 +513,26 @@ class ConversationActor {
 			this.#closeSession();
 			return;
 		}
+		this.#opened.session.stopBackground().catch((error: unknown) => {
+			this.#logError(error, "background/stop");
+		});
 		const date = formatLocalDate(this.dependencies.now());
 		this.#startRun([{ kind: "session_end", text: JSON.stringify({ date }) }], "session_memory");
+	}
+
+	// バックグラウンド実行が残っている間はアイドル時間を数えず、完了通知を待って同じセッションで続ける。
+	#armIdle(): void {
+		const session = this.#opened?.session;
+		if (session === undefined || !session.hasBackground()) {
+			this.#resetIdleTimer();
+			return;
+		}
+		const token = ++this.#idleToken;
+		this.#idleTimer?.cancel();
+		this.#idleTimer = undefined;
+		void session.waitForBackground().then((arrived) => {
+			this.#post({ kind: "background", token, arrived });
+		});
 	}
 
 	#resetIdleTimer(): void {

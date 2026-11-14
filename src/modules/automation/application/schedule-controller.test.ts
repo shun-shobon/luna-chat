@@ -365,9 +365,9 @@ describe("ScheduleController", () => {
 				order.push("delete");
 			},
 		});
-		const executor = createExecutor(async (_input, afterTurnStarted) => {
+		const executor = createExecutor(async (_input, hooks) => {
 			order.push("turn-started");
-			await afterTurnStarted?.();
+			await hooks?.afterRunStarted?.();
 			order.push("completion");
 			return { status: "completed" };
 		});
@@ -387,7 +387,7 @@ describe("ScheduleController", () => {
 				occurredAt: "2026-01-01T00:00:00.000Z",
 				data: { jobId: "once", prompt: "prompt-once", kind: "one_shot" },
 			},
-			expect.any(Function),
+			{ afterRunStarted: expect.any(Function) },
 		);
 		expect(workspace.removeScheduleJob).toHaveBeenCalledWith("once");
 		await controller.reloadSchedule();
@@ -402,8 +402,8 @@ describe("ScheduleController", () => {
 				throw new Error("write failed");
 			}),
 		});
-		const executor = createExecutor(async (_input, afterTurnStarted) => {
-			await afterTurnStarted?.();
+		const executor = createExecutor(async (_input, hooks) => {
+			await hooks?.afterRunStarted?.();
 			return { status: "completed" };
 		});
 		const controller = createController({ executor, logger, scheduleTimer, workspace });
@@ -429,9 +429,9 @@ describe("ScheduleController", () => {
 				jobs: [oneShot("once", "2026-01-03T00:00:00.000Z", true)],
 			}),
 		});
-		const executor = createExecutor(async (_input, afterTurnStarted) => {
+		const executor = createExecutor(async (_input, hooks) => {
 			await turnStarted.promise;
-			await afterTurnStarted?.();
+			await hooks?.afterRunStarted?.();
 			return { status: "completed" };
 		});
 		const controller = createController({ executor, scheduleTimer, workspace });
