@@ -51,6 +51,7 @@ src/
 │   ├── tool/            # ツールの定義と実行元, ツール集合, 待機ツール
 │   ├── automation/      # ハートビート, スケジュール, 日次整理, 記録の掃除
 │   ├── task/            # バックグラウンドタスク, 作業エージェントの実行, 依頼元への通知
+│   ├── intent/          # 話題をきっかけにする予定の照合と発火の記録
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
 │   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
@@ -72,6 +73,7 @@ src/
 | `tool`          | ツールの定義、実行元（`ToolOrigin`）、ツール集合、待機                      | `defineTool`、`createToolSet`（`bind`・`release`）、`OpenAgentSession`                      | 待機ツール                                                |
 | `automation`    | ハートビート、スケジュール、日次整理のイベント発火、checkの判定、記録の掃除 | `startAutomation`、`stopIntake`、`drain`                                                    | タイマー、cronスケジューラ、ファイル監視、check子プロセス |
 | `task`          | タスク状態、作業エージェントの実行枠と実行の続け方、公開範囲、通知          | `create`、`message`、`cancel`、`report`、`listFor`、`start`、`stopIntake`、`drain`          | JSONファイルストア、`task_*` ツール                       |
+| `intent`        | 話題をきっかけにする予定の照合、発火回数とcooldown                          | `match`                                                                                     | `intents.toml`、状態のJSONファイル                        |
 | `workspace`     | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視                    | 初期化、プロンプト読み込み、スケジュール読み書き                                            | ファイルシステム、`smol-toml`、Zod                        |
 | `dashboard`     | 各モジュールの状態の集約、閲覧用ページ                                      | `snapshot`                                                                                  | Hono（`/`、`/api/snapshot`）                              |
 | `observability` | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持        | ロガーポート、直近ログの一覧                                                                | 標準出力（JSON Lines）、メモリ上のリングバッファ          |
@@ -201,13 +203,22 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - ChatGPTのバックエンド（`wham/usage`、`codex/alpha/search`、`codex/images/generations`）は、同じ資格情報で直接呼ぶ。
 - 使用枠は定期的に取得し、`AgentRuntimeStatus.usage` と `LUNA_HOME/state/usage.json` に反映する。
 
-### 8.5 再生
+### 8.5 skillの使用記録
+
+- 汎用ツールのうち `read` と `exec_command` を包み、引数に含まれる `.agents/skills/<名前>/SKILL.md` を `SkillUsageStore` に記録する。書き込みはプロセス内で直列化し、一時ファイルからの rename で置き換える。失敗はログに残してツールの実行は止めない。
+
+### 8.6 再生
 
 - `luna-chat replay`（`src/runtime/replay.ts`）は、常駐プロセスとは別のプロセスで `PiAgentRuntime` を作り、場面ごと・指示の組ごとにセッションを開いて閉じる。会話の開発者指示は常駐側と同じ `SESSION_DEVELOPER_INSTRUCTIONS` を使う。
 - Lunaのツールは本物の定義を、ポートだけ記録用の偽物に差し替えて組み立てる。汎用ツールは `createReplayHarnessTools` が、読み取りとWeb検索だけ本物、それ以外を記録して成功を返すスタブにする。
 - 記録は一時ディレクトリへ書き、終了時に消す。本物の会話記録に混ぜると、ルナが次に記録を見直す時に再生を本物の会話と取り違えるため。
 
-## 9. Discord アダプター
+## 9. 話題をきっかけにする予定（intent モジュール）
+
+- `ConversationCoordinator` は実行に渡す入力を組み立てる時と steer する時に、`ConversationIntentPort.match(events)` の結果を該当メッセージの後に加える。
+- `IntentMatcher`（application）はイベントから人のDiscordメッセージだけを取り出し、`findFiringIntents`（domain）で期限・発火回数・cooldown・キーワードを判定する。`IntentFileStore`（adapter）は `intents.toml` を毎回読み、発火の状態を `LUNA_HOME/state/intents-state.json` に書く。予定の読み込みに失敗した時はログに残して発火させず、会話は止めない。
+
+## 9.1 Discord アダプター
 
 - **Gateway**: `messageCreate` やタイピングイベントを購読し、正規化されたドメインイベントへ変換する。
 - **スラッシュコマンド**: `/luna` コマンドを受け付け、セッション設定やチャンネルの許可リスト更新を処理する。
