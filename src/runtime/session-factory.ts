@@ -50,6 +50,8 @@ export function buildSystemPrompt(input: {
 export function createSessionFactory(input: {
 	agent: AgentRuntimePort;
 	createOwnerId?: (() => string) | undefined;
+	// 実行元ごとに、今のリクエストを高速モードで送るかを決める。VCに紐づいた会話を速く返すため。
+	fastMode: (origin: ToolOrigin) => boolean;
 	profiles: Readonly<Record<AgentSessionKind, SessionProfile>>;
 	readSkillsPrompt: () => string;
 	workspaceDir: string;
@@ -75,6 +77,7 @@ export function createSessionFactory(input: {
 			model: model ?? profile.model(),
 			tools: profile.tools.bind({ ownerId, origin }),
 			harnessTools: HARNESS_TOOLS,
+			fastMode: () => input.fastMode(origin),
 		});
 		return { ownerId, session };
 	};

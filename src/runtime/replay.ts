@@ -109,6 +109,7 @@ export async function runReplay(input: {
 				model: input.model,
 				tools,
 				harnessTools: REPLAY_HARNESS_TOOLS,
+				fastMode: () => false,
 			});
 			let status: string;
 			try {

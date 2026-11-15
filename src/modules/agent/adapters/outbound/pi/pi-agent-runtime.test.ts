@@ -142,6 +142,7 @@ function spec(overrides: Partial<AgentSessionSpec> = {}): AgentSessionSpec {
 		model: { provider: "faux", model: "faux-1", thinking: "off" },
 		tools: [],
 		harnessTools: [],
+		fastMode: () => false,
 		...overrides,
 	};
 }
@@ -233,6 +234,27 @@ describe("PiAgentRuntime の実行", () => {
 			'<luna_input kind="wake">\n起きて\n</luna_input>',
 		]);
 		expect(session.status().phase).toBe("idle");
+	});
+
+	it("高速モードの間のリクエストだけ service_tier priority を付け、ほかの項目はそのまま送る", async () => {
+		const { runtime, faux } = await setup();
+		const payloads: unknown[] = [];
+		const sendPayload: FauxResponseStep = async (_context, options, _state, model) => {
+			payloads.push(await options?.onPayload?.({ model: "faux-1", input: [] }, model));
+			return fauxAssistantMessage("はい");
+		};
+		faux.setResponses([sendPayload, sendPayload]);
+		let fast = true;
+		const session = runtime.open(spec({ fastMode: () => fast }));
+
+		await session.run([input("やあ")]);
+		fast = false;
+		await session.run([input("また")]);
+
+		expect(payloads).toEqual([
+			{ model: "faux-1", input: [], service_tier: "priority" },
+			{ model: "faux-1", input: [] },
+		]);
 	});
 
 	it("本文がなければ finalText を null にする", async () => {

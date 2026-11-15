@@ -10,6 +10,7 @@ import type {
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import type { Api, Message, Model, Models } from "@earendil-works/pi-ai";
 import { generateSummaryWithUsage, shouldCompact } from "@earendil-works/pi-coding-agent";
+import { z } from "zod";
 
 import type { LoggerPort } from "../../../../observability/ports/logger-port";
 import type {
@@ -37,6 +38,10 @@ import {
 } from "./pi-error-classification";
 import type { RequestFailureSignals } from "./pi-error-classification";
 import type { TranscriptWriter } from "./pi-transcript";
+
+const FAST_SERVICE_TIER = "priority";
+// openai-codex のリクエスト本文。知らない項目はそのまま送り返し、service_tier だけを足す。
+const RequestPayloadSchema = z.looseObject({});
 
 export type PiCompactionSettings = Readonly<{
 	model: ModelSelection;
@@ -409,6 +414,11 @@ export class PiAgentSession implements AgentSession {
 			timeoutMs: this.#input.requestTimeoutMs,
 			// 再試行はこのセッションが待機時間の列に従って行う。pi-ai 側でも重ねると待ち時間が読めなくなる。
 			maxRetries: 0,
+			onPayload: async (payload, payloadModel) => {
+				const next = (await options?.onPayload?.(payload, payloadModel)) ?? payload;
+				if (!this.#spec.fastMode()) return next;
+				return { ...RequestPayloadSchema.parse(next), service_tier: FAST_SERVICE_TIER };
+			},
 			onResponse: async (response, responseModel) => {
 				this.#signals = { ...this.#signals, httpStatus: response.status };
 				await options?.onResponse?.(response, responseModel);

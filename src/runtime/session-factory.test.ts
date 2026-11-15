@@ -105,6 +105,7 @@ describe("createSessionFactory", () => {
 					"web_run",
 					"image_gen",
 				],
+				fastMode: expect.any(Function),
 			});
 			expect(harness.toolSets[kind].bind).toHaveBeenCalledWith({ ownerId: "owner-1", origin });
 		},
@@ -117,6 +118,21 @@ describe("createSessionFactory", () => {
 		await harness.open({ kind: "task", taskId: "task-1" }, model);
 
 		expect(harness.agent.open.mock.calls[0]?.[0].model).toEqual(model);
+	});
+
+	it("高速モードかどうかは、開いたセッションの実行元ごとにリクエストのたびに尋ねる", async () => {
+		const harness = createHarness(await createWorkspace({}));
+		const origin: ToolOrigin = {
+			kind: "conversation",
+			session: { key: "discord:guild_channel:1:10", source: "discord/main", context: {} },
+		};
+
+		await harness.open(origin);
+		const fastMode = harness.agent.open.mock.calls[0]?.[0].fastMode;
+
+		expect(fastMode?.()).toBe(false);
+		harness.fastOrigins.push(origin);
+		expect(fastMode?.()).toBe(true);
 	});
 
 	it("開くたびにownerIdを発行し、LUNA.md・MEMORY.md・skillsを読み直す", async () => {
@@ -183,9 +199,11 @@ function createHarness(workspaceDir: string) {
 	};
 	const readSkillsPrompt = vi.fn(() => "SKILLS");
 	let ownerCount = 0;
+	const fastOrigins: ToolOrigin[] = [];
 	const open = createSessionFactory({
 		agent,
 		createOwnerId: () => `owner-${String(++ownerCount)}`,
+		fastMode: (origin) => fastOrigins.includes(origin),
 		profiles: {
 			conversation: profile("conversation"),
 			event: profile("event"),
@@ -194,7 +212,7 @@ function createHarness(workspaceDir: string) {
 		readSkillsPrompt,
 		workspaceDir,
 	});
-	return { agent, models, open, readSkillsPrompt, session, tools, toolSets };
+	return { agent, fastOrigins, models, open, readSkillsPrompt, session, tools, toolSets };
 
 	function model(kind: AgentSessionKind): ModelSelection {
 		return { provider: "openai-codex", model: `${kind}-model`, thinking: "medium" };

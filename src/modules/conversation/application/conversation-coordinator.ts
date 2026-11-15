@@ -26,7 +26,9 @@ import type { ConversationIntentPort } from "../ports/conversation-intent-port";
 import type { ConversationTaskBoardPort } from "../ports/conversation-task-board-port";
 
 type ConversationCoordinatorOptions = Readonly<{
-	debounceMs: (session: ConversationSession) => number;
+	debounceMs: number;
+	// 集約の待機（debounce・入力中の待機）をせずにすぐ実行へ渡す入力。音声の発話など。
+	isImmediate: (event: LunaEvent) => boolean;
 	initialHistoryLimit: number;
 	sessionMemoryEnabled: boolean;
 	sessionIdleMs: number;
@@ -139,6 +141,7 @@ class ConversationActor {
 	#purpose: ConversationRunPurpose | undefined;
 	#debounceReady = false;
 	#debounceToken = 0;
+	#immediatePending = false;
 	#idleToken = 0;
 	#operationToken = 0;
 	#typingTokens = new Map<string, number>();
@@ -374,8 +377,17 @@ class ConversationActor {
 			return;
 		}
 		this.#queue.push(event);
-		if (this.#phase === "idle") this.#beginCollecting(false);
-		else if (this.#phase === "collecting") this.#scheduleDebounce();
+		const immediate = this.options.isImmediate(event);
+		if (immediate) this.#immediatePending = true;
+		if (this.#phase === "idle") this.#beginCollecting(immediate);
+		else if (this.#phase === "collecting") {
+			if (this.#immediatePending) {
+				this.#debounceTimer?.cancel();
+				this.#debounceTimer = undefined;
+				this.#debounceReady = true;
+				this.#tryBeginBatch();
+			} else this.#scheduleDebounce();
+		}
 	}
 
 	#handleTyping(userId: string): void {
@@ -397,7 +409,7 @@ class ConversationActor {
 		this.#debounceTimer?.cancel();
 		this.#debounceTimer = scheduleTimeout(
 			() => this.#post({ kind: "debounce", token }),
-			this.options.debounceMs(this.session),
+			this.options.debounceMs,
 		);
 	}
 
@@ -405,11 +417,12 @@ class ConversationActor {
 		if (
 			this.#phase !== "collecting" ||
 			!this.#debounceReady ||
-			this.#typingTokens.size > 0 ||
+			(this.#typingTokens.size > 0 && !this.#immediatePending) ||
 			this.#queue.length === 0
 		) {
 			return;
 		}
+		this.#immediatePending = false;
 		const batch = this.#queue.splice(0).toSorted(compareEvents);
 		for (const event of batch) this.#activeEventIds.add(event.id);
 		if (this.#opened !== undefined) {

@@ -46,14 +46,41 @@ describe("ConversationCoordinator", () => {
 			expect(harness.coordinator.endSession(session.key)).toBe(false);
 		});
 
-		it("debounceの待機時間はセッションごとに決め、0ならすぐに実行を始める", async () => {
-			const debounceMs = vi.fn(() => 0);
-			const harness = createHarness({ debounceMs });
+		it("すぐに渡す入力は、debounceを待たずに実行を始める", async () => {
+			const isImmediate = vi.fn((input: LunaEvent) => input.id === "100");
+			const harness = createHarness({ isImmediate });
 
 			harness.accept("100", "2026-07-23T00:00:00.000Z");
 			await harness.advance(0);
 
-			expect(debounceMs).toHaveBeenCalledWith(session);
+			expect(isImmediate).toHaveBeenCalledWith(event("100", "2026-07-23T00:00:00.000Z"));
+			expect(harness.openSession).toHaveBeenCalledOnce();
+		});
+
+		it("debounce中にすぐに渡す入力が届いたら、待っていた入力とまとめてすぐに実行する", async () => {
+			const harness = createHarness({ isImmediate: (input) => input.id === "101" });
+
+			harness.accept("100", "2026-07-23T00:00:00.000Z");
+			await harness.advance(50);
+			expect(harness.openSession).not.toHaveBeenCalled();
+			harness.accept("101", "2026-07-23T00:00:01.000Z");
+			await harness.advance(0);
+
+			expect(harness.openSession).toHaveBeenCalledOnce();
+			expect(harness.runs[0]?.messages.map((message) => message.kind)).toEqual([
+				"discord_message",
+				"discord_message",
+				"task_board",
+			]);
+		});
+
+		it("すぐに渡す入力は、誰かの入力中でも待たずに実行を始める", async () => {
+			const harness = createHarness({ isImmediate: () => true });
+
+			harness.coordinator.typing(session, "400");
+			harness.accept("100", "2026-07-23T00:00:00.000Z");
+			await harness.advance(0);
+
 			expect(harness.openSession).toHaveBeenCalledOnce();
 		});
 
@@ -772,7 +799,7 @@ function createHarness(
 		intents?: ConversationIntentPort;
 		wrapLogger?: (logger: LoggerPort) => LoggerPort;
 		sessionMemoryEnabled?: boolean;
-		debounceMs?: (session: ConversationSession) => number;
+		isImmediate?: (event: LunaEvent) => boolean;
 	} = {},
 ) {
 	vi.useFakeTimers();
@@ -853,7 +880,8 @@ function createHarness(
 			tasks: { listFor },
 		},
 		{
-			debounceMs: options.debounceMs ?? (() => 100),
+			debounceMs: 100,
+			isImmediate: options.isImmediate ?? (() => false),
 			initialHistoryLimit: 20,
 			sessionIdleMs: 1_000,
 			sessionMemoryEnabled: options.sessionMemoryEnabled ?? false,

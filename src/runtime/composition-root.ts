@@ -63,7 +63,7 @@ import { AssistService } from "../modules/home-assistant/application/assist-serv
 import { StateChangeWatcher } from "../modules/home-assistant/application/state-change-watcher";
 import {
 	HOME_ASSISTANT_EVENT_SOURCE,
-	isAssistSession,
+	ASSIST_REQUESTED_EVENT_TYPE,
 } from "../modules/home-assistant/domain/home-assistant-event";
 import {
 	HOME_ASSISTANT_TOOL_INSTRUCTIONS,
@@ -237,6 +237,7 @@ export async function startLunaApplication(
 	];
 	const openSession = createSessionFactory({
 		agent,
+		fastMode: () => false,
 		profiles: {
 			conversation: {
 				developerInstructions: withHomeAssistant(
@@ -349,8 +350,8 @@ export async function startLunaApplication(
 				},
 			},
 			{
-				debounceMs: (session) =>
-					isAssistSession(session) ? 0 : workspace.config.discord.debounceMs,
+				debounceMs: workspace.config.discord.debounceMs,
+				isImmediate: (event) => event.type === ASSIST_REQUESTED_EVENT_TYPE,
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
