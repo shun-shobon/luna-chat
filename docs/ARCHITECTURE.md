@@ -57,6 +57,7 @@ src/
 │   ├── home-assistant/  # HAのツール, WebSocket購読, 状態変化の起動, Assistの会話エージェント
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
+│   ├── voice/           # ボイスチャンネルの参加, 聞き取り, 読み上げ
 │   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
 ├── runtime/             # コンポジションルート, エントリポイント
 └── shared/              # 機能に依存しない汎用関数・型（日付整形、JSON値、Honoサーバーの起動、アトミック書き込み、直列化キュー、実行中の処理の追跡）
@@ -79,6 +80,7 @@ src/
 | `intent`         | 話題をきっかけにする予定の照合、発火回数とcooldown                                | `match`                                                                                                        | `intents.toml`、状態のJSONファイル                                            |
 | `home-assistant` | HAのツール、WebSocketの接続、状態変化の絞り込みとcooldown、Assistの発話と応答待ち | ツールプロバイダ、`StateChangeWatcher`（`start`・`stop`・`status`）、`AssistService`（`submit`・`stopIntake`） | fetch（REST）、Node.js標準の `WebSocket`、`home-assistant.toml`、Honoのルート |
 | `workspace`      | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録 | 初期化、プロンプト読み込み、スケジュール読み書き                                                               | ファイルシステム、`smol-toml`、Zod                                            |
+| `voice`          | ボイスチャンネルの参加・紐づけ・モード、聞き取り、読み上げと割り込み              | ツールプロバイダ、`VoiceChannelService`（`isBound`・`stop`）                                                   | `@discordjs/voice`、`opusscript`、`sherpa-onnx-node`、TTSエンジン（HTTP）     |
 | `dashboard`      | 各モジュールの状態の集約、閲覧用ページ                                            | `snapshot`                                                                                                     | Hono（`/`、`/api/snapshot`）                                                  |
 | `observability`  | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持              | ロガーポート、直近ログの一覧                                                                                   | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ                        |
 | `runtime`        | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                          | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）                                  | シグナルハンドラー                                                            |
@@ -100,6 +102,7 @@ event        ──► tool / agent（型のみ）
 task         ──► tool / event（型のみ） / agent（型のみ）
 tool         ──► agent（型のみ）
 dashboard    ──► agent / automation / conversation / event / task / home-assistant / observability（型のみ）
+voice        ──► tool / conversation（型のみ） / event（型のみ） / workspace（型のみ）
 all          ──► observability
 runtime      ──► 全モジュール (composition root)
 ```
@@ -242,6 +245,33 @@ exec_command(run_in_background) ─► シェルツールのバックグラウ�
 - Lunaのツールは本物の定義を、ポートだけ記録用の偽物に差し替えて組み立てる。汎用ツールは `createReplayHarnessTools` が、読み取りとWeb検索だけ本物、それ以外を記録して成功を返すスタブにする。
 - 記録は一時ディレクトリへ書き、終了時に消す。本物の会話記録に混ぜると、ルナが次に記録を見直す時に再生を本物の会話と取り違えるため。
 
+### 8.8 ボイスチャンネル（voice モジュール）
+
+```text
+voice_join / voice_leave / voice_say ──► VoiceChannelService ──connect──► DiscordVoiceGateway ──► @discordjs/voice
+                                              ▲   │                              │ 話者ごとの受信（Opus→16kHz）
+                       onUtterance / onSpeechStarted / onHumanCount / onClosed ◄─┘ 話し始めの検知（Silero VAD）
+                                              │
+              SpeechClippingTranscriber ◄─────┤ 文字起こし（VADで声の区間を切り出し → SherpaTranscriber）
+                                              │
+          ConversationCoordinator.accept ◄────┤ voice_utterance（紐づいた会話のセッションへ、集約待ちなし）
+                                              │
+     SpeechQueue ──► AivisSpeechSynthesizer ──┴► VoiceLink.play（音声モードの読み上げ）
+```
+
+- `VoiceChannelService`（application）は入っているVC（同時に1つ）、紐づけ先の会話セッション、モード、読み上げを持つ。参加・退出・切り替えは `SerialQueue` で順に行い、紐づけ先は `voice_join` を呼んだ実行の `ToolOrigin` から取る。人が一度でもいたかを覚え、いた人が全員抜けたらすぐ出る。誰もいないVCに入った時だけ、人が来るのを自分のタイマーで待つ。モードの切り替えでは `VoiceLink.setMuted` で自分のミュートも切り替える。
+- 発話は文字起こしと表示名の取得を並行して行い、出た後や空の結果は渡さない。表示名を取れなければユーザーIDを使う。
+- `SpeechQueue`（application）は `voice_say` の発言を言った順に再生する。合成は `SerialQueue` で順に行い、前の文の再生中に次の文を合成しておく。遮られたら再生を止め、世代番号を進めてまだ合成していない文を合成しない。「話し終えた文」は人の発話を会話へ渡すたびに数え直す。
+- `DiscordVoiceGateway`（adapter）は `VoiceGatewayPort` を実装する。VCごとの `DiscordVoiceLink` が接続、話者ごとの受信と復号、再生（`opusscript` で20msごとにOpus化）、人数の監視（`voiceStateUpdate`）を持つ。人が今いるVCは、Gatewayの `voiceStates` のキャッシュから探す。ミュートの切り替えは Ready の接続への `rejoin` で、音声の状態だけを送り直す（接続は張り直さない）。Opusの復号器がレートとチャンネル数を変換するので、自前のリサンプルは持たない。
+- 話し始めの検知は話者ごとの Silero VAD（`createSpeechDetector`）で行い、発話ごとに `reset` する。Discordの「話し始め」の通知は雑音でも届くため、読み上げを止める合図には使わない。
+- `@discordjs/voice` は復号の失敗を `debug` のメッセージでしか知らせないため、接続を `debug: true` で作り、失敗のメッセージと受信できた音声から「失敗が続いている時間」を測って入り直す。入り直しは `DiscordVoiceLink` の中で行い、サービスの状態（紐づけとモード）は変えない。Discord側で切れて戻らなければ `onClosed` で知らせる。
+- `SpeechClippingTranscriber`（adapter）は `TranscriberPort` を包み、Silero VAD（`sherpa-onnx-node` の `Vad`）で声の区間だけを切り出してから中の認識器へ渡す。VAD は1つを `reset` して使い回し、切り出しは同期処理なので呼び出し同士で状態が混ざらない。
+- `SherpaTranscriber`（adapter）は `sherpa-onnx-node` の `decodeAsync` でイベントループを止めずに認識し、全話者で1つの `SerialQueue` を通してCPUの取り合いを避ける。`sherpa-onnx-node` は型定義を持たないので、使う範囲だけを `sherpa-onnx-node.d.ts` で宣言し、認識結果と VAD の区間はZodで検証する。
+- `AivisSpeechSynthesizer`（adapter）は AudioQuery の `speedScale` と出力形式（48kHzステレオ）だけを差し替え、ほかの項目はエンジンが返したまま送り返す。
+- 発話を集約待ちなしで渡すため、`ConversationCoordinator` は `isImmediate(event)` が真の入力で debounce と入力中の待機を飛ばす。コンポジションルートが Assist の発話と `voice_utterance` に真を返す。
+- 高速モードは `AgentSessionSpec.fastMode` をリクエストのたびに呼んで決め、真なら `PiAgentSession` が pi-ai の `onPayload` でリクエスト本文に `service_tier: "priority"` を足す（pi-ai の `streamSimple` は `serviceTier` を通さないため）。コンポジションルートがセッションファクトリに「VCに紐づいた会話か」を渡すので、セッションを開き直さずに参加・退出へ追従する。
+- 紐づいたスコープへの投稿を常設でなくても受け付けるため、`DiscordConversationController` は `isVoiceBound(sessionKey)` を一時セッションの有無と同じ扱いで受付判定に渡す。
+
 ## 9. 話題をきっかけにする予定（intent モジュール）
 
 - `ConversationCoordinator` は実行に渡す入力を組み立てる時と steer する時に、`ConversationIntentPort.match(events)` の結果を該当メッセージの後に加える。
@@ -332,7 +362,7 @@ RecentLogBuffer.list ─────────────┘
 1. 環境変数の検証
 2. `LUNA_HOME` および初期ワークスペースファイルの作成・検証
 3. `config.toml` と `cron.toml` の読み込み
-4. ログ・Discordクライアント・RESTアダプターの初期化
+4. ログ・Discordクライアント・RESTアダプターの初期化。`[voice]` があれば音声認識とVADのモデルを読み込む
 5. 資格情報ストアとモデルのカタログの準備、`[models]` の検証、エージェントのランタイムの作成、使用枠の取得の開始
 6. Discordへの接続ログイン
 7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
@@ -342,7 +372,7 @@ RecentLogBuffer.list ─────────────┘
 ### 終了 (Shutdown)
 
 1. SIGINT / SIGTERM を受信
-2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す。イベント実行のバックグラウンド実行を止める
+2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す。イベント実行のバックグラウンド実行を止め、ボイスチャンネルから出る
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中の処理がすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
 5. 完了したセッションを閉じる（記録を確定し、汎用ツールのプロセスを終わらせる）
