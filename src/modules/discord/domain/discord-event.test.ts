@@ -7,6 +7,7 @@ import {
 	DISCORD_CONVERSATION_DELEGATED_EVENT_TYPE,
 	DISCORD_EVENT_SOURCE,
 	DISCORD_MESSAGE_CREATED_EVENT_TYPE,
+	isDiscordConversationSession,
 } from "./discord-event";
 import type { DiscordMessage } from "./discord-message";
 
@@ -62,5 +63,16 @@ describe("Discord event factory", () => {
 			occurredAt: "2026-07-23T00:00:00.000Z",
 			data: { scope, brief: "朝の予定を確認したい" },
 		});
+	});
+});
+
+describe("isDiscordConversationSession", () => {
+	it.each([
+		["Guildチャンネル", createDiscordConversationSession(scope), true],
+		["DM", createDiscordConversationSession({ kind: "dm", channelId: "500", userId: "100" }), true],
+		["Discord以外", { source: "home_assistant", context: scope }, false],
+		["scopeでない文脈", { source: DISCORD_EVENT_SOURCE, context: { kind: "voice" } }, false],
+	])("%sの会話なら %s", (_title, session, expected) => {
+		expect(isDiscordConversationSession(session)).toBe(expected);
 	});
 });

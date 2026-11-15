@@ -34,6 +34,18 @@ export type WorkspaceConfig = {
 	tasks: {
 		maxConcurrent: number;
 	};
+	voice?: VoiceSetting;
+};
+
+export type VoiceSetting = {
+	sttModelKind: "nemo-ctc" | "nemo-transducer" | "transducer";
+	sttModelDir: string;
+	vadModel: string;
+	sttThreads: number;
+	silenceMs: number;
+	ttsUrl: URL;
+	ttsSpeaker: number;
+	ttsSpeed: number;
 };
 
 const DEFAULT_MODEL: ModelSetting = {

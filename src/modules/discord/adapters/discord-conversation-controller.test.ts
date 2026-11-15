@@ -72,12 +72,26 @@ describe("DiscordConversationController", () => {
 		expect(conversation.accept).toHaveBeenCalledOnce();
 	});
 
+	it("VCに紐づいた会話のスコープは、常設でなくてもmentionなしで受理する", () => {
+		const conversation = createConversation(false);
+		const isVoiceBound = vi.fn(
+			(sessionKey: string) => sessionKey === "discord:guild_channel:300:300",
+		);
+		const controller = createController(conversation, isVoiceBound);
+
+		controller.onMessage(event("300", false));
+		controller.onMessage(event("301", false));
+
+		expect(conversation.accept).toHaveBeenCalledOnce();
+	});
+
 	it("共有された許可集合の更新を次の投稿から反映する", () => {
 		const conversation = createConversation(false);
 		const ids = new Set<string>();
 		const controller = new DiscordConversationController(conversation, "999", {
 			allowDm: true,
 			allowedChannelIds: ids,
+			isVoiceBound: () => false,
 			onAccepted: vi.fn(),
 			onError: vi.fn(),
 		});
@@ -93,10 +107,14 @@ describe("DiscordConversationController", () => {
 	});
 });
 
-function createController(conversation: ReturnType<typeof createConversation>) {
+function createController(
+	conversation: ReturnType<typeof createConversation>,
+	isVoiceBound: (sessionKey: string) => boolean = () => false,
+) {
 	return new DiscordConversationController(conversation, "999", {
 		allowDm: true,
 		allowedChannelIds: new Set(["200"]),
+		isVoiceBound,
 		onAccepted: vi.fn(),
 		onError: vi.fn(),
 	});

@@ -11,7 +11,7 @@ export type DiscordGatewayEventClient = Readonly<{
 	off(event: DiscordGatewayEvent, listener: DiscordGatewayListener): unknown;
 }>;
 
-export function createDiscordGatewayClient(): Client {
+export function createDiscordGatewayClient(options: Readonly<{ voice: boolean }>): Client {
 	return new Client({
 		intents: [
 			GatewayIntentBits.Guilds,
@@ -20,6 +20,7 @@ export function createDiscordGatewayClient(): Client {
 			GatewayIntentBits.DirectMessages,
 			GatewayIntentBits.DirectMessageTyping,
 			GatewayIntentBits.MessageContent,
+			...(options.voice ? [GatewayIntentBits.GuildVoiceStates] : []),
 		],
 		partials: [Partials.Channel],
 	});

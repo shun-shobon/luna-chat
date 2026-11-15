@@ -44,6 +44,15 @@ export function createDiscordDelegatedEvent(
 	};
 }
 
+export function isDiscordConversationSession(
+	session: Pick<ConversationSession, "context" | "source">,
+): boolean {
+	return (
+		session.source === DISCORD_EVENT_SOURCE &&
+		conversationScopeSchema.safeParse(session.context).success
+	);
+}
+
 export function isDiscordGuildSession(
 	session: Pick<ConversationSession, "context" | "source">,
 ): boolean {

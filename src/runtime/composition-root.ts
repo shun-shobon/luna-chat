@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
+import type { Client } from "discord.js";
+
 import { fetchUsage } from "../modules/agent/adapters/outbound/pi/usage";
 import { UsagePoller } from "../modules/agent/adapters/outbound/pi/usage-poller";
 import { ChildProcessCheckRunner } from "../modules/automation/adapters/child-process-check-runner";
@@ -44,6 +46,7 @@ import { resolveSendFile } from "../modules/discord/adapters/filesystem-send-fil
 import { TypingLeaseRegistry } from "../modules/discord/application/typing-lease-registry";
 import {
 	createDiscordConversationSession,
+	isDiscordConversationSession,
 	isDiscordGuildSession,
 } from "../modules/discord/domain/discord-event";
 import { discordIdSchema } from "../modules/discord/domain/discord-id";
@@ -87,6 +90,15 @@ import {
 import { TaskService } from "../modules/task/application/task-service";
 import { createWaitToolProvider } from "../modules/tool/adapters/wait-tool-provider";
 import { createToolSet } from "../modules/tool/application/tool-set";
+import { AivisSpeechSynthesizer } from "../modules/voice/adapters/aivis-speech-synthesizer";
+import { DiscordVoiceGateway } from "../modules/voice/adapters/discord-voice-gateway";
+import { SherpaTranscriber } from "../modules/voice/adapters/sherpa-transcriber";
+import { createSpeechDetector } from "../modules/voice/adapters/silero-vad";
+import { SpeechClippingTranscriber } from "../modules/voice/adapters/speech-clipping-transcriber";
+import { createVoiceToolProvider } from "../modules/voice/adapters/voice-tool-provider";
+import { VoiceChannelService } from "../modules/voice/application/voice-channel-service";
+import { VOICE_UTTERANCE_EVENT_TYPE } from "../modules/voice/domain/voice-event";
+import { VOICE_INSTRUCTIONS } from "../modules/voice/voice-instructions";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
 import {
@@ -100,6 +112,7 @@ import {
 	WorkspaceTrash,
 } from "../modules/workspace/adapters/workspace-trash";
 import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
+import type { VoiceSetting } from "../modules/workspace/domain/workspace-config";
 import {
 	createChatGptBackend,
 	createAgentModels,
@@ -118,6 +131,7 @@ const RECENT_LOG_CAPACITY = 500;
 const TRASH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
 const USAGE_POLL_INTERVAL_MS = 600_000;
+const VOICE_EMPTY_JOIN_WAIT_MS = 60_000;
 
 interface LunaApplication {
 	shutdown(): Promise<void>;
@@ -146,7 +160,7 @@ export async function startLunaApplication(
 		level: environment.logLevel,
 		onEntry: (entry) => recentLogs.record(entry),
 	});
-	const client = createDiscordGatewayClient();
+	const client = createDiscordGatewayClient({ voice: workspace.config.voice !== undefined });
 	const typing = new TypingLeaseRegistry(TYPING_REFRESH_INTERVAL_MS, (error, context) => {
 		logger.error("discord.typing.refresh_failed", { error, ...context });
 	});
@@ -180,6 +194,15 @@ export async function startLunaApplication(
 		report: async (...input: Parameters<TaskService["report"]>) =>
 			await requireTasks(tasks).report(...input),
 	};
+	const voice =
+		workspace.config.voice === undefined
+			? undefined
+			: await createVoice({
+					setting: workspace.config.voice,
+					client,
+					accept: (input) => conversation?.accept(input) ?? false,
+					logger,
+				});
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
 	const discordHistory = new DiscordConversationHistory(readAdapter);
 	const waitTools = createWaitToolProvider();
@@ -191,6 +214,7 @@ export async function startLunaApplication(
 			createTaskBoardToolProvider(taskBoard),
 			waitTools,
 			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
+			...(voice === undefined ? [] : [createVoiceToolProvider(voice)]),
 		],
 		logger,
 	);
@@ -237,11 +261,14 @@ export async function startLunaApplication(
 	];
 	const openSession = createSessionFactory({
 		agent,
-		fastMode: () => false,
+		fastMode: (origin) =>
+			origin.kind === "conversation" && (voice?.isBound(origin.session.key) ?? false),
 		profiles: {
 			conversation: {
 				developerInstructions: withHomeAssistant(
-					SESSION_DEVELOPER_INSTRUCTIONS.conversation,
+					voice === undefined
+						? SESSION_DEVELOPER_INSTRUCTIONS.conversation
+						: [...SESSION_DEVELOPER_INSTRUCTIONS.conversation, VOICE_INSTRUCTIONS],
 					homeAssistantInstructions,
 				),
 				includeWorkspaceInstructions: true,
@@ -275,6 +302,7 @@ export async function startLunaApplication(
 		() => assistResponses.failAll(),
 		() => homeAssistant?.connection.stop(),
 		() => typing.releaseAll(),
+		async () => await voice?.stop(),
 		async () => await client.destroy(),
 		async () => await usage.stop(),
 	];
@@ -351,7 +379,8 @@ export async function startLunaApplication(
 			},
 			{
 				debounceMs: workspace.config.discord.debounceMs,
-				isImmediate: (event) => event.type === ASSIST_REQUESTED_EVENT_TYPE,
+				isImmediate: (event) =>
+					event.type === ASSIST_REQUESTED_EVENT_TYPE || event.type === VOICE_UTTERANCE_EVENT_TYPE,
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
@@ -462,6 +491,7 @@ export async function startLunaApplication(
 		const gatewayController = new DiscordConversationController(coordinator, lunaUserId, {
 			allowDm: workspace.config.discord.allowDm,
 			allowedChannelIds: allowedChannels.ids,
+			isVoiceBound: (sessionKey) => voice?.isBound(sessionKey) ?? false,
 			onAccepted: (event) => {
 				logger
 					.child({
@@ -553,6 +583,7 @@ export async function startLunaApplication(
 					tasks: taskService,
 					typingRelease: () => typing.releaseAll(),
 					usageStop: () => usage.stop(),
+					voiceStop: async () => await voice?.stop(),
 				});
 				await shutdownPromise;
 			},
@@ -582,6 +613,7 @@ export async function shutdownApplication(input: {
 	tasks: Pick<TaskService, "drain" | "stopIntake">;
 	typingRelease(): void;
 	usageStop(): Promise<void>;
+	voiceStop(): Promise<void>;
 }): Promise<void> {
 	input.logger.info("application.shutdown_started");
 	const failures: unknown[] = [];
@@ -594,6 +626,7 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.tasks.stopIntake()),
 			input.automation.stopIntake(),
 			input.events.stopBackground(),
+			input.voiceStop(),
 		],
 		failures,
 	);
@@ -649,6 +682,41 @@ function logCleanupFailures(
 function requireTasks(tasks: TaskService | undefined): TaskService {
 	if (tasks === undefined) throw new Error("Task service is not ready");
 	return tasks;
+}
+
+async function createVoice(
+	input: Readonly<{
+		setting: VoiceSetting;
+		client: Client;
+		accept(input: AcceptedConversationEvent): boolean;
+		logger: LoggerPort;
+	}>,
+): Promise<VoiceChannelService> {
+	const { setting, logger } = input;
+	const transcriber = SpeechClippingTranscriber.create(
+		setting.vadModel,
+		await SherpaTranscriber.create({
+			kind: setting.sttModelKind,
+			modelDir: setting.sttModelDir,
+			numThreads: setting.sttThreads,
+		}),
+	);
+	return new VoiceChannelService({
+		gateway: new DiscordVoiceGateway(input.client, {
+			silenceMs: setting.silenceMs,
+			createDetector: () => createSpeechDetector(setting.vadModel),
+			logger,
+			now: () => performance.now(),
+		}),
+		transcriber,
+		synthesizer: new AivisSpeechSynthesizer(setting.ttsUrl, setting.ttsSpeaker, setting.ttsSpeed),
+		conversation: { accept: input.accept },
+		isVoiceSession: isDiscordConversationSession,
+		createId: randomUUID,
+		now: () => new Date(),
+		logger,
+		emptyJoinWaitMs: VOICE_EMPTY_JOIN_WAIT_MS,
+	});
 }
 
 function createHomeAssistant(

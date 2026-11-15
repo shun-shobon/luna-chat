@@ -23,6 +23,8 @@ export class DiscordConversationController implements DiscordGatewayPort {
 		private readonly options: Readonly<{
 			allowDm: boolean;
 			allowedChannelIds: ReadonlySet<string>;
+			// VCに紐づいた会話のスコープは、一時セッションと同じく常設でなくても受け付ける。
+			isVoiceBound(sessionKey: string): boolean;
 			onAccepted(event: DiscordGatewayMessage): void;
 			onError(error: unknown, event: "messageCreate" | "typingStart"): void;
 		}>,
@@ -38,7 +40,8 @@ export class DiscordConversationController implements DiscordGatewayPort {
 			allowDm: this.options.allowDm,
 			allowedChannelIds: this.options.allowedChannelIds,
 			lunaIsThreadMember: event.lunaIsThreadMember,
-			sessionExists: this.conversation.hasSession(session.key),
+			sessionExists:
+				this.conversation.hasSession(session.key) || this.options.isVoiceBound(session.key),
 		});
 		if (accepted) {
 			this.conversation.accept({

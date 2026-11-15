@@ -5,13 +5,16 @@ import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { DEFAULT_WORKSPACE_CONFIG } from "../domain/workspace-config";
-import type { ModelSetting, WorkspaceConfig } from "../domain/workspace-config";
+import type { ModelSetting, VoiceSetting, WorkspaceConfig } from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);
 // Node.jsのsetTimeoutは2^31-1msを超えると1msに丸めるため、タイマーに渡す値はここで上限を課す。
 const MAXIMUM_TIMER_MS = 2_147_483_647;
 const positiveTimerMs = positiveSafeInteger.max(MAXIMUM_TIMER_MS);
+const DEFAULT_VOICE_STT_THREADS = 2;
+const DEFAULT_VOICE_SILENCE_MS = 800;
+const DEFAULT_VOICE_TTS_SPEED = 1;
 const discordSnowflake = z.string().regex(/^\d+$/u);
 const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const modelIdSchema = z.string().regex(/^[^/\s]+\/[^\s]+$/u, "model must be provider/model");
@@ -80,6 +83,18 @@ const WorkspaceConfigTomlSchema = z
 				max_concurrent: positiveSafeInteger.default(DEFAULT_WORKSPACE_CONFIG.tasks.maxConcurrent),
 			})
 			.prefault({}),
+		voice: z
+			.strictObject({
+				stt_model_kind: z.enum(["nemo-ctc", "nemo-transducer", "transducer"]),
+				stt_model_dir: z.string().min(1),
+				vad_model: z.string().min(1),
+				stt_threads: positiveSafeInteger.default(DEFAULT_VOICE_STT_THREADS),
+				silence_ms: positiveTimerMs.default(DEFAULT_VOICE_SILENCE_MS),
+				tts_url: z.url({ protocol: /^https?$/u }),
+				tts_speaker: nonNegativeSafeInteger,
+				tts_speed: z.number().min(0.5).max(2).default(DEFAULT_VOICE_TTS_SPEED),
+			})
+			.optional(),
 	})
 	.superRefine((config, context) => {
 		if (config.heartbeat.min_interval_ms > config.heartbeat.max_interval_ms) {
@@ -168,6 +183,7 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 		tasks: {
 			maxConcurrent: config.tasks.max_concurrent,
 		},
+		...(config.voice === undefined ? {} : { voice: toVoiceSetting(config.voice) }),
 	};
 }
 
@@ -204,6 +220,35 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 		tasks: {
 			max_concurrent: config.tasks.maxConcurrent,
 		},
+		...(config.voice === undefined ? {} : { voice: toVoiceSettingToml(config.voice) }),
+	};
+}
+
+type VoiceSettingToml = NonNullable<WorkspaceConfigToml["voice"]>;
+
+function toVoiceSetting(setting: VoiceSettingToml): VoiceSetting {
+	return {
+		sttModelKind: setting.stt_model_kind,
+		sttModelDir: setting.stt_model_dir,
+		vadModel: setting.vad_model,
+		sttThreads: setting.stt_threads,
+		silenceMs: setting.silence_ms,
+		ttsUrl: new URL(setting.tts_url),
+		ttsSpeaker: setting.tts_speaker,
+		ttsSpeed: setting.tts_speed,
+	};
+}
+
+function toVoiceSettingToml(setting: VoiceSetting): VoiceSettingToml {
+	return {
+		stt_model_kind: setting.sttModelKind,
+		stt_model_dir: setting.sttModelDir,
+		vad_model: setting.vadModel,
+		stt_threads: setting.sttThreads,
+		silence_ms: setting.silenceMs,
+		tts_url: setting.ttsUrl.href,
+		tts_speaker: setting.ttsSpeaker,
+		tts_speed: setting.ttsSpeed,
 	};
 }
 
