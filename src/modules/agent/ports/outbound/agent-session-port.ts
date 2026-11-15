@@ -55,6 +55,8 @@ export type AgentSessionSpec = Readonly<{
 	model: ModelSelection;
 	tools: readonly AgentTool[];
 	harnessTools: readonly HarnessToolName[];
+	// リクエストごとに呼び、真なら高速モード（ChatGPTのFast、service_tier priority）で送る。使用枠の消費が増える。
+	fastMode: () => boolean;
 }>;
 
 export type AgentRunFailureReason =

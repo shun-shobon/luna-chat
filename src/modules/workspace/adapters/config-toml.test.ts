@@ -81,8 +81,49 @@ thinking = "xhigh"
 		});
 	});
 
+	it("voiceは書いたときだけ読み、省略できる項目にデフォルト値を補う", () => {
+		expect(
+			parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
+[voice]
+stt_model_kind = "nemo-ctc"
+stt_model_dir = "/models/parakeet"
+vad_model = "/models/silero_vad.onnx"
+tts_url = "http://127.0.0.1:10101/"
+tts_speaker = 684965824
+`),
+		).toEqual({
+			...DEFAULT_WORKSPACE_CONFIG,
+			voice: {
+				sttModelKind: "nemo-ctc",
+				sttModelDir: "/models/parakeet",
+				vadModel: "/models/silero_vad.onnx",
+				sttThreads: 2,
+				silenceMs: 800,
+				ttsUrl: new URL("http://127.0.0.1:10101/"),
+				ttsSpeaker: 684_965_824,
+				ttsSpeed: 1,
+			},
+		});
+	});
+
 	it.each([
 		["unknown top-level key", "unexpected = true"],
+		[
+			"voice without required key",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1',
+		],
+		[
+			"unknown stt model kind",
+			'[voice]\nstt_model_kind = "whisper"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1',
+		],
+		[
+			"non-http tts url",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "ftp://127.0.0.1/"\ntts_speaker = 1',
+		],
+		[
+			"tts speed out of range",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ntts_speed = 3',
+		],
 		["unknown nested key", "[discord]\nunexpected = true"],
 		["non-snowflake channel id", '[discord]\nallowed_channel_ids = ["channel"]'],
 		["heartbeat interval inversion", "[heartbeat]\nmin_interval_ms = 2000\nmax_interval_ms = 1000"],
@@ -121,6 +162,24 @@ thinking = "xhigh"
 		expect(source).toContain('model = "openai-codex/gpt-6.1-terra"');
 		expect(source).toContain('maintenance_cron = "0 4 * * *"');
 		expect(parseWorkspaceConfig(source)).toEqual(DEFAULT_WORKSPACE_CONFIG);
+	});
+
+	it("voiceを含む設定も TOML に直列化して往復できる", () => {
+		const config = {
+			...DEFAULT_WORKSPACE_CONFIG,
+			voice: {
+				sttModelKind: "nemo-transducer",
+				sttModelDir: "/models/haas",
+				vadModel: "/models/silero_vad.onnx",
+				sttThreads: 3,
+				silenceMs: 600,
+				ttsUrl: new URL("http://tts.example:10101/"),
+				ttsSpeaker: 1,
+				ttsSpeed: 1.25,
+			},
+		} as const;
+
+		expect(parseWorkspaceConfig(serializeWorkspaceConfig(config))).toEqual(config);
 	});
 
 	it("設定ファイルを排他的に作成し、既存ファイルを上書きしない", async () => {

@@ -79,6 +79,9 @@ describe("application composition lifecycle", () => {
 				calls.push("usage.stop");
 				throw failure;
 			},
+			voiceStop: async () => {
+				calls.push("voice.stop");
+			},
 		});
 
 		await expect(shutdown).rejects.toThrow("Application shutdown failed");
@@ -91,6 +94,7 @@ describe("application composition lifecycle", () => {
 				"homeAssistant.stopIntake",
 				"tasks.stopIntake",
 				"events.stopBackground",
+				"voice.stop",
 				"conversation.drain",
 				"automation.drain",
 				"http.drain",

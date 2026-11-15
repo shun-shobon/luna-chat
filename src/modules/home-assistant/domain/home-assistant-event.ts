@@ -9,7 +9,3 @@ export const STATE_CHANGES_SESSION: ConversationSession = {
 	source: HOME_ASSISTANT_EVENT_SOURCE,
 	context: { kind: "state_changes" },
 };
-
-export function isAssistSession(session: ConversationSession): boolean {
-	return session.key.startsWith("home_assistant:assist:");
-}

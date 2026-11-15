@@ -13,6 +13,7 @@ describe("toEventMessage", () => {
 		["system.memory_maintenance.fired.v1", "luna/system", "memory_maintenance"],
 		["home_assistant.state_changed.v1", "home_assistant", "home_assistant_state"],
 		["home_assistant.assist.requested.v1", "home_assistant", "assist_request"],
+		["discord.voice.utterance.v1", "discord/voice", "voice_utterance"],
 		["github.push.v1", "http", "http_request"],
 		["test.sensor.changed.v1", "test/sensor", "event"],
 	])("%s (source: %s) をkind %sで渡す", (type, source, kind) => {
