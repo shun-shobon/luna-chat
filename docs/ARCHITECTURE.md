@@ -318,7 +318,7 @@ HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成�
 - **スケジュール**: cron定義または指定日時に基づき、登録されたプロンプトを実行する。各発火を `ActiveExecutionSet` で追跡し、同じジョブの発火同士も直列化しない。
 - **check**: `ScheduleController` は `AutomationCheckRunnerPort` だけに依存し、出力の空判定・切り詰め・ログ記録を担う。`ChildProcessCheckRunner` は `/bin/sh -c` を独立したプロセスグループで起動し、タイムアウト時はグループ全体へシグナルを送る。暴走した出力でメモリを使い切らないよう、標準出力は先頭、標準エラー出力は末尾をそれぞれ64000文字まで保持する。checkは発火の実行の一部として追跡されるため、`drain` は実行中のcheckと後続のエージェントの実行を待つ。
 - **日次整理**: 定期cronにより起動し、記憶の統合やファイルの整理を行った後、Gitが利用可能であればローカルコミットを作成する。
-- **記録の掃除**: `TranscriptRetentionCleaner` が起動時と一定間隔で `TranscriptPrunerPort.prune` を呼び、保持期間を過ぎたセッションの記録を削除する。
+- **記録の掃除**: `TranscriptRetentionCleaner` が起動時と一定間隔で `TranscriptPrunerPort.prune` を呼び、保持期間を過ぎたセッションの記録を削除する。`transcript_cleanup_enabled = false` のときは組み立て時にこのクリーナーを作らない。
 
 ## 11.1 バックグラウンドタスク
 
