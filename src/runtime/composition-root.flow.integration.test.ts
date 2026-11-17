@@ -86,6 +86,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => {
 			config: {
 				agent: {
 					requestTimeoutMs: 10_000,
+					transcriptCleanupEnabled: true,
 					transcriptCleanupIntervalMs: 86_400_000,
 					transcriptRetentionMs: 604_800_000,
 				},

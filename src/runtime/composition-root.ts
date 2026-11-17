@@ -443,18 +443,22 @@ export async function startLunaApplication(
 				scheduleTimer,
 			}),
 			cleaners: [
-				new RetentionCleaner({
-					cleanupIntervalMs: workspace.config.agent.transcriptCleanupIntervalMs,
-					clock,
-					failureEvent: "automation.transcript_retention.prune_failed",
-					logger,
-					pruner: {
-						prune: async (now, retentionMs) => {
-							await agent.pruneTranscripts(now, retentionMs);
-						},
-					},
-					retentionMs: workspace.config.agent.transcriptRetentionMs,
-				}),
+				...(workspace.config.agent.transcriptCleanupEnabled
+					? [
+							new RetentionCleaner({
+								cleanupIntervalMs: workspace.config.agent.transcriptCleanupIntervalMs,
+								clock,
+								failureEvent: "automation.transcript_retention.prune_failed",
+								logger,
+								pruner: {
+									prune: async (now, retentionMs) => {
+										await agent.pruneTranscripts(now, retentionMs);
+									},
+								},
+								retentionMs: workspace.config.agent.transcriptRetentionMs,
+							}),
+						]
+					: []),
 				new RetentionCleaner({
 					cleanupIntervalMs: TRASH_CLEANUP_INTERVAL_MS,
 					clock,
