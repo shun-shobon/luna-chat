@@ -35,6 +35,9 @@ const WorkspaceConfigTomlSchema = z
 				request_timeout_ms: positiveTimerMs.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.requestTimeoutMs,
 				),
+				transcript_cleanup_enabled: z
+					.boolean()
+					.default(DEFAULT_WORKSPACE_CONFIG.agent.transcriptCleanupEnabled),
 				transcript_cleanup_interval_ms: positiveTimerMs.default(
 					DEFAULT_WORKSPACE_CONFIG.agent.transcriptCleanupIntervalMs,
 				),
@@ -154,6 +157,7 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 	return {
 		agent: {
 			requestTimeoutMs: config.agent.request_timeout_ms,
+			transcriptCleanupEnabled: config.agent.transcript_cleanup_enabled,
 			transcriptCleanupIntervalMs: config.agent.transcript_cleanup_interval_ms,
 			transcriptRetentionMs: config.agent.transcript_retention_ms,
 		},
@@ -191,6 +195,7 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 	return {
 		agent: {
 			request_timeout_ms: config.agent.requestTimeoutMs,
+			transcript_cleanup_enabled: config.agent.transcriptCleanupEnabled,
 			transcript_cleanup_interval_ms: config.agent.transcriptCleanupIntervalMs,
 			transcript_retention_ms: config.agent.transcriptRetentionMs,
 		},

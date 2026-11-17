@@ -5,6 +5,7 @@ export type ModelSetting = Readonly<{ provider: string; model: string; thinking:
 export type WorkspaceConfig = {
 	agent: {
 		requestTimeoutMs: number;
+		transcriptCleanupEnabled: boolean;
 		transcriptCleanupIntervalMs: number;
 		transcriptRetentionMs: number;
 	};
@@ -57,6 +58,7 @@ const DEFAULT_MODEL: ModelSetting = {
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 	agent: {
 		requestTimeoutMs: 300_000,
+		transcriptCleanupEnabled: true,
 		transcriptCleanupIntervalMs: 86_400_000,
 		transcriptRetentionMs: 604_800_000,
 	},

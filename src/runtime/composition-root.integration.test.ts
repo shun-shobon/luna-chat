@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as piTranscriptModule from "../modules/agent/adapters/outbound/pi/pi-transcript";
 import * as toolSetModule from "../modules/tool/application/tool-set";
 import { startLunaApplication } from "./composition-root";
 
@@ -25,6 +26,7 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => {
 			config: {
 				agent: {
 					requestTimeoutMs: 10_000,
+					transcriptCleanupEnabled: true,
 					transcriptCleanupIntervalMs: 86_400_000,
 					transcriptRetentionMs: 604_800_000,
 				},
@@ -172,6 +174,39 @@ describe("composition root integration", () => {
 		await expect(starting).rejects.toThrow("Discord login aborted");
 		expect(fakes.client.destroy).toHaveBeenCalled();
 	});
+
+	it.each([
+		{ enabled: true, expectedCalls: 1 },
+		{ enabled: false, expectedCalls: 0 },
+	])(
+		"transcriptCleanupEnabled=$enabled のとき起動時の記録の削除を$expectedCalls回行う",
+		async ({ enabled, expectedCalls }) => {
+			process.env = {
+				...originalEnvironment,
+				DISCORD_BOT_TOKEN: "discord-token",
+				LOG_LEVEL: "error",
+				LUNA_HOME: "/tmp/luna-test",
+			};
+			const pruneTranscripts = vi
+				.spyOn(piTranscriptModule, "pruneTranscripts")
+				.mockResolvedValue(0);
+			const { initializeWorkspace } =
+				await import("../modules/workspace/adapters/initialize-workspace");
+			const workspace = await initializeWorkspace({ templatesDir });
+			vi.mocked(initializeWorkspace).mockResolvedValueOnce({
+				...workspace,
+				config: {
+					...workspace.config,
+					agent: { ...workspace.config.agent, transcriptCleanupEnabled: enabled },
+				},
+			});
+
+			const application = await startLunaApplication({ templatesDir });
+			await application.shutdown();
+
+			expect(pruneTranscripts).toHaveBeenCalledTimes(expectedCalls);
+		},
+	);
 
 	it("カタログにないモデルが設定されていたら起動しない", async () => {
 		process.env = {

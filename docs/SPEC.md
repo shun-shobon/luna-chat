@@ -403,6 +403,7 @@ maintenance_cron = "0 4 * * *"
 
 [agent]
 request_timeout_ms = 300000
+transcript_cleanup_enabled = true
 transcript_retention_ms = 604800000
 transcript_cleanup_interval_ms = 86400000
 
@@ -459,7 +460,7 @@ tts_speed = 1.0
 ## 15. 記録の保持とクリーンアップ
 
 エージェントのセッションは `LUNA_HOME/sessions/<YYYY-MM-DD>/<セッションID>.jsonl` に記録する。1行目はセッションの種類・ラベル・モデル、2行目はシステムプロンプトとし、以後はメッセージ（入力、モデルの応答、ツールの結果）・モデルの変更・圧縮の内容を1行ずつ追記する。日付は開いた日のローカル日付とする。Lunaを再起動してもセッションは復元しない。
-起動時および `transcript_cleanup_interval_ms` ごとに、最終更新から `transcript_retention_ms`（デフォルト7日）を過ぎた記録と、空になった日付のディレクトリを削除する。削除に失敗した記録は次回のクリーンアップで再試行する。
+起動時および `transcript_cleanup_interval_ms` ごとに、最終更新から `transcript_retention_ms`（デフォルト7日）を過ぎた記録と、空になった日付のディレクトリを削除する。削除に失敗した記録は次回のクリーンアップで再試行する。`transcript_cleanup_enabled = false` のときは記録を削除せず、無期限に残す。
 
 ### 15.1 ワークスペースのゴミ箱
 

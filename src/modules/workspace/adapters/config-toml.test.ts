@@ -57,6 +57,15 @@ max_interval_ms = 2000
 		});
 	});
 
+	it("transcript_cleanup_enabled = false で記録の削除を止める", () => {
+		expect(
+			parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
+[agent]
+transcript_cleanup_enabled = false
+`).agent,
+		).toEqual({ ...DEFAULT_WORKSPACE_CONFIG.agent, transcriptCleanupEnabled: false });
+	});
+
 	it("modelsは provider/model を分けて読み、省略した項目だけデフォルト値を補う", () => {
 		expect(
 			parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
@@ -141,6 +150,7 @@ tts_speaker = 684965824
 		["timer duration above Node.js limit", "[discord]\nsession_idle_ms = 2147483648"],
 		["request timeout above Node.js limit", "[agent]\nrequest_timeout_ms = 2147483648"],
 		["zero transcript cleanup interval", "[agent]\ntranscript_cleanup_interval_ms = 0"],
+		["non-boolean transcript cleanup flag", '[agent]\ntranscript_cleanup_enabled = "false"'],
 		["invalid memory cron", '[memory]\nenabled = true\nmaintenance_cron = "0 0 4 * * *"'],
 	])("%s を拒否する", (_title, source) => {
 		expect(() =>
@@ -158,6 +168,7 @@ tts_speaker = 684965824
 		const source = serializeWorkspaceConfig(DEFAULT_WORKSPACE_CONFIG);
 
 		expect(source).toContain("allowed_channel_ids = []");
+		expect(source).toContain("transcript_cleanup_enabled = true");
 		expect(source).toContain("transcript_retention_ms = 604800000");
 		expect(source).toContain('model = "openai-codex/gpt-6.1-terra"');
 		expect(source).toContain('maintenance_cron = "0 4 * * *"');
