@@ -20,7 +20,7 @@ import type {
 
 import { describeUsageCreditsRejection } from "./billing";
 import { runClaudeRequest } from "./claude-cli";
-import { nativeModel, supportsNativeToolChanges } from "./model-catalog";
+import { supportsNativeToolChanges } from "./model-catalog";
 import { jsonObjectSchema, toJsonObject } from "./native-types";
 import type {
 	AnthropicStreamEvent,
@@ -495,7 +495,7 @@ export function streamClaudeCode(
 
 			stream.push({ type: "start", partial: output });
 			const response = await runClaudeRequest({
-				model: nativeModel(model.id),
+				model: model.id,
 				cwd: process.cwd(),
 				frames,
 				systemPrompt,

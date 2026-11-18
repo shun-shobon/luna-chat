@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
 	API_ID,
 	CLAUDE_CODE_MODELS,
-	nativeModel,
 	PROVIDER_ID,
 	supportsAdaptiveThinking,
 	supportsDisabledThinking,
@@ -24,7 +23,8 @@ describe("CLAUDE_CODE_MODELS", () => {
 				provider: PROVIDER_ID,
 				baseUrl: "process://claude-code",
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 200_000,
+				contextWindow: 1_000_000,
+				maxTokens: 128_000,
 			});
 			expect(model).not.toHaveProperty("compat");
 		}
@@ -36,16 +36,14 @@ describe("CLAUDE_CODE_MODELS", () => {
 		});
 	});
 
-	it("表の値で Claude Code の --model と対応を決める", () => {
-		expect(nativeModel("claude-opus-5-5")).toBe("claude-opus-5-5");
+	it("pi-ai の定義から思考とツール変更への対応を決める", () => {
 		expect(supportsAdaptiveThinking("claude-opus-5-5")).toBe(true);
 		expect(supportsDisabledThinking("claude-opus-5-5")).toBe(false);
 		expect(supportsDisabledThinking("claude-haiku-5-5")).toBe(true);
 		expect(supportsNativeToolChanges("claude-fable-5-2")).toBe(true);
 	});
 
-	it("表に無いモデルは例外にする", () => {
-		expect(() => nativeModel("opus")).toThrow("Unknown Claude Code model: opus");
+	it("一覧に無いモデルは例外にする", () => {
 		expect(() => supportsAdaptiveThinking("claude-sonnet-5")).toThrow(
 			"Unknown Claude Code model: claude-sonnet-5",
 		);
