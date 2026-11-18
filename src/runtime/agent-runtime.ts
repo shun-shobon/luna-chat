@@ -43,23 +43,42 @@ export function createAgentModels(lunaHomeDir: string): Models {
 	const models = createModels({
 		credentials: new FileCredentialStore(credentialsPath(lunaHomeDir)),
 	});
-	models.setProvider(withGpt62Sol(openaiCodexProvider()));
+	models.setProvider(withGpt62Models(openaiCodexProvider()));
 	return models;
 }
 
-// pi-ai 1.5.2 の一覧にまだ無い。上流は 6.1 Sol と同じ定義で追加済み（earendil-works/pi cead615）なので、6.2 入りの pi-ai へ上げたら消す。
-function withGpt62Sol(
+// pi-ai 1.5.2 の一覧にまだ無い。上流（earendil-works/pi cead615）の定義に合わせて前の世代を写す。6.2 入りの pi-ai へ上げたら消す。
+function withGpt62Models(
 	provider: Provider<"openai-codex-responses">,
 ): Provider<"openai-codex-responses"> {
-	const gpt61Sol = provider.getModels().find((model) => model.id === "gpt-6.1-sol");
-	if (gpt61Sol === undefined) {
-		throw new Error("openai-codex/gpt-6.1-sol is missing from pi-ai");
-	}
-	const gpt62Sol = { ...gpt61Sol, id: "gpt-6.2-sol", name: "GPT-6.2 Sol" };
+	const findModel = (id: string) => {
+		const model = provider.getModels().find((candidate) => candidate.id === id);
+		if (model === undefined) {
+			throw new Error(`openai-codex/${id} is missing from pi-ai`);
+		}
+		return model;
+	};
+	const added = [
+		{ ...findModel("gpt-6.1-sol"), id: "gpt-6.2-sol", name: "GPT-6.2 Sol" },
+		{
+			...findModel("gpt-6-astra"),
+			id: "gpt-6.2-astra",
+			name: "GPT-6.2 Astra",
+			cost: {
+				input: 8,
+				output: 40,
+				cacheRead: 0.4,
+				cacheWrite: 10,
+				tiers: [
+					{ inputTokensAbove: 272_000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 },
+				],
+			},
+		},
+	];
 	return {
 		...provider,
-		getModels: () => [...provider.getModels(), gpt62Sol],
-		getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), gpt62Sol],
+		getModels: () => [...provider.getModels(), ...added],
+		getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), ...added],
 	};
 }
 
