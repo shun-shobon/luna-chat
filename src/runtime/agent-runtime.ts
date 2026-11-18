@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { createModels } from "@earendil-works/pi-ai/models";
-import type { Models } from "@earendil-works/pi-ai/models";
+import type { Models, Provider } from "@earendil-works/pi-ai/models";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 
@@ -43,8 +43,24 @@ export function createAgentModels(lunaHomeDir: string): Models {
 	const models = createModels({
 		credentials: new FileCredentialStore(credentialsPath(lunaHomeDir)),
 	});
-	models.setProvider(openaiCodexProvider());
+	models.setProvider(withGpt62Sol(openaiCodexProvider()));
 	return models;
+}
+
+// pi-ai 1.5.2 の一覧にまだ無い。上流は 6.1 Sol と同じ定義で追加済み（earendil-works/pi cead615）なので、6.2 入りの pi-ai へ上げたら消す。
+function withGpt62Sol(
+	provider: Provider<"openai-codex-responses">,
+): Provider<"openai-codex-responses"> {
+	const gpt61Sol = provider.getModels().find((model) => model.id === "gpt-6.1-sol");
+	if (gpt61Sol === undefined) {
+		throw new Error("openai-codex/gpt-6.1-sol is missing from pi-ai");
+	}
+	const gpt62Sol = { ...gpt61Sol, id: "gpt-6.2-sol", name: "GPT-6.2 Sol" };
+	return {
+		...provider,
+		getModels: () => [...provider.getModels(), gpt62Sol],
+		getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), gpt62Sol],
+	};
 }
 
 export function validateModelSelections(

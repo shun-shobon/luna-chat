@@ -194,7 +194,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 
 ### 8.1 セッション
 
-- `PiAgentRuntime` は `AgentRuntimePort` を実装し、`open(spec)` ごとに pi の `Agent` を作る。pi-ai の `Models`（openai-codex プロバイダと資格情報ストア）は全セッションで共有する。
+- `PiAgentRuntime` は `AgentRuntimePort` を実装し、`open(spec)` ごとに pi の `Agent` を作る。pi-ai の `Models`（openai-codex プロバイダと資格情報ストア）は全セッションで共有する。pi-ai 1.5.2 のカタログにない `gpt-6.2-sol` は、`createAgentModels` が `gpt-6.1-sol` の定義を写して足す（上流と同じ定義。6.2 入りの pi-ai へ上げたら消す）。
 - 入力は独自ロールのメッセージとして記録し、`convertToLlm` で `<luna_input kind="...">` の user メッセージにする。
 - `sessionId`（openai-codex の `prompt_cache_key` と WebSocket の接続キー）はセッションごとに固定し、キャッシュを効かせる。
 - Luna のツールは pi の AgentTool に変換して渡す。汎用ツールは `spec.harnessTools` に応じてアダプターが作る（シェル、`read`/`edit`/`write`、`view_image`、`web_run`、`image_gen`）。
