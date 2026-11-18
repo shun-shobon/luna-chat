@@ -17,7 +17,7 @@ Lunaは、単一のNode.jsプロセス内でDiscordとHTTPの会話、自律タ�
 ```text
 Discord Gateway ─► discord ─► conversation ──────────┐
 ローカルHTTP ────► http ─────► conversation ──────────┤
-                           └──► event executor ───────┼─► AgentRuntimePort ─► pi Agent ─► ChatGPT（openai-codex）
+                           └──► event executor ───────┼─► AgentRuntimePort ─► pi Agent ─► ChatGPT（openai-codex）／Claude Code CLI（claude-code）
 automation sources ──────────► event executor ────────┤        │ セッションごとのツール
 Home Assistant ──► home-assistant ─► conversation ──────┤        │
 task service（作業エージェント）──────────────────────┘         ▼
@@ -27,10 +27,10 @@ task service（作業エージェント）────────────�
 ブラウザ ─► dashboard ─► 各モジュールの snapshot / 直近ログ（読み取りのみ）
 
 Lunaプロセス内: 上記各モジュール、observability、runtime
-外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Home Assistant（REST・WebSocket）
+外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Claude Code CLI（子プロセス）とAnthropic API / Home Assistant（REST・WebSocket）
 ```
 
-- **エージェントの実行**: Lunaのプロセス内で、セッションごとに pi の `Agent` を1つ持つ。認証とモデルのカタログを持つ pi-ai の `Models` は全セッションで共有する。子プロセスやRPCは使わない。
+- **エージェントの実行**: Lunaのプロセス内で、セッションごとに pi の `Agent` を1つ持つ。認証とモデルのカタログを持つ pi-ai の `Models` は全セッションで共有する。エージェントループとツールの実行は常にLunaのプロセス内で行う。`claude-code` だけは、モデルとの通信を Claude Code CLI の子プロセスに任せる（§8.7）。
 - **ツール**: エージェントが呼んだ時点で、同じプロセス内で実行する。
 - **HTTP API**: Nativeでは `127.0.0.1` にバインドする。Docker Composeではコンテナ内の `0.0.0.0` にバインドし、ホストの `127.0.0.1` にのみポートを公開する。
 - **ダッシュボード**: HTTP APIとは別のHonoサーバーとして別ポートで待ち受ける。バインド先はHTTP APIと同じく環境変数で選ぶ。
@@ -47,7 +47,7 @@ src/
 │   │   ├── ports/
 │   │   └── adapters/
 │   ├── conversation/    # 会話セッション管理, 入力バッチ, アイドルタイマー
-│   ├── agent/           # エージェントのセッション（pi）, 汎用ツール, ChatGPTの認証・使用枠
+│   ├── agent/           # エージェントのセッション（pi）, 汎用ツール, ChatGPTの認証・使用枠, Claude Code のプロバイダ
 │   ├── event/           # 共通イベントエンベロープ, ワンショット実行
 │   ├── http/            # HTTPイベント受付, 応答ツール, 待機中の応答管理
 │   ├── tool/            # ツールの定義と実行元, ツール集合, 待機ツール
@@ -194,7 +194,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 
 ### 8.1 セッション
 
-- `PiAgentRuntime` は `AgentRuntimePort` を実装し、`open(spec)` ごとに pi の `Agent` を作る。pi-ai の `Models`（openai-codex プロバイダと資格情報ストア）は全セッションで共有する。pi-ai 1.5.2 のカタログにない `gpt-6.2-sol` と `gpt-6.2-astra` は、`createAgentModels` がそれぞれ `gpt-6.1-sol`・`gpt-6-astra` の定義を写して足す（Astra は料金だけ替える。上流と同じ定義。6.2 入りの pi-ai へ上げたら消す）。
+- `PiAgentRuntime` は `AgentRuntimePort` を実装し、`open(spec)` ごとに pi の `Agent` を作る。pi-ai の `Models`（openai-codex と claude-code のプロバイダ、資格情報ストア）は全セッションで共有する。pi-ai 1.5.2 のカタログにない `gpt-6.2-sol` と `gpt-6.2-astra` は、`createAgentModels` がそれぞれ `gpt-6.1-sol`・`gpt-6-astra` の定義を写して足す（Astra は料金だけ替える。上流と同じ定義。6.2 入りの pi-ai へ上げたら消す）。
 - 入力は独自ロールのメッセージとして記録し、`convertToLlm` で `<luna_input kind="...">` の user メッセージにする。
 - `sessionId`（openai-codex の `prompt_cache_key` と WebSocket の接続キー）はセッションごとに固定し、キャッシュを効かせる。
 - Luna のツールは pi の AgentTool に変換して渡す。汎用ツールは `spec.harnessTools` に応じてアダプターが作る（シェル、`read`/`edit`/`write`、`view_image`、`web_run`、`image_gen`）。
@@ -238,6 +238,30 @@ exec_command(run_in_background) ─► シェルツールのバックグラウ�
 ### 8.6 skillの使用記録
 
 - 汎用ツールのうち `read` と `exec_command` を包み、引数に含まれる `.agents/skills/<名前>/SKILL.md` を `SkillUsageStore` に記録する。書き込みはプロセス内で直列化し、一時ファイルからの rename で置き換える。失敗はログに残してツールの実行は止めない。
+
+### 8.7 Claude Code プロバイダ
+
+```text
+PiAgentSession ─► Models.streamSimple ─► claude-code provider
+                                            │ 履歴を stream-json のフレームにして stdin へ
+                                            ▼
+                                   claude -p（子プロセス, --max-turns 1）
+                                            │ ANTHROPIC_BASE_URL=ループバックの中継
+                                            ▼
+                                   TurnRelay ─► api.anthropic.com（1ターンに1リクエストだけ通す）
+                                            │ SSE をそのまま捕まえて pi のイベントへ
+                                            ▼
+                                   AssistantMessage（ツール呼び出しは Luna が実行）
+```
+
+- `adapters/outbound/pi/claude-code/` は earendil-works/pi-claude-code（d5b5e04、MIT、`LICENSE` を同梱）の移植である。npm に公開されておらず、Git からの導入はしない方針のため取り込んだ。上流の修正を手で追えるよう、構造と関数名は上流に合わせてある。上流から外したのは Windows 対応、`PI_CLAUDE_CODE_*` の環境変数、モデルの探索、超過課金を許す設定。
+- `claudeCodeProvider({ configDir })` は、ログイン状態の確認とリクエストの子プロセスに `CLAUDE_CONFIG_DIR=<LUNA_HOME>/claude-code` を重ねる。プロセスの環境変数には入れないため、シェルのツールの子プロセスには伝わらない。
+- Claude Code にはツールを実行させない。ツールの一覧は、呼ばれても拒否だけを返す MCP サーバー（`inert-mcp.ts` の文字列を一時ディレクトリへ書き出して `process.execPath` で起動）として見せ、モデルが出したツール呼び出しは中継で捕まえた応答から取り出す。バンドル後に `import.meta.url` からファイルを探せないため、文字列で持つ。
+- 中継は Claude Code が足した user メッセージのリマインダを捨て、pi の履歴の内容で組み直す。履歴と合わなければ推測で送らずに失敗にする。
+- 同じセッションの直線的な続き（直前の応答にツール呼び出しがない）は、起動済みのプロセスを再利用する。保持は最大2つ・5分まで。それ以外は新しいプロセスで履歴全体を再生する。セッションを閉じると pi-ai の `cleanupSessionResources` で閉じる。
+- 応答のネイティブの内容（署名付きの思考を含む）は assistant メッセージの diagnostics（`claude-code.native-assistant.v1`）に載せ、次の再生で使う。そのぶんセッションの記録が大きくなる。
+- モデルの一覧は静的で、`model-catalog.ts` の `CLAUDE_CODE_ROUTES` が Claude Code の `--model` に渡す値と文脈長を持つ。その他の定義は pi-ai の anthropic のカタログから写し、料金は0にする。
+- `rate_limit_event` の `isUsingOverage` が立った応答と、超過課金を求める拒否は「Claude Code billing」で始まるエラーにする。`classifyAgentError` はこれを `usage_limit` に分類する。
 
 ### 8.7 再生
 
