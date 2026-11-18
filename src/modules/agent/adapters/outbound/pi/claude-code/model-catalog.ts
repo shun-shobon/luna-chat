@@ -7,13 +7,13 @@ export const BASE_URL = "process://claude-code";
 
 type ClaudeCodeModel = Model<typeof API_ID>;
 
-// route は Claude Code の --model に渡す値。contextWindow は Claude Code 経由で使える長さで、API の定義とは違うことがある。
-const CLAUDE_CODE_ROUTES: Readonly<Record<string, { route: string; contextWindow: number }>> = {
-	"claude-fable-5-2": { route: "claude-fable-5-2", contextWindow: 200_000 },
-	"claude-opus-5-5": { route: "claude-opus-5-5", contextWindow: 200_000 },
-	"claude-sonnet-5-5": { route: "claude-sonnet-5-5", contextWindow: 200_000 },
-	"claude-haiku-5-5": { route: "claude-haiku-5-5", contextWindow: 200_000 },
-};
+// Claude Code の --model にはモデルIDをそのまま渡す。文脈長も pi-ai の定義どおり（2026-11-19 に Max で 1M を実測）。
+const CLAUDE_CODE_MODEL_IDS = [
+	"claude-fable-5-2",
+	"claude-opus-5-5",
+	"claude-sonnet-5-5",
+	"claude-haiku-5-5",
+] as const;
 
 type Capabilities = {
 	adaptiveThinking: boolean;
@@ -29,7 +29,7 @@ const BUILTIN_ANTHROPIC_MODELS = new Map(
 
 const CAPABILITIES = new Map<string, Capabilities>();
 
-function catalogModel(id: string, contextWindow: number): ClaudeCodeModel {
+function catalogModel(id: string): ClaudeCodeModel {
 	const builtin = BUILTIN_ANTHROPIC_MODELS.get(id);
 	if (builtin === undefined) {
 		throw new Error(`anthropic/${id} is missing from pi-ai`);
@@ -55,13 +55,11 @@ function catalogModel(id: string, contextWindow: number): ClaudeCodeModel {
 		baseUrl: BASE_URL,
 		// サブスクの使用枠で払うため、従量の料金を載せない。
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow,
 	};
 }
 
-export const CLAUDE_CODE_MODELS: readonly ClaudeCodeModel[] = Object.entries(
-	CLAUDE_CODE_ROUTES,
-).map(([id, { contextWindow }]) => catalogModel(id, contextWindow));
+export const CLAUDE_CODE_MODELS: readonly ClaudeCodeModel[] =
+	CLAUDE_CODE_MODEL_IDS.map(catalogModel);
 
 function capabilities(model: string): Capabilities {
 	const found = CAPABILITIES.get(model);
@@ -69,14 +67,6 @@ function capabilities(model: string): Capabilities {
 		throw new Error(`Unknown Claude Code model: ${model}`);
 	}
 	return found;
-}
-
-export function nativeModel(model: string): string {
-	const entry = CLAUDE_CODE_ROUTES[model];
-	if (entry === undefined) {
-		throw new Error(`Unknown Claude Code model: ${model}`);
-	}
-	return entry.route;
 }
 
 export function supportsAdaptiveThinking(model: string): boolean {

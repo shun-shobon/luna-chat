@@ -260,7 +260,7 @@ PiAgentSession ─► Models.streamSimple ─► claude-code provider
 - 中継は Claude Code が足した user メッセージのリマインダを捨て、pi の履歴の内容で組み直す。履歴と合わなければ推測で送らずに失敗にする。
 - 同じセッションの直線的な続き（直前の応答にツール呼び出しがない）は、起動済みのプロセスを再利用する。保持は最大2つ・5分まで。それ以外は新しいプロセスで履歴全体を再生する。セッションを閉じると pi-ai の `cleanupSessionResources` で閉じる。
 - 応答のネイティブの内容（署名付きの思考を含む）は assistant メッセージの diagnostics（`claude-code.native-assistant.v1`）に載せ、次の再生で使う。そのぶんセッションの記録が大きくなる。
-- モデルの一覧は静的で、`model-catalog.ts` の `CLAUDE_CODE_ROUTES` が Claude Code の `--model` に渡す値と文脈長を持つ。その他の定義は pi-ai の anthropic のカタログから写し、料金は0にする。
+- モデルの一覧は静的で、pi-ai の anthropic のカタログから写し、料金は0にする。Claude Code の `--model` にはモデルIDをそのまま渡す。文脈長（1M）と最大出力（128K）は、Max のアカウントで Claude Code が報告する値と一致する。
 - `rate_limit_event` の `isUsingOverage` が立った応答と、超過課金を求める拒否は「Claude Code billing」で始まるエラーにする。`classifyAgentError` はこれを `usage_limit` に分類する。
 
 ### 8.7 再生
