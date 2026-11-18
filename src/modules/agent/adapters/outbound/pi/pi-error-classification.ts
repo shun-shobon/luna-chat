@@ -22,15 +22,17 @@ const USAGE_LIMIT_CODES = new Set([
 	"usage_not_included",
 	"rate_limit_exceeded",
 ]);
-const USAGE_LIMIT_MESSAGE = /usage.?limit|usage_not_included/iu;
+// claude-code は超過課金に回された応答を「Claude Code billing」で始まるエラーにして止める。
+const USAGE_LIMIT_MESSAGE = /usage.?limit|usage_not_included|Claude Code billing/iu;
 
 // pi-ai が認証の解決や資格情報の読み出しに失敗したときの定型文（ModelsError の auth/oauth と codex の資格情報検査）。
 // ModelsError はストリームに入る時点で文字列になり、code が失われる。
 const AUTH_FAILURE_MESSAGE =
 	/Provider is not configured:|OAuth refresh failed for|OAuth refresh returned a token that expires too soon|OAuth auth derivation failed for|Credential store read failed for|API key auth check failed|No API key for provider:|Failed to extract accountId from token/u;
 
-// isRetryableAssistantError が拾わない codex の切断。
-const EXTRA_TRANSIENT_MESSAGE = /closed before response\.completed|ECONNRESET|EPIPE/iu;
+// isRetryableAssistantError が拾わない codex と claude-code の切断。
+const EXTRA_TRANSIENT_MESSAGE =
+	/closed before response\.completed|ECONNRESET|EPIPE|upstream stream ended before message_stop/iu;
 
 export function classifyAgentError(
 	message: AssistantMessage,

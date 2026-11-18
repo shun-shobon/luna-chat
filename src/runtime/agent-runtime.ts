@@ -8,6 +8,7 @@ import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-code
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 
 import { ChatGptBackend } from "../modules/agent/adapters/outbound/pi/chatgpt-backend";
+import { claudeCodeProvider } from "../modules/agent/adapters/outbound/pi/claude-code/provider";
 import { FileCredentialStore } from "../modules/agent/adapters/outbound/pi/file-credential-store";
 import { createImageGenTool } from "../modules/agent/adapters/outbound/pi/image-gen-tool";
 import { PiAgentRuntime } from "../modules/agent/adapters/outbound/pi/pi-agent-runtime";
@@ -39,11 +40,16 @@ export function credentialsPath(lunaHomeDir: string): string {
 	return resolve(lunaHomeDir, "auth", "credentials.json");
 }
 
+function claudeCodeConfigDir(lunaHomeDir: string): string {
+	return resolve(lunaHomeDir, "claude-code");
+}
+
 export function createAgentModels(lunaHomeDir: string): Models {
 	const models = createModels({
 		credentials: new FileCredentialStore(credentialsPath(lunaHomeDir)),
 	});
 	models.setProvider(withGpt62Models(openaiCodexProvider()));
+	models.setProvider(claudeCodeProvider({ configDir: claudeCodeConfigDir(lunaHomeDir) }));
 	return models;
 }
 

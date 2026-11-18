@@ -536,11 +536,15 @@ export class PiAgentSession implements AgentSession {
 			message: event.message,
 		});
 		// pi-ai は WebSocket から SSE への切り替えなど、成功した応答の裏で起きた障害を diagnostics にだけ残す。
+		// claude-code は再生用の状態や使用枠も diagnostics に載せるため、障害を伴うものだけを記録する。
 		if (event.message.role === "assistant") {
 			for (const diagnostic of event.message.diagnostics ?? []) {
+				if (diagnostic.error === undefined) {
+					continue;
+				}
 				this.#logger.warn("agent.pi.provider_diagnostic", {
 					details: diagnostic.details,
-					error: diagnostic.error?.message,
+					error: diagnostic.error.message,
 					sessionId: this.id,
 					type: diagnostic.type,
 				});

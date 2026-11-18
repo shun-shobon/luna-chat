@@ -30,6 +30,11 @@ describe("classifyAgentError", () => {
 			"You have hit your ChatGPT usage limit (plus plan).",
 			EMPTY_REQUEST_FAILURE_SIGNALS,
 		],
+		[
+			"claude-codeの超過課金",
+			"Claude Code billing: this request was charged to Claude usage credits instead of your plan limits",
+			EMPTY_REQUEST_FAILURE_SIGNALS,
+		],
 	])("使用上限を判定する: %s", (_name, text, input) => {
 		expect(classifyAgentError(errorMessage(text), input)).toBe("usage_limit");
 	});
@@ -63,6 +68,16 @@ describe("classifyAgentError", () => {
 			EMPTY_REQUEST_FAILURE_SIGNALS,
 		],
 		["成功ステータスの後の切断", "socket hang up", signals({ httpStatus: 200 })],
+		[
+			"claude-codeの途中切断",
+			"Claude Code upstream stream ended before message_stop (status 200, capture incomplete)",
+			EMPTY_REQUEST_FAILURE_SIGNALS,
+		],
+		[
+			"claude-codeの5xx",
+			"Claude Code upstream server error (status 529, capture incomplete)",
+			EMPTY_REQUEST_FAILURE_SIGNALS,
+		],
 	])("一時的なエラーを判定する: %s", (_name, text, input) => {
 		expect(classifyAgentError(errorMessage(text), input)).toBe("transient");
 	});
@@ -71,6 +86,11 @@ describe("classifyAgentError", () => {
 		["400", "Invalid schema", signals({ httpStatus: 400 })],
 		["400は本文の語より優先する", "request timeout field is invalid", signals({ httpStatus: 400 })],
 		["不明", "Something unexpected", EMPTY_REQUEST_FAILURE_SIGNALS],
+		[
+			"claude-codeの未ログイン",
+			"Claude Code is installed but not logged in. Run `claude auth login` and try again.",
+			EMPTY_REQUEST_FAILURE_SIGNALS,
+		],
 	])("それ以外は致命的とする: %s", (_name, text, input) => {
 		expect(classifyAgentError(errorMessage(text), input)).toBe("fatal");
 	});

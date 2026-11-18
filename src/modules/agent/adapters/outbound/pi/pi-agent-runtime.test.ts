@@ -10,6 +10,7 @@ import {
 	fauxToolCall,
 } from "@earendil-works/pi-ai";
 import type {
+	AssistantMessage,
 	FauxModelDefinition,
 	FauxResponseStep,
 	Message,
@@ -576,21 +577,22 @@ describe("エラーと再試行", () => {
 		});
 	});
 
-	it("成功した応答に付いた提供元の診断情報を warn で記録する", async () => {
+	it("成功した応答に付いた診断情報のうち障害を伴うものだけを warn で記録する", async () => {
 		const { runtime, faux, logger } = await setup();
-		faux.setResponses([
-			() => ({
-				...fauxAssistantMessage("ok"),
-				diagnostics: [
-					{
-						type: "provider_transport_failure",
-						timestamp: NOW.getTime(),
-						error: { name: "Error", message: "WebSocket error", stack: "Error: WebSocket error" },
-						details: { configuredTransport: "auto", fallbackTransport: "sse" },
-					},
-				],
-			}),
-		]);
+		const diagnostics: NonNullable<AssistantMessage["diagnostics"]> = [
+			{
+				type: "provider_transport_failure",
+				timestamp: NOW.getTime(),
+				error: { name: "Error", message: "WebSocket error", stack: "Error: WebSocket error" },
+				details: { configuredTransport: "auto", fallbackTransport: "sse" },
+			},
+			{
+				type: "claude-code.rate-limit",
+				timestamp: NOW.getTime(),
+				details: { status: "allowed" },
+			},
+		];
+		faux.setResponses([() => ({ ...fauxAssistantMessage("ok"), diagnostics })]);
 		const session = runtime.open(spec());
 
 		await expect(session.run([input("始めて")])).resolves.toMatchObject({ status: "completed" });
@@ -606,6 +608,9 @@ describe("エラーと再試行", () => {
 				type: "provider_transport_failure",
 			},
 		});
+		expect(
+			logger.entries.filter((entry) => entry.event === "agent.pi.provider_diagnostic"),
+		).toHaveLength(1);
 	});
 
 	it("SSE の 429 は再試行せず usage_limit を返す", async () => {
