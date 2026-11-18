@@ -408,15 +408,15 @@ transcript_retention_ms = 604800000
 transcript_cleanup_interval_ms = 86400000
 
 [models.conversation]
-model = "openai-codex/gpt-6.1-sol"
+model = "openai-codex/gpt-6.2-sol"
 thinking = "medium"
 
 [models.event]
-model = "openai-codex/gpt-6.1-sol"
+model = "openai-codex/gpt-6.2-sol"
 thinking = "medium"
 
 [models.worker]
-model = "openai-codex/gpt-6.1-sol"
+model = "openai-codex/gpt-6.2-sol"
 thinking = "medium"
 
 [models.compaction]
