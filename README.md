@@ -38,6 +38,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - OS: macOS / Linux（native）、または Docker（linux/amd64, linux/arm64）
 - Discord Bot Token（Message Content、Guild/DM Messages、Typing などのIntentが必要）
 - ChatGPTのサブスクリプション（ChatGPTのアカウントでログインして使います）
+- Claudeのモデルも使う場合：Claudeのサブスクリプション（Pro・Max）と [Claude Code](https://code.claude.com/docs) のCLI（nativeのみ。Dockerイメージには入っていません）
 - Docker で動かす場合：Docker Engine と Docker Compose
 - native で動かす場合：[mise](https://mise.jdx.dev/)（Node.js と pnpm を導入します）、ripgrep（エージェントが記憶やワークスペースの検索に使います）、Python 3（同梱のskillのスクリプトに使います）
 - Git（任意。日次整理のたびにワークスペースのコミットを残します）
@@ -75,6 +76,16 @@ DISCORD_BOT_TOKEN=... pnpm start
 
 `login` はデバイスコード方式です。表示されたURLを任意の端末のブラウザで開き、コードを入力すると、資格情報が `LUNA_HOME/auth/credentials.json` に保存されます。資格情報の更新に失敗した場合はダッシュボードに「ChatGPT 再ログインが必要」と表示されるので、同じ手順で再ログインしてください。
 
+### Claudeのモデルを使う
+
+Lunaを動かすユーザーで `claude` をPATHに置き、`LUNA_HOME/claude-code` を設定ディレクトリにしてログインしておくと、`config.toml` の `[models.*]` で `claude-code/claude-opus-5-5` などを選べます（[SPEC.md](./docs/SPEC.md#8-エージェントの実行基盤)）。リクエストはClaude Code CLIを通してサブスクリプションの枠で送られ、超過課金に回された時点でLunaは実行を止めます。
+
+```sh
+CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
+```
+
+この設定ディレクトリはLunaがモデルとして使うときだけのものです。ルナがシェルから `claude` を使うときは、通常どおり `~/.claude` を使います。
+
 ## 設定
 
 ### 環境変数
@@ -102,6 +113,7 @@ DISCORD_BOT_TOKEN=... pnpm start
 ~/.luna/
 ├── config.toml
 ├── auth/                  # ChatGPTの資格情報（credentials.json）
+├── claude-code/           # Claudeのモデルに使う Claude Code の設定ディレクトリ（ログインもここ）
 ├── sessions/              # エージェントのセッションの記録（日付ごと）
 ├── state/                 # 使用枠など、実行中に書き出す状態（usage.json）
 └── workspace/

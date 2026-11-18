@@ -183,12 +183,15 @@ Home Assistantの接続を設定した場合（§22）は、どの種類にもHo
 
 ## 8. エージェントの実行基盤
 
-エージェントは、Lunaのプロセス内でpi（`@earendil-works/pi-agent-core` と `@earendil-works/pi-ai`）を使って実行する。モデルの提供元は `openai-codex`（ChatGPTのサブスクリプションをOAuthで使う）とする。
+エージェントは、Lunaのプロセス内でpi（`@earendil-works/pi-agent-core` と `@earendil-works/pi-ai`）を使って実行する。モデルの提供元は次の2つで、`[models]` ごとに選べる。
+
+- `openai-codex`: ChatGPTのサブスクリプションをOAuthで使う。
+- `claude-code`: Claudeのサブスクリプション（Pro・Max）を、Claude Code CLI を通して使う。モデルは `claude-fable-5-2`・`claude-opus-5-5`・`claude-sonnet-5-5`・`claude-haiku-5-5`。
 
 - 会話・イベント実行・作業エージェントは、それぞれ `[models]`（§14.1）で指定したモデルと推論強度を使う。会話は `/luna model` でセッションごとに変更できる。
 - モデルへの各リクエストには `request_timeout_ms` を適用する。
-- 成功した応答に提供元の診断情報（WebSocketが使えずSSEで送り直した等）が付いていたら、warnログ `agent.pi.provider_diagnostic` に種類・詳細・エラーメッセージを記録する。
-- 一時的な失敗（HTTP 5xx、接続の失敗・切断、タイムアウト）は、15秒・60秒・180秒待って最大3回、同じセッションの続きから再実行する。待機中に届いた割り込み入力は、再実行の前に入る。使用枠の上限到達（HTTP 429 の `usage_limit_reached`）、認証の失敗、それ以外の失敗は再実行しない。
+- 成功した応答に提供元の障害の診断情報（WebSocketが使えずSSEで送り直した等）が付いていたら、warnログ `agent.pi.provider_diagnostic` に種類・詳細・エラーメッセージを記録する。障害を伴わない診断情報（`claude-code` の再生用の状態や使用枠の状態）は記録しない。
+- 一時的な失敗（HTTP 5xx、接続の失敗・切断、タイムアウト）は、15秒・60秒・180秒待って最大3回、同じセッションの続きから再実行する。待機中に届いた割り込み入力は、再実行の前に入る。使用枠の上限到達（HTTP 429 の `usage_limit_reached`、`claude-code` の超過課金の拒否）、認証の失敗、それ以外の失敗は再実行しない。
 - 直近のリクエストの入力トークン数がモデルの文脈長から予約分（16384トークン）を引いた値を超えたら、`[models.compaction]` のモデルで古い部分を要約し、以後のリクエストでは「システムプロンプト、要約、直近の約20000トークン分」を送る。
 - セッションの記録は `LUNA_HOME/sessions/<YYYY-MM-DD>/<セッションID>.jsonl` に追記する（§15）。
 
@@ -197,6 +200,8 @@ Home Assistantの接続を設定した場合（§22）は、どの種類にもHo
 - ChatGPTの資格情報は `LUNA_HOME/auth/credentials.json`（ディレクトリは0700、ファイルは0600）に保存する。`luna-chat login` を実行すると、デバイスコード方式でログインして保存する。表示されたコードを任意の端末のブラウザで入力する。
 - アクセストークンは期限の5分前からリクエストの直前に更新する。更新に失敗した実行は再試行せずに失敗とし、エラーログを記録する。次に実行が成功するまで、ダッシュボードに再ログインが必要であることを示す。
 - 使用枠は起動時と以後10分ごとに取得し、`LUNA_HOME/state/usage.json` に書き出してダッシュボードに表示する。書き出す内容は `UsageSnapshot`（取得時刻、プラン、limitごとのprimary・secondaryウィンドウの使用率・長さ・リセット時刻）とする。
+- `claude-code` は、Lunaのプロセスと同じユーザーで `claude`（Claude Code CLI）がPATHにあることを前提とする。Claude Codeの設定ディレクトリには `LUNA_HOME/claude-code` を使い（`CLAUDE_CONFIG_DIR`）、ログインは `CLAUDE_CONFIG_DIR=$LUNA_HOME/claude-code claude auth login` で行う。エージェントがシェルから使う `claude` には渡さず、そちらは通常の設定ディレクトリを使う。資格情報はClaude Codeが持ち、Lunaは読まない。`ANTHROPIC_API_KEY` はClaude Codeへ渡さず、認証や接続先を差し替える環境変数（`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_BASE_URL`・Bedrock・Vertex・Foundry）があればリクエストを失敗とする。未インストール・未ログインもその実行の失敗とし、ダッシュボードの認証状態（ChatGPTのもの）は変えない。
+- `claude-code` の応答がプランの枠ではなく超過課金（usage credits）に回されたら、その実行を失敗にして以後のリクエストを止める。Anthropicが超過課金を求めて拒否した場合も同じ。使用枠の取得と表示、高速モード（§24）は `openai-codex` だけが対象である。
 
 ### 8.2 再生 (`luna-chat replay`)
 
@@ -437,7 +442,7 @@ tts_speaker = 684965824
 tts_speed = 1.0
 ```
 
-- `[models.*]` の `model` は `provider/model` の形とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。省略した項目は上の値になる。
+- `[models.*]` の `model` は `provider/model` の形（例: `claude-code/claude-opus-5-5`。提供元は§8）とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。省略した項目は上の値になる。
 - `[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
 - `[voice]` は省略でき、省略するとボイスチャンネル（§24）を使わない。書く場合、`stt_threads`（1以上の整数）・`silence_ms`（1以上の整数）・`tts_speed`（0.5〜2）は省略すると上の値になり、それ以外は必須とする。`stt_model_kind` は `nemo-ctc`（Parakeet ja など）・`nemo-transducer`（Haas-ja など）・`transducer`（Zipformer など）のいずれかで、`stt_model_dir` は sherpa-onnx の配布形式のディレクトリとする（`tokens.txt` と各部品の `.onnx` を名前から探し、`int8`・`quantized` の版を優先する）。`tts_url` は `http` か `https` のURL、`tts_speaker` はTTSエンジンのスタイルIDとする。モデルのファイルとディレクトリは起動時に読み込み、読めなければ起動を中止する。
 - `*_ms` のうちタイマーとして使う値（`transcript_retention_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
