@@ -298,7 +298,7 @@ voice_join / voice_leave / voice_report ──► VoiceChannelService ──conn
 - `VoiceSession`（application）は音声モードの会話の進行を持つ。返事（`Reply`）は同時に1つで、`draft` で確定前の発話を末尾に足した会話記録から作り始め、`commit` が同じ話者・同じ版なら再生を許す（`release`）。違えば作り直す。確定前の `delegate` は `held` に溜め、`release` で出す。誰も話さず返事もない時に、未読の報告があれば報告をきっかけに返事を作る。人に聞こえ得た返事（`release` 済み）だけを、止めた時点の再生位置とともに会話記録に残す。
 - `SpeechOutput`（application）は返事ごとの `SpeechReply` を作り、文を `add` した時点で `SerialQueue` で順に合成し、`release` の後に言った順で再生する。新しい返事を始めると前の返事は止まる。最初の合成と再生の時刻を計測用に持つ。
 - `InterruptJudge`（application）は再生中に声を検知した話者ごとに開き、1秒後に `VoiceLink.ongoingSpeech` の途中の音声で、区切れた時に全体で、認識と判定をする。割り込みと決まったら一度だけ `onInterruption` を呼ぶ。区切れて扱いが決まった後は、遅れて返った途中の判定で覆さない。分類と認識の失敗は割り込みとして扱う。
-- `VoiceRecord`（domain）は会話記録を通し番号付きで持ち、裏へ渡した位置（`#deliveredSeq`）以降を依頼と一緒に渡す。表へは `formatRecordLine` の行、裏へは `toRecordJson` のJSONで渡す。`SentenceSplitter`（domain）は表の差分を文末の記号で一文ずつに切る。
+- `VoiceRecord`（domain）は会話記録を通し番号付きで持ち、裏へ渡した位置（`#deliveredSeq`）以降を依頼と一緒に渡す。表へは `formatRecordLine` の行、裏へは `toRecordJson` のJSONで渡す。`SentenceSplitter`（domain）は表の差分を読み上げの区切りに切る。最初の区切りだけ読点でも切り、声に出す文字が3文字に満たない区切りは次とつなげる。
 - 依頼の実行中かどうかは、`ConversationCoordinator` の `onBatchSettled` に依頼のイベントIDが来るまでとする。コンポジションルートが `VoiceChannelService.onBatchSettled` へ配る。
 - `DiscordVoiceGateway`（adapter）は `VoiceGatewayPort` を実装する。VCごとの `DiscordVoiceLink` が接続、話者ごとの受信と復号、再生、人数の監視（`voiceStateUpdate`）を持つ。再生は Readable から1フレーム（20ms）ずつ音量を掛けて Opus 化し、先に作るフレームを2つに抑えて音量の変更をすぐ効かせる。人が今いるVCは、Gatewayの `voiceStates` のキャッシュから探す。ミュートの切り替えは Ready の接続への `rejoin` で、音声の状態だけを送り直す（接続は張り直さない）。Opusの復号器がレートとチャンネル数を変換するので、自前のリサンプルは持たない。
 - 声の検知は話者ごとの Silero VAD（`createSpeechDetector`）で行い、区切りごとに `reset` する。Discordの「話し始め」の通知は雑音でも届くため、合図には使わない。声を検知しなかった区切りは `onSegment` で渡さない。

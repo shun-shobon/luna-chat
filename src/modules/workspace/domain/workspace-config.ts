@@ -53,9 +53,10 @@ export type VoiceSetting = {
 };
 
 // voicevox は VOICEVOX 互換の HTTP API（AivisSpeech Engine など）、speech-cpp は speech.cpp の OpenAI 互換 API。
+// emoji は、読み方の指示に絵文字を読むモデル（Irodori-TTS）かどうか。
 export type TtsSetting =
 	| Readonly<{ engine: "voicevox"; url: URL; speaker: number; speed: number }>
-	| Readonly<{ engine: "speech-cpp"; url: URL; voice: string; speed: number }>;
+	| Readonly<{ engine: "speech-cpp"; url: URL; voice: string; speed: number; emoji: boolean }>;
 
 const DEFAULT_MODEL: ModelSetting = {
 	provider: "openai-codex",
