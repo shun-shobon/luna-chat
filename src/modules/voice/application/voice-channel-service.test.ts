@@ -631,7 +631,7 @@ describe("VoiceChannelService", () => {
 			const { service, link, speak, commitTurn, frontCall, accepted, types } = setup();
 			await service.join({ target: { channelId: "500" }, mode: "voice" }, from(TEXT_SESSION));
 			await speak("昔話をお願い");
-			frontCall(0).say("昔々。あるところに");
+			frontCall(0).say("むかしむかし。あるところに");
 			await commitTurn();
 			const playing = link().plays[0]?.done.promise;
 
@@ -645,7 +645,7 @@ describe("VoiceChannelService", () => {
 			expect(accepted[0]?.event.data).toMatchObject({
 				transcript: [
 					{ type: "heard", text: "昔話をお願い" },
-					{ type: "said", played: [], cut: "昔々。", dropped: [] },
+					{ type: "said", played: [], cut: "むかしむかし。", dropped: [] },
 				],
 			});
 			expect(accepted[1]?.event.data).toMatchObject({ text: "やっぱりいいや", mode: "text" });
