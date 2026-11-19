@@ -3,12 +3,13 @@ import * as http from "node:http";
 import { join } from "node:path";
 
 import { fauxAssistantMessage, isRetryableAssistantError } from "@earendil-works/pi-ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	cachedClaudeProcessCount,
 	closeClaudeProcesses,
 	getClaudeStatus,
+	keepSpareClaudeProcess,
 	rewriteInitialRequest,
 	runClaudeRequest,
 } from "./claude-cli";
@@ -737,6 +738,62 @@ describe("runClaudeRequest", () => {
 			if (originalApiKey === undefined) delete process.env["ANTHROPIC_API_KEY"];
 			else process.env["ANTHROPIC_API_KEY"] = originalApiKey;
 		}
+	}, 30_000);
+
+	it("予備を控えるセッションは起動済みのプロセスで受け、使ったら捨てて次の予備を起動する", async () => {
+		const fake = await fakeClaude(STREAMING_FAKE);
+		const processLog = join(fake.root, "processes.log");
+		const processCount = async () => (await readFile(processLog, "utf8")).trim().split("\n").length;
+		const common = {
+			model: "claude-haiku-5-5",
+			cwd: fake.root,
+			systemPrompt: "system",
+			manifest: [],
+			extraBody: { tools: [] },
+			env: {
+				...fake.env,
+				EXPECTED_CWD: fake.root,
+				EXPECTED_SYSTEM_PROMPT: "system",
+				PROCESS_LOG: processLog,
+			},
+			timeoutMs: 5000,
+			sessionId: "voice-front",
+		};
+		const release = keepSpareClaudeProcess("voice-front");
+		try {
+			// 最初の要求には予備がないので自分で起動し、同時に次の予備を起動する。
+			const first = await runClaudeRequest({ ...common, frames: [userFrame("one")] });
+			expect(first.message.id).toBe("m_fake");
+			await vi.waitFor(async () => {
+				expect(await processCount()).toBe(2);
+			});
+
+			// 履歴が変わっても予備で受ける。新しく起動するのは次の予備の1つだけ。
+			const second = await runClaudeRequest({ ...common, frames: [userFrame("two")] });
+			expect(second.message.id).toBe("m_fake");
+			await vi.waitFor(async () => {
+				expect(await processCount()).toBe(3);
+			});
+			expect(cachedClaudeProcessCount()).toBe(0);
+
+			// 起動の条件が違えば予備を捨てて起動し直す。
+			const changed = await runClaudeRequest({
+				...common,
+				systemPrompt: "other",
+				env: { ...common.env, EXPECTED_SYSTEM_PROMPT: "other" },
+				frames: [userFrame("three")],
+			});
+			expect(changed.message.id).toBe("m_fake");
+			await vi.waitFor(async () => {
+				expect(await processCount()).toBe(5);
+			});
+		} finally {
+			await release();
+		}
+
+		// 解放した後は予備を起動しない。
+		await runClaudeRequest({ ...common, sessionId: undefined, frames: [userFrame("four")] });
+		expect(await processCount()).toBe(6);
 	}, 30_000);
 
 	it("応答が時間内に来なければタイムアウトで失敗し、プロセスを残さない", async () => {

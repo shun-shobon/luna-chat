@@ -1233,9 +1233,89 @@ registerSessionResourceCleanup((sessionId) => {
 	void closeClaudeProcesses(sessionId);
 });
 
+type SpareState = {
+	spare: Promise<ClaudeProcess | undefined> | undefined;
+	refreshTimer: NodeJS.Timeout | undefined;
+};
+
+const spareSessions = new Map<string, SpareState>();
+
+// 毎回の要求が履歴の続きにならず温まったプロセスを使い回せないセッションのため、次の要求を受ける起動済みのプロセスを1つ控える。
+// 控えたプロセスは使い回しの枠（processCache）に入れず、使ったら捨てる。会話の温まったプロセスを追い出さないため。
+export function keepSpareClaudeProcess(sessionId: string): () => Promise<void> {
+	const state: SpareState = { spare: undefined, refreshTimer: undefined };
+	spareSessions.set(sessionId, state);
+	return async () => {
+		if (spareSessions.get(sessionId) === state) spareSessions.delete(sessionId);
+		clearTimeout(state.refreshTimer);
+		const spare = state.spare;
+		state.spare = undefined;
+		await (await spare)?.close();
+	};
+}
+
+function launchSpare(
+	sessionId: string,
+	state: SpareState,
+	input: RunClaudeInput,
+	plan: ClaudeLaunchPlan,
+): void {
+	if (spareSessions.get(sessionId) !== state) return;
+	clearTimeout(state.refreshTimer);
+	const { signal: _signal, onEvent: _onEvent, ...spareInput } = input;
+	// 起動の失敗はここでは報告しない。次の要求が自分で起動し直し、同じ失敗をその要求の失敗として返す。
+	const spare = ClaudeProcess.create(spareInput, plan).catch(() => undefined);
+	state.spare = spare;
+	void spare.then((worker) => {
+		// 控えから外れたものは、外した側（要求・解放・入れ替え）が閉じる。
+		if (worker === undefined || state.spare !== spare || spareSessions.get(sessionId) !== state) {
+			return;
+		}
+		state.refreshTimer = setTimeout(() => {
+			if (state.spare !== spare) return;
+			launchSpare(sessionId, state, spareInput, plan);
+			void worker.close();
+		}, CLAUDE_PROCESS_MAX_AGE_MS);
+		state.refreshTimer.unref();
+	});
+}
+
+async function takeSpare(
+	state: SpareState,
+	plan: ClaudeLaunchPlan,
+): Promise<ClaudeProcess | undefined> {
+	const pending = state.spare;
+	state.spare = undefined;
+	clearTimeout(state.refreshTimer);
+	const spare = await pending;
+	if (spare === undefined) return undefined;
+	if (spare.fingerprint === plan.fingerprint && spare.isAlive() && !spare.isExpired()) return spare;
+	await spare.close();
+	return undefined;
+}
+
+async function runWithSpare(
+	input: RunClaudeInput,
+	plan: ClaudeLaunchPlan,
+	sessionId: string,
+	state: SpareState,
+): Promise<RunClaudeOutput> {
+	const worker = (await takeSpare(state, plan)) ?? (await ClaudeProcess.create(input, plan));
+	launchSpare(sessionId, state, input, plan);
+	try {
+		return await worker.run(input, false);
+	} finally {
+		await worker.close();
+	}
+}
+
 export async function runClaudeRequest(input: RunClaudeInput): Promise<RunClaudeOutput> {
 	input.signal?.throwIfAborted();
 	const plan = launchPlan(input);
+	const spareState = input.sessionId === undefined ? undefined : spareSessions.get(input.sessionId);
+	if (input.sessionId !== undefined && spareState !== undefined) {
+		return await runWithSpare(input, plan, input.sessionId, spareState);
+	}
 	const acquired = await acquireProcess(input, plan);
 	try {
 		const output = await acquired.worker.run(input, acquired.continuation);
