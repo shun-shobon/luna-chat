@@ -107,7 +107,10 @@ tts_speaker = 684965824
 				sttModelDir: "/models/parakeet",
 				vadModel: "/models/silero_vad.onnx",
 				sttThreads: 2,
-				silenceMs: 800,
+				silenceMs: 300,
+				turnWaitMs: 500,
+				unfinishedTurnWaitMs: 3000,
+				interruptModel: { provider: "openai", model: "gpt-6-luna" },
 				ttsUrl: new URL("http://127.0.0.1:10101/"),
 				ttsSpeaker: 684_965_824,
 				ttsSpeed: 1,
@@ -128,6 +131,14 @@ tts_speaker = 684965824
 		[
 			"non-http tts url",
 			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "ftp://127.0.0.1/"\ntts_speaker = 1',
+		],
+		[
+			"interrupt model without provider",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ninterrupt_model = "gpt-6-luna"',
+		],
+		[
+			"zero turn wait",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\nturn_wait_ms = 0',
 		],
 		[
 			"tts speed out of range",
@@ -179,11 +190,14 @@ tts_speaker = 684965824
 		const config = {
 			...DEFAULT_WORKSPACE_CONFIG,
 			voice: {
-				sttModelKind: "nemo-transducer",
-				sttModelDir: "/models/haas",
+				sttModelKind: "sense-voice",
+				sttModelDir: "/models/sense-voice",
 				vadModel: "/models/silero_vad.onnx",
 				sttThreads: 3,
-				silenceMs: 600,
+				silenceMs: 250,
+				turnWaitMs: 700,
+				unfinishedTurnWaitMs: 2000,
+				interruptModel: { provider: "typesafe", model: "jev" },
 				ttsUrl: new URL("http://tts.example:10101/"),
 				ttsSpeaker: 1,
 				ttsSpeed: 1.25,

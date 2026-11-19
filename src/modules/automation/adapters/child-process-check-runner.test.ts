@@ -17,20 +17,26 @@ afterEach(async () => {
 });
 
 describe("ChildProcessCheckRunner", () => {
-	it("workspaceをcwdとしてshで実行し、tokenを除いた環境と閉じた標準入力を渡す", async () => {
+	it("workspaceをcwdとしてshで実行し、tokenと有料APIの鍵を除いた環境と閉じた標準入力を渡す", async () => {
 		const workspaceDir = await createTemporaryDirectory();
 		const runner = createRunner({
 			cwd: workspaceDir,
-			parentEnvironment: { ...process.env, DISCORD_BOT_TOKEN: "secret", LUNA_CHECK_VALUE: "kept" },
+			parentEnvironment: {
+				...process.env,
+				DISCORD_BOT_TOKEN: "secret",
+				OPENAI_API_KEY: "sk-secret",
+				TYPESAFE_API_KEY: "ts-secret",
+				LUNA_CHECK_VALUE: "kept",
+			},
 		});
 
 		const result = await runner.run(
-			'pwd; echo "${DISCORD_BOT_TOKEN-unset}"; echo "$LUNA_CHECK_VALUE"; cat; echo done',
+			'pwd; echo "${DISCORD_BOT_TOKEN-unset}${OPENAI_API_KEY-unset}${TYPESAFE_API_KEY-unset}"; echo "$LUNA_CHECK_VALUE"; cat; echo done',
 		);
 
 		expect(result).toEqual({
 			status: "succeeded",
-			stdout: `${await realpath(workspaceDir)}\nunset\nkept\ndone\n`,
+			stdout: `${await realpath(workspaceDir)}\nunsetunsetunset\nkept\ndone\n`,
 		});
 	});
 

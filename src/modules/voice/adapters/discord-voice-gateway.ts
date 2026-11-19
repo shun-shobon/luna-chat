@@ -33,6 +33,8 @@ const RECONNECT_GRACE_MS = 5_000;
 // @discordjs/voice は人がいるVCに後から入ると復号に失敗し続けることがあり、自分では立ち直らない。
 const DECRYPT_FAILURE_RECOVERY_MS = 5_000;
 const DECRYPT_FAILURE_MESSAGE = "Failed to decrypt a packet";
+// 音量の変更がすぐ聞こえるよう、先に用意しておくフレームを少なくする（1つ20ms）。
+const PLAYBACK_BUFFERED_FRAMES = 2;
 
 type GatewayOptions = Readonly<{
 	silenceMs: number;
@@ -112,6 +114,7 @@ class DiscordVoiceLink implements VoiceLink {
 	#reconnecting = false;
 	#closed = false;
 	#muted: boolean;
+	#volume = 1;
 
 	constructor(
 		private readonly client: Client,
@@ -154,10 +157,19 @@ class DiscordVoiceLink implements VoiceLink {
 		this.#playing?.resolve(false);
 		const playing = Promise.withResolvers<boolean>();
 		this.#playing = playing;
-		this.#player.play(
-			createAudioResource(Readable.from(this.#encode(audio.pcm)), { inputType: StreamType.Opus }),
-		);
+		this.#player.play(createAudioResource(this.#frames(audio.pcm), { inputType: StreamType.Opus }));
 		return playing.promise;
+	}
+
+	setVolume(volume: number): void {
+		this.#volume = Math.min(1, Math.max(0, volume));
+	}
+
+	ongoingSpeech(userId: string): Float32Array | undefined {
+		const listening = this.#listening.get(userId);
+		return listening === undefined || listening.chunks.length === 0
+			? undefined
+			: concat(listening.chunks);
 	}
 
 	stop(): void {
@@ -239,7 +251,7 @@ class DiscordVoiceLink implements VoiceLink {
 			this.#listening.delete(userId);
 			listening.decoder.delete();
 			if (this.#closed || listening.chunks.length === 0) return;
-			this.handlers.onUtterance(userId, concat(listening.chunks));
+			this.handlers.onSegment(userId, concat(listening.chunks));
 		});
 	}
 
@@ -302,14 +314,32 @@ class DiscordVoiceLink implements VoiceLink {
 		}
 	}
 
-	#encode(pcm: Buffer): Buffer[] {
-		const packets: Buffer[] = [];
-		for (let offset = 0; offset < pcm.length; offset += FRAME_BYTES) {
-			const frame = Buffer.alloc(FRAME_BYTES);
-			pcm.copy(frame, 0, offset, Math.min(offset + FRAME_BYTES, pcm.length));
-			packets.push(this.#encoder.encode(frame, FRAME_SAMPLES));
-		}
-		return packets;
+	// 再生の途中で音量を変えられるよう、Opus化は再生に合わせて1フレームずつ行う。
+	#frames(pcm: Buffer): Readable {
+		let offset = 0;
+		const stream: Readable = new Readable({
+			objectMode: true,
+			highWaterMark: PLAYBACK_BUFFERED_FRAMES,
+			read: () => {
+				if (offset >= pcm.length) {
+					stream.push(null);
+					return;
+				}
+				const frame = Buffer.alloc(FRAME_BYTES);
+				pcm.copy(frame, 0, offset, Math.min(offset + FRAME_BYTES, pcm.length));
+				offset += FRAME_BYTES;
+				scaleVolume(frame, this.#volume);
+				stream.push(this.#encoder.encode(frame, FRAME_SAMPLES));
+			},
+		});
+		return stream;
+	}
+}
+
+function scaleVolume(frame: Buffer, volume: number): void {
+	if (volume === 1) return;
+	for (let offset = 0; offset < frame.length; offset += 2) {
+		frame.writeInt16LE(Math.round(frame.readInt16LE(offset) * volume), offset);
 	}
 }
 

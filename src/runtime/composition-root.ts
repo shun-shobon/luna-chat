@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
+import type { Models } from "@earendil-works/pi-ai";
 import type { Client } from "discord.js";
 
+import { PiModelStreams } from "../modules/agent/adapters/outbound/pi/pi-model-stream";
 import { fetchUsage } from "../modules/agent/adapters/outbound/pi/usage";
 import { UsagePoller } from "../modules/agent/adapters/outbound/pi/usage-poller";
+import type { ModelSelection } from "../modules/agent/ports/outbound/agent-session-port";
 import { ChildProcessCheckRunner } from "../modules/automation/adapters/child-process-check-runner";
 import { ChokidarScheduleWatcher } from "../modules/automation/adapters/chokidar-schedule-watcher";
 import { CronScheduleTimer } from "../modules/automation/adapters/cron-schedule-timer";
@@ -92,12 +95,19 @@ import { createWaitToolProvider } from "../modules/tool/adapters/wait-tool-provi
 import { createToolSet } from "../modules/tool/application/tool-set";
 import { AivisSpeechSynthesizer } from "../modules/voice/adapters/aivis-speech-synthesizer";
 import { DiscordVoiceGateway } from "../modules/voice/adapters/discord-voice-gateway";
+import { PiInterruptClassifier } from "../modules/voice/adapters/pi-interrupt-classifier";
 import { SherpaTranscriber } from "../modules/voice/adapters/sherpa-transcriber";
 import { createSpeechDetector } from "../modules/voice/adapters/silero-vad";
 import { SpeechClippingTranscriber } from "../modules/voice/adapters/speech-clipping-transcriber";
 import { createVoiceToolProvider } from "../modules/voice/adapters/voice-tool-provider";
 import { VoiceChannelService } from "../modules/voice/application/voice-channel-service";
-import { VOICE_UTTERANCE_EVENT_TYPE } from "../modules/voice/domain/voice-event";
+import { DELEGATE_TOOL, VoiceResponder } from "../modules/voice/application/voice-responder";
+import {
+	VOICE_DELEGATED_EVENT_TYPE,
+	VOICE_TRANSCRIPT_EVENT_TYPE,
+	VOICE_UTTERANCE_EVENT_TYPE,
+} from "../modules/voice/domain/voice-event";
+import { VOICE_FRONT_INSTRUCTIONS } from "../modules/voice/voice-front-instructions";
 import { VOICE_INSTRUCTIONS } from "../modules/voice/voice-instructions";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
@@ -111,7 +121,10 @@ import {
 	TRASH_RETENTION_DAYS,
 	WorkspaceTrash,
 } from "../modules/workspace/adapters/workspace-trash";
-import { readHeartbeatContext } from "../modules/workspace/application/workspace-instructions";
+import {
+	readHeartbeatContext,
+	readWorkspaceBaseInstructions,
+} from "../modules/workspace/application/workspace-instructions";
 import type { VoiceSetting } from "../modules/workspace/domain/workspace-config";
 import {
 	createChatGptBackend,
@@ -120,7 +133,7 @@ import {
 	validateModelSelections,
 } from "./agent-runtime";
 import { readRuntimeEnvironment } from "./runtime-environment";
-import { createSessionFactory } from "./session-factory";
+import { buildSystemPrompt, createSessionFactory } from "./session-factory";
 import { SESSION_DEVELOPER_INSTRUCTIONS } from "./session-instructions";
 
 const TYPING_REFRESH_INTERVAL_MS = 8_000;
@@ -132,6 +145,10 @@ const TRASH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const RECENT_LOG_MAX_FIELD_LENGTH = 4_000;
 const USAGE_POLL_INTERVAL_MS = 600_000;
 const VOICE_EMPTY_JOIN_WAIT_MS = 60_000;
+// 声の返事は待てないので、会話のリクエストより短く打ち切る。
+const VOICE_FRONT_TIMEOUT_MS = 30_000;
+// 判定を待つ間もルナは小さな声で話し続ける。これを超えたら割り込みとして扱う。
+const VOICE_INTERRUPT_TIMEOUT_MS = 3_000;
 
 interface LunaApplication {
 	shutdown(): Promise<void>;
@@ -194,11 +211,15 @@ export async function startLunaApplication(
 		report: async (...input: Parameters<TaskService["report"]>) =>
 			await requireTasks(tasks).report(...input),
 	};
+	const models = createAgentModels(workspace.lunaHomeDir);
 	const voice =
 		workspace.config.voice === undefined
 			? undefined
 			: await createVoice({
 					setting: workspace.config.voice,
+					model: workspace.config.models.voice,
+					models,
+					workspaceDir: workspace.workspaceDir,
 					client,
 					accept: (input) => conversation?.accept(input) ?? false,
 					logger,
@@ -230,7 +251,6 @@ export async function startLunaApplication(
 	const releaseTools = async (ownerId: string): Promise<void> => {
 		await Promise.all([tools.release(ownerId), workerTools.release(ownerId)]);
 	};
-	const models = createAgentModels(workspace.lunaHomeDir);
 	const backend = createChatGptBackend(models);
 	const agent = createPiAgentRuntime({
 		backend,
@@ -369,6 +389,7 @@ export async function startLunaApplication(
 						httpResponses.complete(eventId, succeeded);
 						assistResponses.complete(eventId, succeeded);
 					}
+					voice?.onBatchSettled(eventIds);
 				},
 				openSession,
 				releaseTools,
@@ -380,7 +401,7 @@ export async function startLunaApplication(
 			{
 				debounceMs: workspace.config.discord.debounceMs,
 				isImmediate: (event) =>
-					event.type === ASSIST_REQUESTED_EVENT_TYPE || event.type === VOICE_UTTERANCE_EVENT_TYPE,
+					event.type === ASSIST_REQUESTED_EVENT_TYPE || VOICE_EVENT_TYPES.has(event.type),
 				initialHistoryLimit: workspace.config.discord.initialHistoryLimit,
 				sessionMemoryEnabled: workspace.config.memory.enabled,
 				sessionIdleMs: workspace.config.discord.sessionIdleMs,
@@ -688,15 +709,34 @@ function requireTasks(tasks: TaskService | undefined): TaskService {
 	return tasks;
 }
 
+// 声の集約を待たずに渡す音声の入力。
+const VOICE_EVENT_TYPES: ReadonlySet<string> = new Set([
+	VOICE_UTTERANCE_EVENT_TYPE,
+	VOICE_DELEGATED_EVENT_TYPE,
+	VOICE_TRANSCRIPT_EVENT_TYPE,
+]);
+
 async function createVoice(
 	input: Readonly<{
 		setting: VoiceSetting;
+		model: ModelSelection;
+		models: Models;
+		workspaceDir: string;
 		client: Client;
 		accept(input: AcceptedConversationEvent): boolean;
 		logger: LoggerPort;
 	}>,
 ): Promise<VoiceChannelService> {
 	const { setting, logger } = input;
+	const classifier = await PiInterruptClassifier.create({
+		...setting.interruptModel,
+		timeoutMs: VOICE_INTERRUPT_TIMEOUT_MS,
+		fetch: globalThis.fetch,
+	});
+	const modelStreams = new PiModelStreams({
+		models: input.models,
+		requestTimeoutMs: VOICE_FRONT_TIMEOUT_MS,
+	});
 	const transcriber = SpeechClippingTranscriber.create(
 		setting.vadModel,
 		await SherpaTranscriber.create({
@@ -714,12 +754,33 @@ async function createVoice(
 		}),
 		transcriber,
 		synthesizer: new AivisSpeechSynthesizer(setting.ttsUrl, setting.ttsSpeaker, setting.ttsSpeed),
+		classifier,
+		openResponder: async () => {
+			const instructions = await readWorkspaceBaseInstructions(input.workspaceDir);
+			const stream = modelStreams.open({
+				model: input.model,
+				systemPrompt: buildSystemPrompt({
+					developerInstructions: [VOICE_FRONT_INSTRUCTIONS],
+					skills: "",
+					luna: instructions.luna,
+					memory: instructions.memory,
+				}),
+				tools: [DELEGATE_TOOL],
+			});
+			return new VoiceResponder(stream, logger);
+		},
 		conversation: { accept: input.accept },
 		isVoiceSession: isDiscordConversationSession,
 		createId: randomUUID,
 		now: () => new Date(),
+		monotonic: () => performance.now(),
 		logger,
 		emptyJoinWaitMs: VOICE_EMPTY_JOIN_WAIT_MS,
+		turn: {
+			silenceMs: setting.silenceMs,
+			turnWaitMs: setting.turnWaitMs,
+			unfinishedTurnWaitMs: setting.unfinishedTurnWaitMs,
+		},
 	});
 }
 

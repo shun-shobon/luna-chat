@@ -22,7 +22,7 @@ function setup() {
 			mode: input.mode,
 		})),
 		leave: vi.fn(async () => ({ channel: VC })),
-		say: vi.fn(),
+		report: vi.fn(),
 	};
 	const tools = new Map<string, ToolDefinition>(
 		createVoiceToolProvider(voice).definitions.map((definition) => [definition.name, definition]),
@@ -71,14 +71,16 @@ describe("voice tools", () => {
 		});
 	});
 
-	it("voice_say は前後の空白を除いて渡し、読み上げを待たずに返す", async () => {
+	it("voice_report は前後の空白を除いて呼んだ実行の文脈ごと渡す", async () => {
 		const { voice, tool } = setup();
 
-		await expect(tool("voice_say").invoke({ text: " やっほー " }, execution)).resolves.toEqual({
-			target: { chars: 4 },
-			value: { queued: true },
+		await expect(
+			tool("voice_report").invoke({ text: " 明日は晴れだって " }, execution),
+		).resolves.toEqual({
+			target: { chars: 8 },
+			value: { delivered: true },
 		});
-		expect(voice.say).toHaveBeenCalledWith("やっほー", execution.origin);
+		expect(voice.report).toHaveBeenCalledWith("明日は晴れだって", execution.origin);
 	});
 
 	it.each<[string, unknown]>([
@@ -88,14 +90,14 @@ describe("voice tools", () => {
 		["voice_join", { mode: "text" }],
 		["voice_join", { channel_id: "500", user_id: "42", mode: "text" }],
 		["voice_leave", { channel_id: "500" }],
-		["voice_say", { text: "  " }],
-		["voice_say", { text: "あ".repeat(501) }],
+		["voice_report", { text: "  " }],
+		["voice_report", { text: "あ".repeat(2001) }],
 	])("%s の不正な入力 %j は失敗し、何もしない", async (name, input) => {
 		const { voice, tool } = setup();
 
 		await expect(tool(name).invoke(input, execution)).rejects.toBeInstanceOf(z.ZodError);
 		expect(voice.join).not.toHaveBeenCalled();
 		expect(voice.leave).not.toHaveBeenCalled();
-		expect(voice.say).not.toHaveBeenCalled();
+		expect(voice.report).not.toHaveBeenCalled();
 	});
 });

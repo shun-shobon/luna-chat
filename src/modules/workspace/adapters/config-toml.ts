@@ -13,7 +13,10 @@ const nonNegativeSafeInteger = z.number().int().min(0);
 const MAXIMUM_TIMER_MS = 2_147_483_647;
 const positiveTimerMs = positiveSafeInteger.max(MAXIMUM_TIMER_MS);
 const DEFAULT_VOICE_STT_THREADS = 2;
-const DEFAULT_VOICE_SILENCE_MS = 800;
+const DEFAULT_VOICE_SILENCE_MS = 300;
+const DEFAULT_VOICE_TURN_WAIT_MS = 500;
+const DEFAULT_VOICE_UNFINISHED_TURN_WAIT_MS = 3000;
+const DEFAULT_VOICE_INTERRUPT_MODEL = "openai/gpt-6-luna";
 const DEFAULT_VOICE_TTS_SPEED = 1;
 const discordSnowflake = z.string().regex(/^\d+$/u);
 const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
@@ -78,6 +81,7 @@ const WorkspaceConfigTomlSchema = z
 				compaction: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.compaction),
 				conversation: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.conversation),
 				event: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.event),
+				voice: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.voice),
 				worker: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.worker),
 			})
 			.prefault({}),
@@ -88,11 +92,14 @@ const WorkspaceConfigTomlSchema = z
 			.prefault({}),
 		voice: z
 			.strictObject({
-				stt_model_kind: z.enum(["nemo-ctc", "nemo-transducer", "transducer"]),
+				stt_model_kind: z.enum(["nemo-ctc", "nemo-transducer", "transducer", "sense-voice"]),
 				stt_model_dir: z.string().min(1),
 				vad_model: z.string().min(1),
 				stt_threads: positiveSafeInteger.default(DEFAULT_VOICE_STT_THREADS),
 				silence_ms: positiveTimerMs.default(DEFAULT_VOICE_SILENCE_MS),
+				turn_wait_ms: positiveTimerMs.default(DEFAULT_VOICE_TURN_WAIT_MS),
+				unfinished_turn_wait_ms: positiveTimerMs.default(DEFAULT_VOICE_UNFINISHED_TURN_WAIT_MS),
+				interrupt_model: modelIdSchema.default(DEFAULT_VOICE_INTERRUPT_MODEL),
 				tts_url: z.url({ protocol: /^https?$/u }),
 				tts_speaker: nonNegativeSafeInteger,
 				tts_speed: z.number().min(0.5).max(2).default(DEFAULT_VOICE_TTS_SPEED),
@@ -182,6 +189,7 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 			compaction: toModelSetting(config.models.compaction),
 			conversation: toModelSetting(config.models.conversation),
 			event: toModelSetting(config.models.event),
+			voice: toModelSetting(config.models.voice),
 			worker: toModelSetting(config.models.worker),
 		},
 		tasks: {
@@ -220,6 +228,7 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 			compaction: toModelSettingToml(config.models.compaction),
 			conversation: toModelSettingToml(config.models.conversation),
 			event: toModelSettingToml(config.models.event),
+			voice: toModelSettingToml(config.models.voice),
 			worker: toModelSettingToml(config.models.worker),
 		},
 		tasks: {
@@ -238,6 +247,9 @@ function toVoiceSetting(setting: VoiceSettingToml): VoiceSetting {
 		vadModel: setting.vad_model,
 		sttThreads: setting.stt_threads,
 		silenceMs: setting.silence_ms,
+		turnWaitMs: setting.turn_wait_ms,
+		unfinishedTurnWaitMs: setting.unfinished_turn_wait_ms,
+		interruptModel: splitModelId(setting.interrupt_model),
 		ttsUrl: new URL(setting.tts_url),
 		ttsSpeaker: setting.tts_speaker,
 		ttsSpeed: setting.tts_speed,
@@ -251,6 +263,9 @@ function toVoiceSettingToml(setting: VoiceSetting): VoiceSettingToml {
 		vad_model: setting.vadModel,
 		stt_threads: setting.sttThreads,
 		silence_ms: setting.silenceMs,
+		turn_wait_ms: setting.turnWaitMs,
+		unfinished_turn_wait_ms: setting.unfinishedTurnWaitMs,
+		interrupt_model: `${setting.interruptModel.provider}/${setting.interruptModel.model}`,
 		tts_url: setting.ttsUrl.href,
 		tts_speaker: setting.ttsSpeaker,
 		tts_speed: setting.ttsSpeed,
@@ -258,12 +273,12 @@ function toVoiceSettingToml(setting: VoiceSetting): VoiceSettingToml {
 }
 
 function toModelSetting(setting: WorkspaceConfigToml["models"]["event"]): ModelSetting {
-	const separator = setting.model.indexOf("/");
-	return {
-		provider: setting.model.slice(0, separator),
-		model: setting.model.slice(separator + 1),
-		thinking: setting.thinking,
-	};
+	return { ...splitModelId(setting.model), thinking: setting.thinking };
+}
+
+function splitModelId(id: string): Readonly<{ provider: string; model: string }> {
+	const separator = id.indexOf("/");
+	return { provider: id.slice(0, separator), model: id.slice(separator + 1) };
 }
 
 function toModelSettingToml(setting: ModelSetting): WorkspaceConfigToml["models"]["event"] {

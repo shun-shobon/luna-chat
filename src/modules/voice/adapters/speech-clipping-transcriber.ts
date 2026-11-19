@@ -26,10 +26,10 @@ export class SpeechClippingTranscriber implements TranscriberPort {
 		const startedAt = performance.now();
 		const speech = this.#clip(samples);
 		if (speech.length === 0) {
-			return { text: "", elapsedMs: Math.round(performance.now() - startedAt) };
+			return { text: "", nonVerbal: false, elapsedMs: Math.round(performance.now() - startedAt) };
 		}
 		const result = await this.inner.transcribe(speech);
-		return { text: result.text, elapsedMs: Math.round(performance.now() - startedAt) };
+		return { ...result, elapsedMs: Math.round(performance.now() - startedAt) };
 	}
 
 	// 同期処理で終わるので、他の呼び出しと VAD の状態が混ざることはない。
