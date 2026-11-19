@@ -301,7 +301,7 @@ voice_join / voice_leave / voice_report ──► VoiceChannelService ──conn
 - `VoiceRecord`（domain）は会話記録を通し番号付きで持ち、裏へ渡した位置（`#deliveredSeq`）以降を依頼と一緒に渡す。表へは `formatRecordLine` の行、裏へは `toRecordJson` のJSONで渡す。`SentenceSplitter`（domain）は表の差分を文末の記号で一文ずつに切る。
 - 依頼の実行中かどうかは、`ConversationCoordinator` の `onBatchSettled` に依頼のイベントIDが来るまでとする。コンポジションルートが `VoiceChannelService.onBatchSettled` へ配る。
 - `DiscordVoiceGateway`（adapter）は `VoiceGatewayPort` を実装する。VCごとの `DiscordVoiceLink` が接続、話者ごとの受信と復号、再生、人数の監視（`voiceStateUpdate`）を持つ。再生は Readable から1フレーム（20ms）ずつ音量を掛けて Opus 化し、先に作るフレームを2つに抑えて音量の変更をすぐ効かせる。人が今いるVCは、Gatewayの `voiceStates` のキャッシュから探す。ミュートの切り替えは Ready の接続への `rejoin` で、音声の状態だけを送り直す（接続は張り直さない）。Opusの復号器がレートとチャンネル数を変換するので、自前のリサンプルは持たない。
-- 声の検知は話者ごとの Silero VAD（`createSpeechDetector`）で行い、区切りごとに `reset` する。Discordの「話し始め」の通知は雑音でも届くため、合図には使わない。
+- 声の検知は話者ごとの Silero VAD（`createSpeechDetector`）で行い、区切りごとに `reset` する。Discordの「話し始め」の通知は雑音でも届くため、合図には使わない。声を検知しなかった区切りは `onSegment` で渡さない。
 - `@discordjs/voice` は復号の失敗を `debug` のメッセージでしか知らせないため、接続を `debug: true` で作り、失敗のメッセージと受信できた音声から「失敗が続いている時間」を測って入り直す。入り直しは `DiscordVoiceLink` の中で行い、サービスの状態（紐づけとモード）は変えない。Discord側で切れて戻らなければ `onClosed` で知らせる。
 - `SpeechClippingTranscriber`（adapter）は `TranscriberPort` を包み、Silero VAD（`sherpa-onnx-node` の `Vad`）で声の区間だけを切り出してから中の認識器へ渡す。VAD は1つを `reset` して使い回し、切り出しは同期処理なので呼び出し同士で状態が混ざらない。
 - `SherpaTranscriber`（adapter）は `sherpa-onnx-node` の `decodeAsync` でイベントループを止めずに認識し、全話者で1つの `SerialQueue` を通してCPUの取り合いを避ける。`sherpa-onnx-node` は型定義を持たないので、使う範囲だけを `sherpa-onnx-node.d.ts` で宣言し、認識結果と VAD の区間はZodで検証する。SenseVoice の `event`（`<|Speech|>` など）が声以外なら `nonVerbal` にする。
