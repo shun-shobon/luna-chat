@@ -14,6 +14,8 @@ describe("toEventMessage", () => {
 		["home_assistant.state_changed.v1", "home_assistant", "home_assistant_state"],
 		["home_assistant.assist.requested.v1", "home_assistant", "assist_request"],
 		["discord.voice.utterance.v1", "discord/voice", "voice_utterance"],
+		["discord.voice.delegated.v1", "discord/voice", "voice_delegation"],
+		["discord.voice.transcript.v1", "discord/voice", "voice_transcript"],
 		["github.push.v1", "http", "http_request"],
 		["test.sensor.changed.v1", "test/sensor", "event"],
 	])("%s (source: %s) をkind %sで渡す", (type, source, kind) => {

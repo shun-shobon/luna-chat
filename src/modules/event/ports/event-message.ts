@@ -11,6 +11,8 @@ const MESSAGE_KIND_BY_EVENT_TYPE: Readonly<Record<string, string>> = {
 	"home_assistant.state_changed.v1": "home_assistant_state",
 	"home_assistant.assist.requested.v1": "assist_request",
 	"discord.voice.utterance.v1": "voice_utterance",
+	"discord.voice.delegated.v1": "voice_delegation",
+	"discord.voice.transcript.v1": "voice_transcript",
 };
 
 export function toEventMessage(event: LunaEvent): AgentInputMessage {

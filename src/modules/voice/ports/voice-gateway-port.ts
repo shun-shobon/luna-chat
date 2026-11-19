@@ -2,9 +2,9 @@ import type { VoiceChannelRef } from "../domain/voice-event";
 import type { VoicePcm } from "./speech-port";
 
 export type VoiceLinkHandlers = Readonly<{
-	// 話者の音声がしばらく途切れて区切れた1回分の発話。16kHzモノラル。
-	onUtterance(userId: string, samples: Float32Array): void;
-	// 話者の声を検知した。読み上げを止める合図に使う。
+	// 話者の音声が silence_ms 途切れて区切れた1回分。ターンの終わりとは限らない。16kHzモノラル。
+	onSegment(userId: string, samples: Float32Array): void;
+	// 話者の声を検知した。区切りの途中の待ちを止めたり、割り込みかを判定し始める合図に使う。
 	onSpeechStarted(userId: string): void;
 	// VCにいるBot以外の人数が変わった。
 	onHumanCount(count: number): void;
@@ -17,6 +17,10 @@ export interface VoiceLink {
 	// 再生し終えたら true、stop で止めたら false で解決する。同時に再生するのは1つだけ。
 	play(audio: VoicePcm): Promise<boolean>;
 	stop(): void;
+	// 再生中と以後の再生の音量（0〜1）。
+	setVolume(volume: number): void;
+	// 話者がまだ区切れていない発話の、ここまでに受信した音声。受信していなければ undefined。
+	ongoingSpeech(userId: string): Float32Array | undefined;
 	// テキストモードでは話さないことが見て分かるよう、自分をミュートにする。
 	setMuted(muted: boolean): void;
 	disconnect(): void;

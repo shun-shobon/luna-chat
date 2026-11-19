@@ -30,6 +30,8 @@ export type WorkspaceConfig = {
 		compaction: ModelSetting;
 		conversation: ModelSetting;
 		event: ModelSetting;
+		// 音声モードで声の返事を担う速いモデル（表）。
+		voice: ModelSetting;
 		worker: ModelSetting;
 	};
 	tasks: {
@@ -44,6 +46,9 @@ export type VoiceSetting = {
 	vadModel: string;
 	sttThreads: number;
 	silenceMs: number;
+	turnWaitMs: number;
+	unfinishedTurnWaitMs: number;
+	interruptModel: Readonly<{ provider: string; model: string }>;
 	ttsUrl: URL;
 	ttsSpeaker: number;
 	ttsSpeed: number;
@@ -83,6 +88,7 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 		compaction: { provider: "openai-codex", model: "gpt-6.1-terra", thinking: "low" },
 		conversation: DEFAULT_MODEL,
 		event: DEFAULT_MODEL,
+		voice: { provider: "claude-code", model: "claude-haiku-5-5", thinking: "off" },
 		worker: DEFAULT_MODEL,
 	},
 	tasks: {

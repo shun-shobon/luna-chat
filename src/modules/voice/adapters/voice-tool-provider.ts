@@ -15,17 +15,17 @@ const joinInputSchema = z
 		message: "Give exactly one of channel_id or user_id.",
 	});
 const leaveInputSchema = z.strictObject({});
-const sayInputSchema = z.strictObject({ text: z.string().trim().min(1).max(500) });
+const reportInputSchema = z.strictObject({ text: z.string().trim().min(1).max(2000) });
 
 export function createVoiceToolProvider(
-	voice: Pick<VoiceChannelService, "join" | "leave" | "say">,
+	voice: Pick<VoiceChannelService, "join" | "leave" | "report">,
 ): ToolProvider {
 	return Object.freeze({
 		definitions: Object.freeze([
 			defineTool({
 				name: "voice_join",
 				description:
-					"Join a Discord voice channel and bind it to this conversation, so that what people say there arrives here as voice_utterance inputs. Give user_id to join the voice channel that person is in now (use this when someone asks you to come), or channel_id for a specific voice channel. mode text: reply in writing as usual, and Luna stays muted. mode voice: speak with voice_say. Calling it for the channel Luna is already in only rebinds it here and switches the mode; another channel moves Luna there.",
+					"Join a Discord voice channel and bind it to this conversation, so that what people say there arrives here as voice_utterance inputs. Give user_id to join the voice channel that person is in now (use this when someone asks you to come), or channel_id for a specific voice channel. mode text: reply in writing as usual, and Luna stays muted. mode voice: a fast voice model speaks for Luna and hands you voice_delegation inputs for work it cannot do. Calling it for the channel Luna is already in only rebinds it here and switches the mode; another channel moves Luna there.",
 				inputSchema: joinInputSchema,
 				parseInput: (input) => ({ target: toJoinTarget(input), mode: input.mode }),
 				execute: async (input, execution) => {
@@ -50,14 +50,14 @@ export function createVoiceToolProvider(
 				describeTarget: () => ({}),
 			}),
 			defineTool({
-				name: "voice_say",
+				name: "voice_report",
 				description:
-					"Say something out loud in the voice channel in voice mode. Calls are read aloud in order; the call returns before the speech is played.",
-				inputSchema: sayInputSchema,
+					"In voice mode, give the voice model the result of a voice_delegation request as a short spoken-style summary. It tells the people in the channel at the next pause.",
+				inputSchema: reportInputSchema,
 				parseInput: (input) => ({ text: input.text.trim() }),
 				execute: (input, execution) => {
-					voice.say(input.text, execution.origin);
-					return Promise.resolve({ queued: true });
+					voice.report(input.text, execution.origin);
+					return Promise.resolve({ delivered: true });
 				},
 				describeTarget: (input) => ({ chars: input.text.length }),
 			}),
