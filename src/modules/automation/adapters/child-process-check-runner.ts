@@ -96,10 +96,12 @@ export class ChildProcessCheckRunner implements AutomationCheckRunnerPort {
 	}
 }
 
+const HIDDEN_ENVIRONMENT = new Set(["DISCORD_BOT_TOKEN", "OPENAI_API_KEY", "TYPESAFE_API_KEY"]);
+
 function createCheckEnvironment(parentEnvironment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const environment: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(parentEnvironment)) {
-		if (typeof value === "string" && key !== "DISCORD_BOT_TOKEN") {
+		if (typeof value === "string" && !HIDDEN_ENVIRONMENT.has(key)) {
 			environment[key] = value;
 		}
 	}

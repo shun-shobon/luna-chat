@@ -316,9 +316,15 @@ function createViewImageTool(read: AnyPiAgentTool): AnyPiAgentTool {
 	};
 }
 
+// 割り込み判定の鍵は課金を伴うため、エージェントのシェルからは使わせない。
 function withoutSecrets(
 	environment: NodeJS.ProcessEnv,
 ): Readonly<Record<string, string | undefined>> {
-	const { DISCORD_BOT_TOKEN: _token, ...rest } = environment;
+	const {
+		DISCORD_BOT_TOKEN: _token,
+		OPENAI_API_KEY: _openAiKey,
+		TYPESAFE_API_KEY: _typesafeKey,
+		...rest
+	} = environment;
 	return rest;
 }
