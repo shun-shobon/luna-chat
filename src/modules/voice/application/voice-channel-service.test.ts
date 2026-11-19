@@ -89,7 +89,8 @@ function setup(options: { humans?: number; transcribe?: () => Promise<Transcript
 			},
 		},
 		transcriber: {
-			transcribe: options.transcribe ?? (async () => ({ text: "ねえルナ", elapsedMs: 80 })),
+			transcribe:
+				options.transcribe ?? (async () => ({ text: "ねえルナ", nonVerbal: false, elapsedMs: 80 })),
 		},
 		synthesizer: { synthesize: async (text): Promise<VoicePcm> => ({ pcm: Buffer.from(text) }) },
 		conversation: {
@@ -149,7 +150,7 @@ describe("VoiceChannelService", () => {
 
 	it("聞き取れなかった発話（空の文字起こし）は渡さない", async () => {
 		const { service, links, accepted } = setup({
-			transcribe: async () => ({ text: "", elapsedMs: 3 }),
+			transcribe: async () => ({ text: "", nonVerbal: false, elapsedMs: 3 }),
 		});
 		await service.join({ target: { channelId: "500" }, mode: "text" }, from(TEXT_SESSION));
 
@@ -410,7 +411,7 @@ describe("VoiceChannelService", () => {
 		links[0]?.handlers.onUtterance("42", new Float32Array(1_000));
 
 		await service.leave();
-		transcription.resolve({ text: "ねえルナ", elapsedMs: 80 });
+		transcription.resolve({ text: "ねえルナ", nonVerbal: false, elapsedMs: 80 });
 		await flush();
 
 		expect(accepted).toEqual([]);

@@ -39,7 +39,7 @@ export type WorkspaceConfig = {
 };
 
 export type VoiceSetting = {
-	sttModelKind: "nemo-ctc" | "nemo-transducer" | "transducer";
+	sttModelKind: "nemo-ctc" | "nemo-transducer" | "transducer" | "sense-voice";
 	sttModelDir: string;
 	vadModel: string;
 	sttThreads: number;

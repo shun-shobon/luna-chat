@@ -88,7 +88,7 @@ const WorkspaceConfigTomlSchema = z
 			.prefault({}),
 		voice: z
 			.strictObject({
-				stt_model_kind: z.enum(["nemo-ctc", "nemo-transducer", "transducer"]),
+				stt_model_kind: z.enum(["nemo-ctc", "nemo-transducer", "transducer", "sense-voice"]),
 				stt_model_dir: z.string().min(1),
 				vad_model: z.string().min(1),
 				stt_threads: positiveSafeInteger.default(DEFAULT_VOICE_STT_THREADS),

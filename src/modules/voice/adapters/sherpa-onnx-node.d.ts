@@ -4,6 +4,11 @@ declare module "sherpa-onnx-node" {
 		featConfig: Readonly<{ sampleRate: number; featureDim: number }>;
 		modelConfig: Readonly<{
 			nemoCtc?: Readonly<{ model: string }>;
+			senseVoice?: Readonly<{
+				model: string;
+				language: string;
+				useInverseTextNormalization: number;
+			}>;
 			transducer?: Readonly<{ encoder: string; decoder: string; joiner: string }>;
 			modelType?: string;
 			tokens: string;
