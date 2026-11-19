@@ -121,6 +121,26 @@ tts_speaker = 684965824
 		});
 	});
 
+	it("speech-cpp では tts_emoji を省略すると絵文字を使わない", () => {
+		const config = parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
+[voice]
+stt_model_kind = "nemo-ctc"
+stt_model_dir = "/m"
+vad_model = "/v"
+tts_engine = "speech-cpp"
+tts_url = "http://127.0.0.1:8090/"
+tts_voice = "luna"
+`);
+
+		expect(config.voice?.tts).toEqual({
+			engine: "speech-cpp",
+			url: new URL("http://127.0.0.1:8090/"),
+			voice: "luna",
+			speed: 1,
+			emoji: false,
+		});
+	});
+
 	it.each([
 		["unknown top-level key", "unexpected = true"],
 		[
@@ -150,6 +170,10 @@ tts_speaker = 684965824
 		[
 			"voicevox with a voice name",
 			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ntts_voice = "luna"',
+		],
+		[
+			"voicevox with emoji",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ntts_emoji = false',
 		],
 		[
 			"unknown tts engine",
@@ -222,6 +246,7 @@ tts_speaker = 684965824
 					url: new URL("http://tts.example:8090/"),
 					voice: "luna",
 					speed: 1.25,
+					emoji: true,
 				},
 			},
 		} as const;

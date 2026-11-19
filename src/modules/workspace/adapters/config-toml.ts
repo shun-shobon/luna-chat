@@ -111,6 +111,7 @@ const WorkspaceConfigTomlSchema = z
 				tts_speaker: nonNegativeSafeInteger.optional(),
 				tts_voice: z.string().min(1).optional(),
 				tts_speed: z.number().min(0.5).max(2).default(DEFAULT_VOICE_TTS_SPEED),
+				tts_emoji: z.boolean().optional(),
 			})
 			.superRefine((voice, context) => {
 				const [required, unused] =
@@ -129,6 +130,13 @@ const WorkspaceConfigTomlSchema = z
 						code: "custom",
 						message: `voice.${unused} is not used with tts_engine = "${voice.tts_engine}".`,
 						path: [unused],
+					});
+				}
+				if (voice.tts_engine === "voicevox" && voice.tts_emoji !== undefined) {
+					context.addIssue({
+						code: "custom",
+						message: 'voice.tts_emoji is not used with tts_engine = "voicevox".',
+						path: ["tts_emoji"],
 					});
 				}
 			})
@@ -296,7 +304,7 @@ function toVoiceSettingToml(setting: VoiceSetting): VoiceSettingToml {
 		tts_url: setting.tts.url.href,
 		...(setting.tts.engine === "voicevox"
 			? { tts_speaker: setting.tts.speaker }
-			: { tts_voice: setting.tts.voice }),
+			: { tts_voice: setting.tts.voice, tts_emoji: setting.tts.emoji }),
 		tts_speed: setting.tts.speed,
 	};
 }
@@ -310,7 +318,13 @@ function toTtsSetting(setting: VoiceSettingToml): TtsSetting {
 	}
 	if (setting.tts_voice === undefined)
 		throw new WorkspaceConfigError("voice.tts_voice is required.");
-	return { engine: "speech-cpp", url, voice: setting.tts_voice, speed: setting.tts_speed };
+	return {
+		engine: "speech-cpp",
+		url,
+		voice: setting.tts_voice,
+		speed: setting.tts_speed,
+		emoji: setting.tts_emoji ?? false,
+	};
 }
 
 function toModelSetting(setting: WorkspaceConfigToml["models"]["event"]): ModelSetting {

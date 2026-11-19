@@ -109,7 +109,7 @@ import {
 	VOICE_UTTERANCE_EVENT_TYPE,
 } from "../modules/voice/domain/voice-event";
 import type { SpeechSynthesizerPort } from "../modules/voice/ports/speech-port";
-import { VOICE_FRONT_INSTRUCTIONS } from "../modules/voice/voice-front-instructions";
+import { voiceFrontInstructions } from "../modules/voice/voice-front-instructions";
 import { VOICE_INSTRUCTIONS } from "../modules/voice/voice-instructions";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
 import { initializeWorkspace } from "../modules/workspace/adapters/initialize-workspace";
@@ -776,7 +776,11 @@ async function createVoice(
 			const stream = modelStreams.open({
 				model: input.model,
 				systemPrompt: buildSystemPrompt({
-					developerInstructions: [VOICE_FRONT_INSTRUCTIONS],
+					developerInstructions: [
+						voiceFrontInstructions({
+							emoji: setting.tts.engine === "speech-cpp" && setting.tts.emoji,
+						}),
+					],
 					skills: "",
 					luna: instructions.luna,
 					memory: instructions.memory,
