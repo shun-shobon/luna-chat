@@ -250,7 +250,8 @@ class DiscordVoiceLink implements VoiceLink {
 		stream.once("close", () => {
 			this.#listening.delete(userId);
 			listening.decoder.delete();
-			if (this.#closed || listening.chunks.length === 0) return;
+			// 話し終わりに Discord が短い音を間を置いて送ってくる。声のない区切りを渡すと、ターンの確定待ちと認識をやり直させてしまう。
+			if (this.#closed || !listening.speechStarted) return;
 			this.handlers.onSegment(userId, concat(listening.chunks));
 		});
 	}

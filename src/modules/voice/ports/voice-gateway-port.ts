@@ -2,7 +2,7 @@ import type { VoiceChannelRef } from "../domain/voice-event";
 import type { VoicePcm } from "./speech-port";
 
 export type VoiceLinkHandlers = Readonly<{
-	// 話者の音声が silence_ms 途切れて区切れた1回分。ターンの終わりとは限らない。16kHzモノラル。
+	// 話者の音声が silence_ms 途切れて区切れた1回分。声を検知した区切りだけが来る。ターンの終わりとは限らない。16kHzモノラル。
 	onSegment(userId: string, samples: Float32Array): void;
 	// 話者の声を検知した。区切りの途中の待ちを止めたり、割り込みかを判定し始める合図に使う。
 	onSpeechStarted(userId: string): void;
