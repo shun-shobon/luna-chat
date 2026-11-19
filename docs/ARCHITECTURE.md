@@ -288,7 +288,7 @@ voice_join / voice_leave / voice_report ──► VoiceChannelService ──conn
                                                ▼
    VoiceSession ── draft で先行生成、commit で再生 ──► VoiceResponder ──► ModelStream（表、[models.voice]）
       │  │  └─ 再生中の声 ──► InterruptJudge ──► InterruptClassifierPort（PiInterruptClassifier → pi-ai classify）
-      │  └──► SpeechOutput ──► AivisSpeechSynthesizer ──► VoiceLink.play（音量は VoiceLink.setVolume）
+      │  └──► SpeechOutput ──► SpeechSynthesizerPort（AivisSpeech / speech.cpp） ──► VoiceLink.play（音量は VoiceLink.setVolume）
       └──► 裏: voice_delegation / voice_utterance / voice_transcript ──► ConversationCoordinator.accept
                          ▲ voice_report（会話のルナ）               onBatchSettled ──► 依頼の実行の終わり
 ```
@@ -307,6 +307,7 @@ voice_join / voice_leave / voice_report ──► VoiceChannelService ──conn
 - `SherpaTranscriber`（adapter）は `sherpa-onnx-node` の `decodeAsync` でイベントループを止めずに認識し、全話者で1つの `SerialQueue` を通してCPUの取り合いを避ける。`sherpa-onnx-node` は型定義を持たないので、使う範囲だけを `sherpa-onnx-node.d.ts` で宣言し、認識結果と VAD の区間はZodで検証する。SenseVoice の `event`（`<|Speech|>` など）が声以外なら `nonVerbal` にする。
 - `PiInterruptClassifier`（adapter）は、OpenAI と TypeSafe のプロバイダだけを入れた専用の pi-ai `Models` で `classify` を呼ぶ。会話用の `Models` に入れると、それらのチャットモデルが `/luna model` の候補に混ざるため。作る時にモデルの有無と鍵を確かめる。
 - `AivisSpeechSynthesizer`（adapter）は AudioQuery の `speedScale` と出力形式（48kHzステレオ）だけを差し替え、ほかの項目はエンジンが返したまま送り返す。
+- `SpeechCppSynthesizer`（adapter）は speech.cpp の `POST /v1/audio/speech` を1回呼ぶ。Irodori はモノラルで返すので、Discordへ送る48kHzステレオにそろえる。コンポジションルートが `tts_engine` でどちらを使うか決める。WAVの読み取りとモノラルからステレオへの変換は `wav.ts` に置き、両方で使う。
 - VCの入力を集約待ちなしで渡すため、`ConversationCoordinator` は `isImmediate(event)` が真の入力で debounce と入力中の待機を飛ばす。コンポジションルートが Assist の発話と3種類のVCの入力に真を返す。
 - 高速モードは `AgentSessionSpec.fastMode` をリクエストのたびに呼んで決め、真なら `PiAgentSession` が pi-ai の `onPayload` でリクエスト本文に `service_tier: "priority"` を足す（pi-ai の `streamSimple` は `serviceTier` を通さないため）。コンポジションルートがセッションファクトリに「VCに紐づいた会話か」を渡すので、セッションを開き直さずに参加・退出へ追従する。
 - 紐づいたスコープへの投稿を常設でなくても受け付けるため、`DiscordConversationController` は `isVoiceBound(sessionKey)` を一時セッションの有無と同じ扱いで受付判定に渡す。

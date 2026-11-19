@@ -446,6 +446,7 @@ silence_ms = 300
 turn_wait_ms = 500
 unfinished_turn_wait_ms = 3000
 interrupt_model = "openai/gpt-6-luna"
+tts_engine = "voicevox"
 tts_url = "http://127.0.0.1:10101/"
 tts_speaker = 684965824
 tts_speed = 1.0
@@ -453,7 +454,8 @@ tts_speed = 1.0
 
 - `[models.*]` の `model` は `provider/model` の形（例: `claude-code/claude-opus-5-5`。提供元は§8）とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。省略した項目は上の値になる。
 - `[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
-- `[voice]` は省略でき、省略するとボイスチャンネル（§24）を使わない。書く場合、`stt_threads`・`silence_ms`・`turn_wait_ms`・`unfinished_turn_wait_ms`（いずれも1以上の整数）・`interrupt_model`・`tts_speed`（0.5〜2）は省略すると上の値になり、それ以外は必須とする。`stt_model_kind` は `nemo-ctc`（Parakeet ja など）・`nemo-transducer`（Haas-ja など）・`transducer`（Zipformer など）・`sense-voice`（SenseVoice）のいずれかで、`stt_model_dir` は sherpa-onnx の配布形式のディレクトリとする（`tokens.txt` と各部品の `.onnx` を名前から探し、`int8`・`quantized` の版を優先する）。`sense-voice` には言語の手がかりとして日本語を渡す。`tts_url` は `http` か `https` のURL、`tts_speaker` はTTSエンジンのスタイルIDとする。モデルのファイルとディレクトリは起動時に読み込み、読めなければ起動を中止する。
+- `[voice]` は省略でき、省略するとボイスチャンネル（§24）を使わない。書く場合、`stt_threads`・`silence_ms`・`turn_wait_ms`・`unfinished_turn_wait_ms`（いずれも1以上の整数）・`interrupt_model`・`tts_engine`・`tts_speed`（0.5〜2）は省略すると上の値になり、それ以外は `tts_engine` に応じて次のとおり必須とする。`stt_model_kind` は `nemo-ctc`（Parakeet ja など）・`nemo-transducer`（Haas-ja など）・`transducer`（Zipformer など）・`sense-voice`（SenseVoice）のいずれかで、`stt_model_dir` は sherpa-onnx の配布形式のディレクトリとする（`tokens.txt` と各部品の `.onnx` を名前から探し、`int8`・`quantized` の版を優先する）。`sense-voice` には言語の手がかりとして日本語を渡す。`tts_url` は `http` か `https` のURL とする。モデルのファイルとディレクトリは起動時に読み込み、読めなければ起動を中止する。
+- `tts_engine` は読み上げに使うTTSエンジンで、`voicevox`（VOICEVOX互換のHTTP API。AivisSpeech Engine など）か `speech-cpp`（speech.cpp の `speech serve` の OpenAI 互換API）とする。`voicevox` では `tts_speaker`（エンジンのスタイルID）を、`speech-cpp` では `tts_voice`（`speech serve --add-voice` で登録した声の名前）を必須とし、もう一方は書けない。
 - `interrupt_model` は割り込み判定（§24.4）に使う決定モデル（`provider/model`）で、`openai/gpt-6-luna`（OpenAIのDecisions API）か、TypeSafe の Jev（`typesafe/jev` など）を選べる。提供元のカタログにない、または提供元の鍵（`OPENAI_API_KEY`・`TYPESAFE_API_KEY`）がなければ起動を中止する。
 - `*_ms` のうちタイマーとして使う値（`transcript_retention_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
 
@@ -810,7 +812,7 @@ neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値�
 - 表には、`[models.voice]` のモデルに、表の指示・`LUNA.md`・`MEMORY.md` をシステムプロンプトとし、会話記録の直近40件と、何をきっかけに話すか（ターンの確定、または裏の報告）を1つのuser文として渡す。システムプロンプトは音声モードに入る時に組み立てる。表のツールは裏に頼む `delegate`（`{ request: string }`）だけとし、返事は普通のテキスト出力で返させる。出力が空なら黙る。要求のタイムアウトは30秒で、再試行しない。
 - 会話記録は、聞き取った発話、ルナが実際に再生できた部分（再生し終えた文・途中で止めた文・再生しなかった文）、裏への依頼、裏の報告を時刻付きで持つ。音声モードの間だけメモリに持ち、古いものから300件を超えた分を捨てる。
 - 表は区切りの時点で返事を作り始め、最初の一文から合成も始める（先行生成）。再生はターンの確定後に始める。確定前に同じ話者の続きや別の話者の発話が来たら、作りかけを捨てて作り直す。確定前に表が出した `delegate` は確定してから裏に渡し、捨てた返事の `delegate` は渡さない。
-- 返事は一文ずつ、VOICEVOX互換のTTSエンジン（`tts_url`）でスタイル `tts_speaker`・話速 `tts_speed` の48kHzステレオに合成し、言った順に再生する。前の文の再生中に次の文を合成しておく。合成に失敗した文はログに残して飛ばす。表が失敗したら、それまでに出た文だけを再生する。
+- 返事は一文ずつ、`tts_engine` のTTSエンジン（`tts_url`）で話速 `tts_speed` の48kHzに合成し、言った順に再生する。`voicevox` はスタイル `tts_speaker` の48kHzステレオで合成させる。`speech-cpp` は `POST /v1/audio/speech` に声 `tts_voice` と `response_format: "wav"` を送り、48kHz・16bitのモノラルなら左右に複製してステレオにする。`speech-cpp` は別のホストで動かす前提で、1文の合成を15秒で打ち切る。前の文の再生中に次の文を合成しておく。合成に失敗した文はログに残して飛ばす。表が失敗したら、それまでに出た文だけを再生する。
 - 再生中に人の声をVADが検知しても、すぐには止めない。音量を下げて話し続け、その声が割り込みかを `interrupt_model` で判定する。
   1. 声が区切れた時点、または区切れる前に1秒続いた時点で、その声を認識する。
   2. 認識結果が空、または声以外の音なら雑音とみなす。
