@@ -49,10 +49,13 @@ export type VoiceSetting = {
 	turnWaitMs: number;
 	unfinishedTurnWaitMs: number;
 	interruptModel: Readonly<{ provider: string; model: string }>;
-	ttsUrl: URL;
-	ttsSpeaker: number;
-	ttsSpeed: number;
+	tts: TtsSetting;
 };
+
+// voicevox は VOICEVOX 互換の HTTP API（AivisSpeech Engine など）、speech-cpp は speech.cpp の OpenAI 互換 API。
+export type TtsSetting =
+	| Readonly<{ engine: "voicevox"; url: URL; speaker: number; speed: number }>
+	| Readonly<{ engine: "speech-cpp"; url: URL; voice: string; speed: number }>;
 
 const DEFAULT_MODEL: ModelSetting = {
 	provider: "openai-codex",
