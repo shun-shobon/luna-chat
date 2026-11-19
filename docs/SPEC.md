@@ -455,7 +455,7 @@ tts_speed = 1.0
 - `[models.*]` の `model` は `provider/model` の形（例: `claude-code/claude-opus-5-5`。提供元は§8）とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。省略した項目は上の値になる。
 - `[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
 - `[voice]` は省略でき、省略するとボイスチャンネル（§24）を使わない。書く場合、`stt_threads`・`silence_ms`・`turn_wait_ms`・`unfinished_turn_wait_ms`（いずれも1以上の整数）・`interrupt_model`・`tts_engine`・`tts_speed`（0.5〜2）は省略すると上の値になり、それ以外は `tts_engine` に応じて次のとおり必須とする。`stt_model_kind` は `nemo-ctc`（Parakeet ja など）・`nemo-transducer`（Haas-ja など）・`transducer`（Zipformer など）・`sense-voice`（SenseVoice）のいずれかで、`stt_model_dir` は sherpa-onnx の配布形式のディレクトリとする（`tokens.txt` と各部品の `.onnx` を名前から探し、`int8`・`quantized` の版を優先する）。`sense-voice` には言語の手がかりとして日本語を渡す。`tts_url` は `http` か `https` のURL とする。モデルのファイルとディレクトリは起動時に読み込み、読めなければ起動を中止する。
-- `tts_engine` は読み上げに使うTTSエンジンで、`voicevox`（VOICEVOX互換のHTTP API。AivisSpeech Engine など）か `speech-cpp`（speech.cpp の `speech serve` の OpenAI 互換API）とする。`voicevox` では `tts_speaker`（エンジンのスタイルID）を、`speech-cpp` では `tts_voice`（`speech serve --add-voice` で登録した声の名前）を必須とし、もう一方は書けない。
+- `tts_engine` は読み上げに使うTTSエンジンで、`voicevox`（VOICEVOX互換のHTTP API。AivisSpeech Engine など）か `speech-cpp`（speech.cpp の `speech serve` の OpenAI 互換API）とする。`voicevox` では `tts_speaker`（エンジンのスタイルID）を、`speech-cpp` では `tts_voice`（`speech serve --add-voice` で登録した声の名前）を必須とし、もう一方は書けない。`tts_emoji`（真偽値）は `speech-cpp` だけに書け、読み方の指示として絵文字を読むモデル（Irodori-TTS）で `true` にする。省略すると `false` になる。
 - `interrupt_model` は割り込み判定（§24.4）に使う決定モデル（`provider/model`）で、`openai/gpt-6-luna`（OpenAIのDecisions API）か、TypeSafe の Jev（`typesafe/jev` など）を選べる。提供元のカタログにない、または提供元の鍵（`OPENAI_API_KEY`・`TYPESAFE_API_KEY`）がなければ起動を中止する。
 - `*_ms` のうちタイマーとして使う値（`transcript_retention_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
 
@@ -809,7 +809,7 @@ neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値�
 
 ### 24.4 音声モードの返事と割り込み
 
-- 表には、`[models.voice]` のモデルに、表の指示・`LUNA.md`・`MEMORY.md` をシステムプロンプトとし、会話記録の直近40件と、何をきっかけに話すか（ターンの確定、または裏の報告）を1つのuser文として渡す。システムプロンプトは音声モードに入る時に組み立てる。表のツールは裏に頼む `delegate`（`{ request: string }`）だけとし、返事は普通のテキスト出力で返させる。出力が空なら黙る。要求のタイムアウトは30秒で、再試行しない。
+- 表には、`[models.voice]` のモデルに、表の指示・`LUNA.md`・`MEMORY.md` をシステムプロンプトとし、会話記録の直近40件と、何をきっかけに話すか（ターンの確定、または裏の報告）を1つのuser文として渡す。システムプロンプトは音声モードに入る時に組み立てる。表のツールは裏に頼む `delegate`（`{ request: string }`）だけとし、返事は普通のテキスト出力で返させる。出力が空なら黙る。要求のタイムアウトは30秒で、再試行しない。`tts_emoji` が `true` なら、表に絵文字で声に感情を乗せさせる。感情は文の頭に同じ絵文字を2つ（😊😆😏🫣😪😲🙄😠😭😌😟🫶）、笑いやため息は音を入れたい位置に1つ（🤭😮‍💨）置かせ、それ以外の絵文字は書かせない。`false` なら絵文字を書かせない。
 - 会話記録は、聞き取った発話、ルナが実際に再生できた部分（再生し終えた文・途中で止めた文・再生しなかった文）、裏への依頼、裏の報告を時刻付きで持つ。音声モードの間だけメモリに持ち、古いものから300件を超えた分を捨てる。
 - 表は区切りの時点で返事を作り始め、最初の区切りから合成も始める（先行生成）。再生はターンの確定後に始める。確定前に同じ話者の続きや別の話者の発話が来たら、作りかけを捨てて作り直す。確定前に表が出した `delegate` は確定してから裏に渡し、捨てた返事の `delegate` は渡さない。
 - 返事は文末の記号（`。！？♪` と改行など）で区切り、最初の区切りだけは読点（`、`）でも切る。声に出す文字（かな・漢字・英数字）が3文字に満たない区切りは、短すぎて合成を断られることがあるので次の区切りとつなげる。
