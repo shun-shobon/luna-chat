@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { SpeechSynthesizerPort, VoicePcm } from "../ports/speech-port";
+import { readPcmWav } from "./wav";
 
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 2;
@@ -45,38 +46,14 @@ export class AivisSpeechSynthesizer implements SpeechSynthesizerPort {
 				`synthesis failed: ${synthesisResponse.status} ${await synthesisResponse.text()}`,
 			);
 		}
-		return { pcm: readPcmWav(Buffer.from(await synthesisResponse.arrayBuffer())) };
-	}
-}
-
-function readPcmWav(wav: Buffer): Buffer {
-	if (wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
-		throw new Error("not a WAV file");
-	}
-	let offset = 12;
-	let format: Readonly<{ channels: number; sampleRate: number; bits: number }> | undefined;
-	while (offset + 8 <= wav.length) {
-		const id = wav.toString("ascii", offset, offset + 4);
-		const size = wav.readUInt32LE(offset + 4);
-		const body = offset + 8;
-		if (id === "fmt ") {
-			format = {
-				channels: wav.readUInt16LE(body + 2),
-				sampleRate: wav.readUInt32LE(body + 4),
-				bits: wav.readUInt16LE(body + 14),
-			};
-		} else if (id === "data") {
-			if (
-				format?.channels !== CHANNELS ||
-				format.sampleRate !== SAMPLE_RATE ||
-				format.bits !== BITS_PER_SAMPLE
-			) {
-				throw new Error(`unexpected WAV format: ${JSON.stringify(format)}`);
-			}
-			return wav.subarray(body, Math.min(body + size, wav.length));
+		const { format, pcm } = readPcmWav(Buffer.from(await synthesisResponse.arrayBuffer()));
+		if (
+			format.channels !== CHANNELS ||
+			format.sampleRate !== SAMPLE_RATE ||
+			format.bits !== BITS_PER_SAMPLE
+		) {
+			throw new Error(`unexpected WAV format: ${JSON.stringify(format)}`);
 		}
-		// チャンクは偶数バイト境界にそろえて並ぶ。
-		offset = body + size + (size % 2);
+		return { pcm };
 	}
-	throw new Error("WAV has no data chunk");
 }

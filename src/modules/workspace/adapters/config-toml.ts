@@ -5,7 +5,12 @@ import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
 import { DEFAULT_WORKSPACE_CONFIG } from "../domain/workspace-config";
-import type { ModelSetting, VoiceSetting, WorkspaceConfig } from "../domain/workspace-config";
+import type {
+	ModelSetting,
+	TtsSetting,
+	VoiceSetting,
+	WorkspaceConfig,
+} from "../domain/workspace-config";
 
 const positiveSafeInteger = z.number().int().min(1);
 const nonNegativeSafeInteger = z.number().int().min(0);
@@ -18,6 +23,7 @@ const DEFAULT_VOICE_TURN_WAIT_MS = 500;
 const DEFAULT_VOICE_UNFINISHED_TURN_WAIT_MS = 3000;
 const DEFAULT_VOICE_INTERRUPT_MODEL = "openai/gpt-6-luna";
 const DEFAULT_VOICE_TTS_SPEED = 1;
+const DEFAULT_VOICE_TTS_ENGINE = "voicevox";
 const discordSnowflake = z.string().regex(/^\d+$/u);
 const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const modelIdSchema = z.string().regex(/^[^/\s]+\/[^\s]+$/u, "model must be provider/model");
@@ -100,9 +106,31 @@ const WorkspaceConfigTomlSchema = z
 				turn_wait_ms: positiveTimerMs.default(DEFAULT_VOICE_TURN_WAIT_MS),
 				unfinished_turn_wait_ms: positiveTimerMs.default(DEFAULT_VOICE_UNFINISHED_TURN_WAIT_MS),
 				interrupt_model: modelIdSchema.default(DEFAULT_VOICE_INTERRUPT_MODEL),
+				tts_engine: z.enum(["voicevox", "speech-cpp"]).default(DEFAULT_VOICE_TTS_ENGINE),
 				tts_url: z.url({ protocol: /^https?$/u }),
-				tts_speaker: nonNegativeSafeInteger,
+				tts_speaker: nonNegativeSafeInteger.optional(),
+				tts_voice: z.string().min(1).optional(),
 				tts_speed: z.number().min(0.5).max(2).default(DEFAULT_VOICE_TTS_SPEED),
+			})
+			.superRefine((voice, context) => {
+				const [required, unused] =
+					voice.tts_engine === "voicevox"
+						? (["tts_speaker", "tts_voice"] as const)
+						: (["tts_voice", "tts_speaker"] as const);
+				if (voice[required] === undefined) {
+					context.addIssue({
+						code: "custom",
+						message: `voice.${required} is required for tts_engine = "${voice.tts_engine}".`,
+						path: [required],
+					});
+				}
+				if (voice[unused] !== undefined) {
+					context.addIssue({
+						code: "custom",
+						message: `voice.${unused} is not used with tts_engine = "${voice.tts_engine}".`,
+						path: [unused],
+					});
+				}
 			})
 			.optional(),
 	})
@@ -250,9 +278,7 @@ function toVoiceSetting(setting: VoiceSettingToml): VoiceSetting {
 		turnWaitMs: setting.turn_wait_ms,
 		unfinishedTurnWaitMs: setting.unfinished_turn_wait_ms,
 		interruptModel: splitModelId(setting.interrupt_model),
-		ttsUrl: new URL(setting.tts_url),
-		ttsSpeaker: setting.tts_speaker,
-		ttsSpeed: setting.tts_speed,
+		tts: toTtsSetting(setting),
 	};
 }
 
@@ -266,10 +292,25 @@ function toVoiceSettingToml(setting: VoiceSetting): VoiceSettingToml {
 		turn_wait_ms: setting.turnWaitMs,
 		unfinished_turn_wait_ms: setting.unfinishedTurnWaitMs,
 		interrupt_model: `${setting.interruptModel.provider}/${setting.interruptModel.model}`,
-		tts_url: setting.ttsUrl.href,
-		tts_speaker: setting.ttsSpeaker,
-		tts_speed: setting.ttsSpeed,
+		tts_engine: setting.tts.engine,
+		tts_url: setting.tts.url.href,
+		...(setting.tts.engine === "voicevox"
+			? { tts_speaker: setting.tts.speaker }
+			: { tts_voice: setting.tts.voice }),
+		tts_speed: setting.tts.speed,
 	};
+}
+
+function toTtsSetting(setting: VoiceSettingToml): TtsSetting {
+	const url = new URL(setting.tts_url);
+	if (setting.tts_engine === "voicevox") {
+		if (setting.tts_speaker === undefined)
+			throw new WorkspaceConfigError("voice.tts_speaker is required.");
+		return { engine: "voicevox", url, speaker: setting.tts_speaker, speed: setting.tts_speed };
+	}
+	if (setting.tts_voice === undefined)
+		throw new WorkspaceConfigError("voice.tts_voice is required.");
+	return { engine: "speech-cpp", url, voice: setting.tts_voice, speed: setting.tts_speed };
 }
 
 function toModelSetting(setting: WorkspaceConfigToml["models"]["event"]): ModelSetting {

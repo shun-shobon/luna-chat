@@ -99,6 +99,7 @@ import { PiInterruptClassifier } from "../modules/voice/adapters/pi-interrupt-cl
 import { SherpaTranscriber } from "../modules/voice/adapters/sherpa-transcriber";
 import { createSpeechDetector } from "../modules/voice/adapters/silero-vad";
 import { SpeechClippingTranscriber } from "../modules/voice/adapters/speech-clipping-transcriber";
+import { SpeechCppSynthesizer } from "../modules/voice/adapters/speech-cpp-synthesizer";
 import { createVoiceToolProvider } from "../modules/voice/adapters/voice-tool-provider";
 import { VoiceChannelService } from "../modules/voice/application/voice-channel-service";
 import { DELEGATE_TOOL, VoiceResponder } from "../modules/voice/application/voice-responder";
@@ -107,6 +108,7 @@ import {
 	VOICE_TRANSCRIPT_EVENT_TYPE,
 	VOICE_UTTERANCE_EVENT_TYPE,
 } from "../modules/voice/domain/voice-event";
+import type { SpeechSynthesizerPort } from "../modules/voice/ports/speech-port";
 import { VOICE_FRONT_INSTRUCTIONS } from "../modules/voice/voice-front-instructions";
 import { VOICE_INSTRUCTIONS } from "../modules/voice/voice-instructions";
 import { AllowedChannelSettings } from "../modules/workspace/adapters/allowed-channel-settings";
@@ -125,7 +127,7 @@ import {
 	readHeartbeatContext,
 	readWorkspaceBaseInstructions,
 } from "../modules/workspace/application/workspace-instructions";
-import type { VoiceSetting } from "../modules/workspace/domain/workspace-config";
+import type { TtsSetting, VoiceSetting } from "../modules/workspace/domain/workspace-config";
 import {
 	createChatGptBackend,
 	createAgentModels,
@@ -149,6 +151,8 @@ const VOICE_EMPTY_JOIN_WAIT_MS = 60_000;
 const VOICE_FRONT_TIMEOUT_MS = 30_000;
 // 判定を待つ間もルナは小さな声で話し続ける。これを超えたら割り込みとして扱う。
 const VOICE_INTERRUPT_TIMEOUT_MS = 3_000;
+// 1文の合成。別のホストのTTSが落ちている時に、返事を長く止めないため。
+const VOICE_TTS_TIMEOUT_MS = 15_000;
 
 interface LunaApplication {
 	shutdown(): Promise<void>;
@@ -709,6 +713,18 @@ function requireTasks(tasks: TaskService | undefined): TaskService {
 	return tasks;
 }
 
+function createSynthesizer(setting: TtsSetting): SpeechSynthesizerPort {
+	if (setting.engine === "voicevox") {
+		return new AivisSpeechSynthesizer(setting.url, setting.speaker, setting.speed);
+	}
+	return new SpeechCppSynthesizer({
+		baseUrl: setting.url,
+		voice: setting.voice,
+		speed: setting.speed,
+		timeoutMs: VOICE_TTS_TIMEOUT_MS,
+	});
+}
+
 // 声の集約を待たずに渡す音声の入力。
 const VOICE_EVENT_TYPES: ReadonlySet<string> = new Set([
 	VOICE_UTTERANCE_EVENT_TYPE,
@@ -753,7 +769,7 @@ async function createVoice(
 			now: () => performance.now(),
 		}),
 		transcriber,
-		synthesizer: new AivisSpeechSynthesizer(setting.ttsUrl, setting.ttsSpeaker, setting.ttsSpeed),
+		synthesizer: createSynthesizer(setting.tts),
 		classifier,
 		openResponder: async () => {
 			const instructions = await readWorkspaceBaseInstructions(input.workspaceDir);

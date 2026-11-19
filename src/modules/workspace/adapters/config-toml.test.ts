@@ -111,9 +111,12 @@ tts_speaker = 684965824
 				turnWaitMs: 500,
 				unfinishedTurnWaitMs: 3000,
 				interruptModel: { provider: "openai", model: "gpt-6-luna" },
-				ttsUrl: new URL("http://127.0.0.1:10101/"),
-				ttsSpeaker: 684_965_824,
-				ttsSpeed: 1,
+				tts: {
+					engine: "voicevox",
+					url: new URL("http://127.0.0.1:10101/"),
+					speaker: 684_965_824,
+					speed: 1,
+				},
 			},
 		});
 	});
@@ -135,6 +138,22 @@ tts_speaker = 684965824
 		[
 			"interrupt model without provider",
 			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ninterrupt_model = "gpt-6-luna"',
+		],
+		[
+			"speech-cpp without a voice",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_engine = "speech-cpp"\ntts_url = "http://127.0.0.1:8090/"',
+		],
+		[
+			"speech-cpp with a speaker id",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_engine = "speech-cpp"\ntts_url = "http://127.0.0.1:8090/"\ntts_voice = "luna"\ntts_speaker = 1',
+		],
+		[
+			"voicevox with a voice name",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ntts_voice = "luna"',
+		],
+		[
+			"unknown tts engine",
+			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_engine = "piper"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1',
 		],
 		[
 			"zero turn wait",
@@ -198,9 +217,12 @@ tts_speaker = 684965824
 				turnWaitMs: 700,
 				unfinishedTurnWaitMs: 2000,
 				interruptModel: { provider: "typesafe", model: "jev" },
-				ttsUrl: new URL("http://tts.example:10101/"),
-				ttsSpeaker: 1,
-				ttsSpeed: 1.25,
+				tts: {
+					engine: "speech-cpp",
+					url: new URL("http://tts.example:8090/"),
+					voice: "luna",
+					speed: 1.25,
+				},
 			},
 		} as const;
 
