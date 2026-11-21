@@ -266,11 +266,65 @@ def cmd_click(args):
     after_action({"ok": True, "via": "pointer", "x": x, "y": y}, args.settle)
 
 
+def spare_keycodes():
+    out = subprocess.run(["xmodmap", "-pke"], capture_output=True, text=True, check=True).stdout
+    return [int(f[1]) for f in (line.split() for line in out.splitlines()) if len(f) == 3 and f[0] == "keycode"]
+
+
+def keysym_name(ch):
+    return f"U{ord(ch):04X}"
+
+
+def type_premapped(text):
+    """Type non-ASCII text by binding its characters to spare keycodes before pressing them.
+
+    Why: xdotool type rebinds one scratch keycode per character right before each press, and Chrome
+    reads keymap changes asynchronously, so it sometimes sees the old binding and drops the character.
+    Binding a batch up front, waiting once, then pressing keeps the mapping stable during the presses.
+    """
+    try:
+        spare = spare_keycodes()[:-2]  # leave a couple for xdotool's own scratch use
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    if not spare:
+        return False
+    batches, current, chars = [], [], set()
+    for ch in text:
+        if not ch.isascii() and ch not in chars and len(chars) == len(spare):
+            batches.append((current, chars))
+            current, chars = [], set()
+        if not ch.isascii():
+            chars.add(ch)
+        current.append(ch)
+    batches.append((current, chars))
+    for chunk, chars in batches:
+        bound = dict(zip(sorted(chars), spare))
+        try:
+            subprocess.run(["xmodmap", *sum((["-e", f"keycode {k} = {keysym_name(c)} {keysym_name(c)}"] for c, k in bound.items()), [])], check=True)
+            time.sleep(0.3)
+            run = ""
+            for ch in chunk + [None]:
+                if ch is not None and ch.isascii():
+                    run += ch
+                    continue
+                if run:
+                    xdotool("type", "--delay", 30, "--", run)
+                    run = ""
+                if ch is not None:
+                    xdotool("key", "--delay", 30, keysym_name(ch))
+        finally:
+            time.sleep(0.2)
+            subprocess.run(["xmodmap", *sum((["-e", f"keycode {k} ="] for k in bound.values()), [])], check=False)
+    return True
+
+
 def enter_text(text):
     if text.isascii():
         xdotool("type", "--delay", 30, "--", text)
         return
-    # Why paste: xdotool type drops non-ASCII characters on Xvfb's keymap (e.g. "ねこ" becomes "ね").
+    if type_premapped(text):
+        return
+    # Fallback when the keymap cannot be read: paste through the clipboard.
     # xclip stays in the background to serve the clipboard, so it must not hold the caller's output pipes.
     subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     xdotool("key", "ctrl+v")
@@ -414,7 +468,7 @@ def main():
     p = action("activate", cmd_activate, "bring an X window (id from `apps`) to the front")
     p.add_argument("--window", required=True)
     p = action("wallpaper", cmd_wallpaper, "set the desktop wallpaper (kept across restarts)")
-    p.add_argument("--image", required=True, help="image file; it is scaled to cover the 1440x900 screen")
+    p.add_argument("--image", required=True, help="image file; it is scaled to cover the 1920x1080 screen")
 
     args = parser.parse_args()
     try:

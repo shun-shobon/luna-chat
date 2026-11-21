@@ -748,7 +748,7 @@ type AssistResponse = { speech: string | null; continue_conversation: boolean };
 
 | サービス                  | 内容                                                                                                                                                                             |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `luna-desktop-xvfb`       | 画面 `:99`（1440×900）。解像度は固定                                                                                                                                             |
+| `luna-desktop-xvfb`       | 画面 `:99`（1920×1080）。解像度は固定                                                                                                                                            |
 | `luna-desktop-openbox`    | ウィンドウマネージャー                                                                                                                                                           |
 | `luna-desktop-dbus`       | デスクトップのD-Busセッション。AT-SPI（アクセシビリティ）のバスもここから起動する                                                                                                |
 | `luna-desktop-pulseaudio` | 音声の出力先（null sink）                                                                                                                                                        |
@@ -766,7 +766,7 @@ neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値�
 
 `install.sh` は skill `luna-desktop`（`SKILL.md`、操作用の `scripts/desktop.py`、CDP用の `playwright-core`）を `LUNA_HOME/workspace/.agents/skills/luna-desktop/` に上書きで置く。
 
-- `desktop.py` は AT-SPI でアプリの部品を番号付きで一覧し、番号を指定して操作する。部品が操作に応じない時はポインタやキーの入力に切り替える。ASCII以外の文字はクリップボードからの貼り付けで入力する
+- `desktop.py` は AT-SPI でアプリの部品を番号付きで一覧し、番号を指定して操作する。部品が操作に応じない時はポインタやキーの入力に切り替える。ASCII以外の文字は空きキーコードへまとめて割り当ててから打ち、キーマップを読めない時だけクリップボードから貼り付ける
 - 各操作のあとに画面全体のスクリーンショットを `/run/luna-desktop/screens/`（直近30枚）に保存し、直前の画面から変わったかを返す
 - 入力欄の値を置き換えた時は、値を読み直して一致したかを返す
 - `wallpaper` は指定した画像を `LUNA_HOME/desktop/wallpaper` へコピーして、すぐに貼り替える

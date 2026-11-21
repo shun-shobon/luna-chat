@@ -37,7 +37,7 @@ Signed-By: /etc/apt/keyrings/google-linux.gpg
 EOF
 apt-get update
 apt-get install -y --no-install-recommends \
-	google-chrome-stable xvfb openbox xdotool wmctrl xclip dbus-x11 pulseaudio \
+	google-chrome-stable xvfb openbox xdotool x11-xserver-utils wmctrl xclip dbus-x11 pulseaudio \
 	at-spi2-core python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 gir1.2-gdkpixbuf-2.0 fonts-noto-cjk language-pack-ja \
 	tint2 feh hsetroot papirus-icon-theme xfce4-terminal pcmanfm mousepad ristretto \
 	gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
