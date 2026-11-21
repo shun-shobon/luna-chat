@@ -468,7 +468,7 @@ def main():
     p = action("activate", cmd_activate, "bring an X window (id from `apps`) to the front")
     p.add_argument("--window", required=True)
     p = action("wallpaper", cmd_wallpaper, "set the desktop wallpaper (kept across restarts)")
-    p.add_argument("--image", required=True, help="image file; it is scaled to cover the 1440x900 screen")
+    p.add_argument("--image", required=True, help="image file; it is scaled to cover the 1920x1080 screen")
 
     args = parser.parse_args()
     try:
