@@ -528,15 +528,74 @@ function isImageScaleNote(block: unknown): boolean {
 	);
 }
 
+// Claude Code が画像と文書の合計サイズの上限（tengu_media_byte_cap）で古いものを間引いた跡の注記。
+// ツール結果の中では画像と同じ位置に置かれ、user メッセージ直下では中身が空になったときだけ置かれる。
+function isMediaRemovedNote(block: unknown): block is Record<string, unknown> {
+	return (
+		isRecord(block) &&
+		block["type"] === "text" &&
+		typeof block["text"] === "string" &&
+		block["text"].startsWith("[media removed: request limit.")
+	);
+}
+
+function containsMediaRemovedNote(value: unknown): boolean {
+	if (Array.isArray(value)) return value.some(containsMediaRemovedNote);
+	if (!isRecord(value)) return false;
+	return isMediaRemovedNote(value) || containsMediaRemovedNote(value["content"]);
+}
+
+// 正規の画像に対応しうる Claude Code のブロック。間引かれた画像は注記の text ブロックになっている。
+function isWireImageSlot(block: unknown): boolean {
+	return (isRecord(block) && block["type"] === "image") || isMediaRemovedNote(block);
+}
+
+function findWireImage(wire: unknown[], cursor: number): number {
+	return wire.findIndex((candidate, position) => position >= cursor && isWireImageSlot(candidate));
+}
+
+// 跡なく消えた画像の数。Claude Code は古い画像から順に外すので、消えるのは常に先頭側の画像になる。
+function silentlyTrimmedImages(canonical: unknown[], wire: unknown[]): number {
+	const images = canonical.filter((block) => isRecord(block) && block["type"] === "image").length;
+	return Math.max(0, images - wire.filter(isWireImageSlot).length);
+}
+
 // Claude Code は user メッセージとツール結果にリマインダーを足すが、どれも luna の履歴ではない。
 // 正規のブロックを種類で順に突き合わせ、足されたものは落とす。画像だけは縮小と座標の注記があり得るので Claude Code の写しを使う。
-function alignCanonicalContent(canonical: unknown[], wire: unknown[], where: string): unknown[] {
+// mediaTrimmed は、Claude Code がこの要求で画像を間引いたかどうか。間引かれた画像は送らない（送り直すと上限を超える）。
+function alignCanonicalContent(
+	canonical: unknown[],
+	wire: unknown[],
+	where: string,
+	mediaTrimmed: boolean,
+): unknown[] {
 	const output: unknown[] = [];
 	let cursor = 0;
+	// user メッセージ直下の画像は跡を残さず取り除かれる。注記がどこにも無ければ間引きではないので落とさない。
+	let trimmed = mediaTrimmed ? silentlyTrimmedImages(canonical, wire) : 0;
 	for (const block of canonical) {
 		if (!isRecord(block)) {
 			throw new Error(`Claude Code request has an invalid canonical block in ${where}`);
 		}
+		if (block["type"] === "image") {
+			if (trimmed > 0) {
+				trimmed -= 1;
+				continue;
+			}
+			const index = findWireImage(wire, cursor);
+			const native = wire[index];
+			if (index < 0) {
+				throw new Error(`Claude Code request lost a image block in ${where}`);
+			}
+			cursor = index + 1;
+			output.push(withoutCacheControl(native));
+			if (!isMediaRemovedNote(native) && isImageScaleNote(wire[cursor])) {
+				output.push(withoutCacheControl(wire[cursor]));
+				cursor += 1;
+			}
+			continue;
+		}
+
 		let index = -1;
 		let native: Record<string, unknown> | undefined;
 		for (let position = cursor; position < wire.length; position++) {
@@ -558,20 +617,14 @@ function alignCanonicalContent(canonical: unknown[], wire: unknown[], where: str
 
 		const blockContent = block["content"];
 		const nativeContent = native["content"];
-		if (block["type"] === "image") {
-			output.push(withoutCacheControl(native));
-			if (isImageScaleNote(wire[cursor])) {
-				output.push(withoutCacheControl(wire[cursor]));
-				cursor += 1;
-			}
-		} else if (
+		if (
 			block["type"] === "tool_result" &&
 			Array.isArray(blockContent) &&
 			Array.isArray(nativeContent)
 		) {
 			output.push({
 				...structuredClone(block),
-				content: alignCanonicalContent(blockContent, nativeContent, where),
+				content: alignCanonicalContent(blockContent, nativeContent, where, mediaTrimmed),
 			});
 		} else {
 			output.push(structuredClone(block));
@@ -583,6 +636,7 @@ function alignCanonicalContent(canonical: unknown[], wire: unknown[], where: str
 function restoreCanonicalUserContent(
 	messages: NativeRequestMessage[],
 	frames: NativeFrame[],
+	mediaTrimmed: boolean,
 ): void {
 	const canonical = frames.filter((frame) => frame.type === "user");
 	const native = messages.filter((message) => message.role === "user");
@@ -605,7 +659,12 @@ function restoreCanonicalUserContent(
 		const marker: unknown = markedBlock?.["cache_control"];
 		const frame = canonical[index];
 		if (frame === undefined) continue;
-		const content = alignCanonicalContent(frame.message.content, wire, `user message ${index}`);
+		const where = `user message ${index}`;
+		const content = alignCanonicalContent(frame.message.content, wire, where, mediaTrimmed);
+		// 画像だけのメッセージを Claude Code が空にするときは注記を置き、それが上で画像と対応する。空になるなら Claude Code の形と合っていない。
+		if (content.length === 0) {
+			throw new Error(`Claude Code request left no content in ${where}`);
+		}
 		const last = content.at(-1);
 		if (marker !== undefined && isRecord(last)) {
 			content[content.length - 1] = { ...last, cache_control: structuredClone(marker) };
@@ -668,7 +727,7 @@ export function rewriteInitialRequest(
 	if (messages === undefined || first?.role !== "user" || !Array.isArray(first.content)) {
 		throw new Error("Claude Code request is missing its initial user message");
 	}
-	restoreCanonicalUserContent(messages, frames);
+	restoreCanonicalUserContent(messages, frames, containsMediaRemovedNote(messages));
 
 	if (initialSystemMessages !== undefined && initialSystemMessages.length > 0) {
 		let systemEnd = 1;
