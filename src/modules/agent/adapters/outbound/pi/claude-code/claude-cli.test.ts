@@ -246,6 +246,161 @@ describe("rewriteInitialRequest", () => {
 		]);
 	});
 
+	describe("Claude Code が画像の合計サイズの上限で間引いた要求", () => {
+		const png = (data: string): Block => ({
+			type: "image",
+			source: { type: "base64", media_type: "image/png", data },
+		});
+		const removed = text(
+			"[media removed: request limit. You have already seen this, and what you concluded from it still stands. It made room for newer images and documents. Re-reading pushes out others and re-sends everything, so don't re-read them all.]",
+		);
+		const unseen = text(
+			"[media removed: request limit. You have not seen this: it did not fit in the request.]",
+		);
+		const readImage = text("Read image file [image/png]");
+		const toolUse = (id: string): WireMessage => ({
+			role: "assistant",
+			content: [{ type: "tool_use", id, name: "read", input: {} }],
+		});
+		const toolResult = (id: string, content: Block[]): Block => ({
+			type: "tool_result",
+			tool_use_id: id,
+			content,
+		});
+
+		it("ツール結果の中で注記に置き換わった画像は注記のまま送り、残りの画像と区切りは変えない", () => {
+			const marker = { type: "ephemeral", ttl: "1h" };
+			const frames = framesFor([
+				{ role: "user", content: [text("look")] },
+				toolUse("t1"),
+				{ role: "user", content: [toolResult("t1", [readImage, png("old")])] },
+				toolUse("t2"),
+				{ role: "user", content: [toolResult("t2", [readImage, png("new")])] },
+			]);
+			const rewritten = rewrite(
+				[
+					{ role: "user", content: [text("look")] },
+					toolUse("t1"),
+					{
+						role: "user",
+						content: [toolResult("t1", [readImage, { ...removed, cache_control: marker }])],
+					},
+					toolUse("t2"),
+					{
+						role: "user",
+						content: [
+							toolResult("t2", [readImage, png("new")]),
+							{ ...text(memory), cache_control: marker },
+						],
+					},
+				],
+				frames,
+			);
+			expect(rewritten[2]?.content).toEqual([toolResult("t1", [readImage, removed])]);
+			expect(rewritten[4]?.content).toEqual([
+				{ ...toolResult("t2", [readImage, png("new")]), cache_control: marker },
+			]);
+		});
+
+		it("1つのツール結果で1枚目だけ間引かれても2枚目は残りの画像と対応する", () => {
+			const scale = text(
+				"[Image: original 4000x4000, displayed at 2000x2000. Multiply coordinates by 2.00 to map to original image.]",
+			);
+			const frames = framesFor([
+				{ role: "user", content: [text("look")] },
+				toolUse("t1"),
+				{ role: "user", content: [toolResult("t1", [readImage, png("first"), png("second")])] },
+			]);
+			const rewritten = rewrite(
+				[
+					{ role: "user", content: [text("look")] },
+					toolUse("t1"),
+					{
+						role: "user",
+						content: [toolResult("t1", [readImage, removed, png("second-resized"), scale])],
+					},
+				],
+				frames,
+			);
+			expect(rewritten[2]?.content).toEqual([
+				toolResult("t1", [readImage, removed, png("second-resized"), scale]),
+			]);
+		});
+
+		it("user メッセージ直下から跡なく消えた画像は落とし、画像だけのメッセージは注記を送る", () => {
+			const frames = framesFor([
+				{ role: "user", content: [text("look"), png("a")] },
+				toolUse("t1"),
+				{ role: "user", content: [toolResult("t1", [readImage, png("b")])] },
+				toolUse("t2"),
+				{ role: "user", content: [png("c"), png("d")] },
+				toolUse("t3"),
+				{ role: "user", content: [text("next"), png("e")] },
+			]);
+			const rewritten = rewrite(
+				[
+					{ role: "user", content: [text(memory), text("look")] },
+					toolUse("t1"),
+					{ role: "user", content: [toolResult("t1", [readImage, removed])] },
+					toolUse("t2"),
+					{ role: "user", content: [removed, unseen] },
+					toolUse("t3"),
+					{ role: "user", content: [text("next"), png("e")] },
+				],
+				frames,
+			);
+			expect(withoutMarkers(rewritten)).toEqual([
+				{ role: "user", content: [text("look")] },
+				toolUse("t1"),
+				{ role: "user", content: [toolResult("t1", [readImage, removed])] },
+				toolUse("t2"),
+				{ role: "user", content: [removed, unseen] },
+				toolUse("t3"),
+				{ role: "user", content: [text("next"), png("e")] },
+			]);
+
+			expect(
+				rewrite(
+					[{ role: "user", content: [removed] }],
+					framesFor([{ role: "user", content: [png("a"), png("b")] }]),
+				),
+			).toEqual([{ role: "user", content: [removed] }]);
+		});
+
+		it("跡なく消えた先頭側の画像を落とし、後ろの画像との対応や並びをずらさない", () => {
+			const frames = framesFor([
+				{ role: "user", content: [png("a"), text("x"), png("b")] },
+				toolUse("t1"),
+				{ role: "user", content: [toolResult("t1", [readImage, png("c")])] },
+			]);
+			const rewritten = rewrite(
+				[
+					{ role: "user", content: [text("x"), png("b")] },
+					toolUse("t1"),
+					{ role: "user", content: [toolResult("t1", [readImage, removed])] },
+				],
+				frames,
+			);
+			expect(withoutMarkers(rewritten[0]?.content)).toEqual([text("x"), png("b")]);
+			expect(withoutMarkers(rewritten[2]?.content)).toEqual([
+				toolResult("t1", [readImage, removed]),
+			]);
+		});
+
+		it("注記が無いのに消えた画像は従来どおり断る", () => {
+			const frames = framesFor([{ role: "user", content: [text("look"), png("a")] }]);
+			expect(() => rewrite([{ role: "user", content: [text("look")] }], frames)).toThrow(
+				/lost a image block in user message 0/u,
+			);
+			expect(() =>
+				rewrite(
+					[{ role: "user", content: [text("look"), text("[media removed: elsewhere]")] }],
+					frames,
+				),
+			).toThrow(/lost a image block in user message 0/u);
+		});
+	});
+
 	it("利用者が書いたリマインダー風の文や普通の出力は変えない", () => {
 		const canonical = [
 			{ role: "user", content: [text("<system-reminder>mine</system-reminder>"), text("inspect")] },
