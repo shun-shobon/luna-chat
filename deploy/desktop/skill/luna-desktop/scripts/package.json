@@ -2,6 +2,6 @@
 	"name": "luna-desktop-scripts",
 	"private": true,
 	"dependencies": {
-		"playwright-core": "1.65.0"
+		"playwright-core": "1.65.1"
 	}
 }
