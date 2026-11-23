@@ -376,8 +376,8 @@ id = "ask-trip"
 keywords = ["旅行", "北海道"]
 action = "旅行の感想を聞く"
 expires_at = "2026-12-01T00:00:00+09:00"
-cooldown_hours = 24   # 省略時24
-max_fires = 3         # 省略時3
+cooldown_hours = 24 # 省略時24
+max_fires = 3 # 省略時3
 ```
 
 - `id` は一意、`keywords` は1つ以上、`action` は空でない文字列、`expires_at` はオフセット付きISO 8601とする。不正なファイルはエラーログを記録し、予定がないものとして扱う。
@@ -710,7 +710,7 @@ HAのトークンを持つユーザーの権限で、すべてのドメイン・
 ```toml
 watch = ["binary_sensor.front_door", "climate.*"]
 ignore = ["sensor.*_battery"]
-cooldown_seconds = 30   # 省略時30
+cooldown_seconds = 30 # 省略時30
 ```
 
 - `watch` と `ignore` は `entity_id` のパターンの配列（省略時は空）。`*` は任意の文字列（`.` を含む）に一致し、それ以外の文字は完全一致とする。`cooldown_seconds` は0以上の数。
