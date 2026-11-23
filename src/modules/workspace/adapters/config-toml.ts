@@ -4,8 +4,9 @@ import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 
 import { isValidFiveFieldCron } from "../domain/cron-expression";
-import { DEFAULT_WORKSPACE_CONFIG } from "../domain/workspace-config";
+import { DEFAULT_WORKSPACE_CONFIG, MINECRAFT_WORKER_NAME } from "../domain/workspace-config";
 import type {
+	MinecraftSetting,
 	ModelSetting,
 	TtsSetting,
 	VoiceSetting,
@@ -25,23 +26,24 @@ const DEFAULT_VOICE_UNFINISHED_TURN_WAIT_MS = 3000;
 const DEFAULT_VOICE_INTERRUPT_MODEL = "openai/gpt-6-luna";
 const DEFAULT_VOICE_TTS_SPEED = 1;
 const DEFAULT_VOICE_TTS_ENGINE = "voicevox";
+const DEFAULT_MINECRAFT_DECISION_TIMEOUT_MS = 3000;
+const DEFAULT_MINECRAFT_PLANNER_INTERVAL_MS = 60_000;
+
 const discordSnowflake = z.string().regex(/^\d+$/u);
 const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const modelIdSchema = z.string().regex(/^[^/\s]+\/[^\s]+$/u, "model must be provider/model");
 
 // 依頼元のツール入力で列挙値として渡すため、名前は識別子に使える文字に限る。
 const workerNameSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/u);
+const workerChoiceSchema = z.strictObject({
+	model: modelIdSchema,
+	thinking: thinkingSchema,
+	description: z.string().trim().min(1).max(500),
+});
 const workerSettingSchema = z
 	.strictObject({
 		default: workerNameSchema,
-		choices: z.record(
-			workerNameSchema,
-			z.strictObject({
-				model: modelIdSchema,
-				thinking: thinkingSchema,
-				description: z.string().trim().min(1).max(500),
-			}),
-		),
+		choices: z.record(workerNameSchema, workerChoiceSchema),
 	})
 	.refine((worker) => Object.hasOwn(worker.choices, worker.default), {
 		message: "models.worker.default must name one of models.worker.choices.",
@@ -111,6 +113,7 @@ const WorkspaceConfigTomlSchema = z
 				worker: workerSettingSchema.default(
 					toWorkerSettingToml(DEFAULT_WORKSPACE_CONFIG.models.worker),
 				),
+				minecraft: workerChoiceSchema.optional(),
 			})
 			.prefault({}),
 		tasks: z
@@ -163,8 +166,33 @@ const WorkspaceConfigTomlSchema = z
 				}
 			})
 			.optional(),
+		minecraft: z
+			.strictObject({
+				host: z.string().trim().min(1),
+				port: z.number().int().min(1).max(65_535),
+				username: z.string().regex(/^[A-Za-z0-9_]{3,16}$/u),
+				world: workerNameSchema,
+				decision_model: modelIdSchema,
+				decision_timeout_ms: positiveTimerMs.default(DEFAULT_MINECRAFT_DECISION_TIMEOUT_MS),
+				planner_interval_ms: positiveTimerMs.default(DEFAULT_MINECRAFT_PLANNER_INTERVAL_MS),
+			})
+			.optional(),
 	})
 	.superRefine((config, context) => {
+		if ((config.minecraft === undefined) !== (config.models.minecraft === undefined)) {
+			context.addIssue({
+				code: "custom",
+				message: "minecraft and models.minecraft must be written together.",
+				path: ["models", "minecraft"],
+			});
+		}
+		if (Object.hasOwn(config.models.worker.choices, MINECRAFT_WORKER_NAME)) {
+			context.addIssue({
+				code: "custom",
+				message: `models.worker.choices must not use the name "${MINECRAFT_WORKER_NAME}".`,
+				path: ["models", "worker", "choices", MINECRAFT_WORKER_NAME],
+			});
+		}
 		if (config.heartbeat.min_interval_ms > config.heartbeat.max_interval_ms) {
 			context.addIssue({
 				code: "custom",
@@ -254,6 +282,9 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 			maxConcurrent: config.tasks.max_concurrent,
 		},
 		...(config.voice === undefined ? {} : { voice: toVoiceSetting(config.voice) }),
+		...(config.minecraft === undefined || config.models.minecraft === undefined
+			? {}
+			: { minecraft: toMinecraftSetting(config.minecraft, config.models.minecraft) }),
 	};
 }
 
@@ -288,12 +319,53 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 			event: toModelSettingToml(config.models.event),
 			voice: toModelSettingToml(config.models.voice),
 			worker: toWorkerSettingToml(config.models.worker),
+			...(config.minecraft === undefined
+				? {}
+				: { minecraft: toWorkerChoiceToml(config.minecraft.planner) }),
 		},
 		tasks: {
 			max_concurrent: config.tasks.maxConcurrent,
 		},
 		...(config.voice === undefined ? {} : { voice: toVoiceSettingToml(config.voice) }),
+		...(config.minecraft === undefined
+			? {}
+			: { minecraft: toMinecraftSettingToml(config.minecraft) }),
 	};
+}
+
+type MinecraftSettingToml = NonNullable<WorkspaceConfigToml["minecraft"]>;
+type WorkerChoiceToml = z.infer<typeof workerChoiceSchema>;
+
+function toMinecraftSetting(
+	setting: MinecraftSettingToml,
+	planner: WorkerChoiceToml,
+): MinecraftSetting {
+	return {
+		host: setting.host,
+		port: setting.port,
+		username: setting.username,
+		world: setting.world,
+		decisionModel: splitModelId(setting.decision_model),
+		decisionTimeoutMs: setting.decision_timeout_ms,
+		plannerIntervalMs: setting.planner_interval_ms,
+		planner: { ...toModelSetting(planner), description: planner.description },
+	};
+}
+
+function toMinecraftSettingToml(setting: MinecraftSetting): MinecraftSettingToml {
+	return {
+		host: setting.host,
+		port: setting.port,
+		username: setting.username,
+		world: setting.world,
+		decision_model: `${setting.decisionModel.provider}/${setting.decisionModel.model}`,
+		decision_timeout_ms: setting.decisionTimeoutMs,
+		planner_interval_ms: setting.plannerIntervalMs,
+	};
+}
+
+function toWorkerChoiceToml(setting: MinecraftSetting["planner"]): WorkerChoiceToml {
+	return { ...toModelSettingToml(setting), description: setting.description };
 }
 
 type VoiceSettingToml = NonNullable<WorkspaceConfigToml["voice"]>;
