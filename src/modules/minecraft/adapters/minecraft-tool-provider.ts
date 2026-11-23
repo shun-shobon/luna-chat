@@ -33,7 +33,7 @@ export function createMinecraftToolProvider(play: MinecraftPlay): ToolProvider {
 			defineTool({
 				name: "minecraft_goal",
 				description:
-					'Set the goal that Luna\'s in-game controller pursues one action at a time, replacing the current one. Returns at once; the controller keeps playing while you think. objective is a short instruction in English, such as "Collect 3 oak logs". targets optionally lists item ids and counts as hints. waypoint optionally gives a block position or a place name you set with minecraft_name_place. The first Minecraft tool call of your task connects to the server.',
+					'Set the goal that Luna\'s in-game controller pursues one action at a time, replacing the current one. Returns at once; the controller keeps playing while you think. objective is a short instruction in English, such as "Collect 3 oak logs". targets optionally lists item ids and counts; once the inventory holds all of them, the goal counts as done. waypoint optionally gives a block position or a place name you set with minecraft_name_place. The first Minecraft tool call of your task connects to the server.',
 				inputSchema: goalInputSchema,
 				parseInput: (input) => ({
 					objective: input.objective,

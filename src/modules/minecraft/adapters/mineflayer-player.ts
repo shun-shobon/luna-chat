@@ -39,6 +39,7 @@ const SPAWN_TIMEOUT_MS = 30_000;
 const QUIT_TIMEOUT_MS = 5_000;
 // 経路探索で使う、落ちてよい高さ（SPEC §25.4）。
 const MAX_DROP = 3;
+const WATER_PATH_COST = 20;
 const COMMON_BLOCKS: ReadonlySet<string> = new Set(["stone", "water", "sand", "gravel", "lava"]);
 const FIND_COMMON_PER_KIND = 16;
 const FIND_RARE_LIMIT = 256;
@@ -270,6 +271,9 @@ export class MineflayerPlayer {
 		movements.allow1by1towers = true;
 		// 既定では水への落下に高さの上限がない。
 		movements.infiniteLiquidDropdownDistance = false;
+		// 既定（1）では深い水の中も平地と同じように通り、潜ったまま溺れた。浅い川は渡れる程度に、水を通る経路を避けさせる。
+		// liquidCost は実装にあるが型定義に載っていない。
+		Object.assign(movements, { liquidCost: WATER_PATH_COST });
 		movements.scafoldingBlocks = SCAFFOLDING_BLOCKS.flatMap((name) => {
 			const item = bot.registry.itemsByName[name];
 			return item === undefined ? [] : [item.id];
@@ -388,9 +392,13 @@ export class MineflayerPlayer {
 				return `moved toward ${water == null ? "a safe block" : "water"} at ${formatVec(target)}`;
 			}
 			case "drowning": {
+				// 頭が出た時点で離すとまた沈み、酸素が戻り切る前に溺れたため、水から出るか酸素が満タンになるまで浮き続ける。
 				bot.setControlState("jump", true);
-				await until(() => !this.#reflexState().headInWater);
-				return "swam up to breathe";
+				await until(() => {
+					const state = this.#reflexState();
+					return !state.inWater || state.oxygen >= FULL_OXYGEN;
+				});
+				return "swam up and caught breath";
 			}
 			case "low_health_threat": {
 				const threat = this.#visibleEntities(FLEE_DISTANCE).find(

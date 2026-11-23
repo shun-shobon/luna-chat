@@ -2,7 +2,8 @@ import { z } from "zod";
 
 // SPEC §25.5 のしきい値。体力・満腹度・酸素はどれも 0〜20。
 const LOW_HEALTH = 8;
-const LOW_OXYGEN = 6;
+// 6 では、浮いても次の行動でまた潜り、浮き切る前に溺れた。
+const LOW_OXYGEN = 10;
 const FULL_FOOD = 20;
 export const REFLEX_LIMIT_MS = 10_000;
 // 体力が低い時に敵から離れる距離（ブロック）。

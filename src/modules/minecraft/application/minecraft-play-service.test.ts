@@ -121,6 +121,20 @@ describe("MinecraftPlayService", () => {
 		await harness.stop();
 	});
 
+	it("持ち物が targets を満たしたら、決定モデルに尋ねずに goal_done を知らせる", async () => {
+		const harness = createHarness();
+		harness.snapshot = snapshotWith({ inventory: { oak_log: 4 } });
+
+		await harness.setGoal();
+
+		await vi.waitFor(() => expect(harness.eventTypes()).toEqual(["goal_done"]));
+		expect(JSON.parse(harness.notices[0]?.message.text ?? "")).toMatchObject({
+			detail: "The inventory has every target: 4 oak_log.",
+		});
+		expect(harness.decide).not.toHaveBeenCalled();
+		await harness.stop();
+	});
+
 	it("決定モデルの失敗が3回続いたら goal_stuck を知らせる", async () => {
 		const harness = createHarness();
 		harness.decide.mockRejectedValue(new Error("timeout"));

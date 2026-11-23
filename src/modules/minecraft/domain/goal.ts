@@ -9,6 +9,15 @@ export type MinecraftGoal = Readonly<{
 
 export type GoalStatus = "done" | "in_progress" | "stuck";
 
+// 目標の targets をすべて持ち物が満たしているか。targets のない目標は、持ち物では決めない。
+export function targetsMet(
+	goal: MinecraftGoal,
+	inventory: Readonly<Record<string, number>>,
+): boolean {
+	const targets = Object.entries(goal.targets);
+	return targets.length > 0 && targets.every(([item, count]) => (inventory[item] ?? 0) >= count);
+}
+
 export type GoalAnswer = Readonly<{ status: GoalStatus; probability: number }>;
 
 // SPEC §25.4 のしきい値。確率がこれ以上の答えを、続けて数える。

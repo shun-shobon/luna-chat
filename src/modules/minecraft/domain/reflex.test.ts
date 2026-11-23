@@ -21,13 +21,13 @@ describe("judgeReflex", () => {
 		["溶岩に触れている", { ...SAFE, inLava: true }, "lava_or_fire"],
 		["燃えている", { ...SAFE, burning: true }, "lava_or_fire"],
 		[
-			"頭まで水に入り酸素が6以下",
-			{ ...SAFE, inWater: true, headInWater: true, oxygen: 6 },
+			"頭まで水に入り酸素が10以下",
+			{ ...SAFE, inWater: true, headInWater: true, oxygen: 10 },
 			"drowning",
 		],
 		[
 			"水中でも酸素が残っていれば動かない",
-			{ ...SAFE, inWater: true, headInWater: true, oxygen: 7 },
+			{ ...SAFE, inWater: true, headInWater: true, oxygen: 11 },
 			null,
 		],
 		[

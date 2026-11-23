@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { changedDuringInference, GoalTracker } from "./goal";
+import { changedDuringInference, GoalTracker, targetsMet } from "./goal";
 
 describe("GoalTracker", () => {
 	it("確率0.8以上の done が2回続いたら goal_done にする", () => {
@@ -76,5 +76,18 @@ describe("changedDuringInference", () => {
 		],
 	])("%s", (_label, after, changed) => {
 		expect(changedDuringInference(before, after)).toBe(changed);
+	});
+});
+
+describe("targetsMet", () => {
+	const goal = { objective: "Collect", targets: { oak_log: 3, stick: 2 }, waypoint: null };
+
+	it("持ち物がすべての targets を満たした時だけ真にする", () => {
+		expect(targetsMet(goal, { oak_log: 3, stick: 2, dirt: 9 })).toBe(true);
+		expect(targetsMet(goal, { oak_log: 5, stick: 1 })).toBe(false);
+	});
+
+	it("targets のない目標は持ち物では決めない", () => {
+		expect(targetsMet({ ...goal, targets: {} }, { oak_log: 3 })).toBe(false);
 	});
 });

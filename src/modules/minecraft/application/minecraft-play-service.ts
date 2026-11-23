@@ -6,7 +6,7 @@ import { ACTION_TIMEOUT_MS, describeAction, listCandidates } from "../domain/act
 import type { MinecraftAction } from "../domain/action";
 import { createMinecraftEvent, MINECRAFT_EVENT_KIND, minecraftEventJson } from "../domain/event";
 import type { MinecraftEvent, MinecraftEventType } from "../domain/event";
-import { changedDuringInference, GoalTracker } from "../domain/goal";
+import { changedDuringInference, GoalTracker, targetsMet } from "../domain/goal";
 import type { GoalAnswer, GoalVerdict, MinecraftGoal } from "../domain/goal";
 import type { MinecraftStatus } from "../domain/minecraft-status";
 import { buildObservation, goalStatusJson } from "../domain/observation";
@@ -324,6 +324,11 @@ export class MinecraftPlayService {
 			await this.#delay(play, REFLEX_POLL_MS);
 			return;
 		}
+		// 決定モデルは達成の確率を控えめに返し、集め終えても 0.8 に届かないことがあったため、数で確かめられる目標はここで決める。
+		if (targetsMet(goal, before.inventory)) {
+			this.#complete(play, goal);
+			return;
+		}
 		const candidates = listCandidates({ snapshot: before, memory: play.memory, goal });
 		const started = this.dependencies.now().getTime();
 		let decision;
@@ -410,6 +415,19 @@ export class MinecraftPlayService {
 		// 被弾や敵の出現による中断は、選んだ行動の失敗とは数えない。
 		if (result !== "interrupted")
 			this.#judge(play, goal, play.tracker.acted(result === "succeeded"));
+	}
+
+	#complete(play: Play, goal: MinecraftGoal): void {
+		if (play.goal !== goal) return;
+		play.halted = true;
+		const targets = Object.entries(goal.targets)
+			.map(([item, count]) => `${String(count)} ${item}`)
+			.join(", ");
+		void this.#emitWithObservation(
+			play,
+			"goal_done",
+			`The inventory has every target: ${targets}.`,
+		);
 	}
 
 	// 判断や行動の間に新しい目標が来ていたら、古い目標の結果では止めない。
