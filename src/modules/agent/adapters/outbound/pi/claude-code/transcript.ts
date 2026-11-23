@@ -184,7 +184,7 @@ function canonicalAssistantContent(message: AssistantMessage): NativeContentBloc
 			block.thinkingSignature !== undefined &&
 			block.thinkingSignature !== ""
 		) {
-			if (block.redacted === true) {
+			if (block.redacted ?? false) {
 				blocks.push({ type: "redacted_thinking", data: block.thinkingSignature });
 			} else {
 				blocks.push({

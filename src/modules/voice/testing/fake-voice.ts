@@ -105,7 +105,7 @@ export function createFakeFront(): FakeFront {
 						wake = resolve;
 					});
 				return (async function* () {
-					for (;;) {
+					while (true) {
 						if (signal.aborted) throw signal.reason;
 						const item = queue.shift();
 						if (item === undefined) {

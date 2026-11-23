@@ -191,13 +191,13 @@ function toGuildEmoji(
 	},
 ): unknown {
 	const name = z.string().min(1).parse(emoji.name);
-	const animated = emoji.animated === true;
+	const animated = emoji.animated ?? false;
 	return {
 		id: emoji.id,
 		guildId,
 		name,
 		animated,
-		available: emoji.available === true,
+		available: emoji.available ?? false,
 		mention: formatEmoji({ id: emoji.id, name, animated }),
 		url: emoji.imageURL({ extension: animated ? "gif" : "webp" }),
 	};

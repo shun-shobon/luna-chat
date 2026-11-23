@@ -399,7 +399,7 @@ class EventTranslator {
 				case "thinking": {
 					this.output.content.push({ ...source });
 					this.stream.push({ type: "thinking_start", contentIndex, partial: this.output });
-					if (source.thinking !== "" && source.redacted !== true) {
+					if (source.thinking !== "" && !(source.redacted ?? false)) {
 						this.stream.push({
 							type: "thinking_delta",
 							contentIndex,
@@ -543,7 +543,7 @@ export function streamClaudeCode(
 			stream.push({ type: "done", reason: stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			output.stopReason = options?.signal?.aborted === true ? "aborted" : "error";
+			output.stopReason = (options?.signal?.aborted ?? false) ? "aborted" : "error";
 			output.errorMessage = normalizeError(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();

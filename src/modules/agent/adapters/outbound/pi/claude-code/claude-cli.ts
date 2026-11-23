@@ -187,7 +187,7 @@ export async function getClaudeStatus(
 	try {
 		result = await captureProcess(command, ["auth", "status"], env, signal);
 	} catch (error) {
-		if (signal?.aborted === true) throw error;
+		if (signal?.aborted ?? false) throw error;
 		const message = error instanceof Error ? error.message : String(error);
 		return {
 			available: true,
@@ -216,7 +216,7 @@ export async function getClaudeStatus(
 	}
 
 	// ログアウトは loggedIn: false の JSON で、終了コードが0でないこともある。ログイン状態は JSON だけを信じる。
-	const loggedIn = payload.loggedIn === true;
+	const loggedIn = payload.loggedIn ?? false;
 	const plan = payload.subscriptionType ?? undefined;
 	return {
 		available: true,
@@ -311,8 +311,8 @@ class AsyncQueue<T> {
 			};
 			const waiter = (item: IteratorResult<T, undefined>) => {
 				finish(() => {
-					if (item.done === true && this.failure) reject(this.failure);
-					else resolveNext(item.done === true ? undefined : item.value);
+					if ((item.done ?? false) && this.failure) reject(this.failure);
+					else resolveNext((item.done ?? false) ? undefined : item.value);
 				});
 			};
 			const onAbort = () => {
@@ -400,7 +400,8 @@ function processEnvironment(
 // 書いたフレームの uuid は、Claude Code がそのフレームの result で返してくる。
 async function writeFrame(child: ChildProcess, frame: NativeFrame): Promise<string> {
 	const stdin = child.stdin;
-	if (stdin?.writable !== true) throw new Error("Claude Code stdin closed during history replay");
+	if (stdin == null || !stdin.writable)
+		throw new Error("Claude Code stdin closed during history replay");
 	const uuid = randomUUID();
 	if (!stdin.write(`${JSON.stringify({ ...frame, uuid })}\n`)) {
 		await new Promise<void>((resolveDrain, reject) => {
@@ -952,7 +953,7 @@ class ClaudeProcess {
 	}
 
 	isAlive(): boolean {
-		return !this.closed && this.child.exitCode == null && this.child.stdin?.writable === true;
+		return !this.closed && this.child.exitCode == null && (this.child.stdin?.writable ?? false);
 	}
 
 	isExpired(now = Date.now()): boolean {
@@ -1032,14 +1033,14 @@ class ClaudeProcess {
 			const frames = continuation ? input.frames.slice(-1) : input.frames;
 			for (const frame of frames) {
 				const uuid = await writeFrame(this.child, frame);
-				if (frame.shouldQuery === false) {
-					for (;;) {
+				if (!(frame.shouldQuery ?? true)) {
+					while (true) {
 						const event = await this.queue.next(input.signal, this.timeoutMs);
 						if (!event) {
 							throw await this.exitError("Claude Code exited before acknowledging history replay");
 						}
 						if (event.type === "result") {
-							if (event.num_turns !== 0 || event.is_error === true) {
+							if (event.num_turns !== 0 || (event.is_error ?? false)) {
 								throw new Error("Claude Code rejected zero-turn history replay");
 							}
 							break;
@@ -1050,7 +1051,7 @@ class ClaudeProcess {
 				}
 			}
 
-			for (;;) {
+			while (true) {
 				const event = await this.queue.next(input.signal, this.timeoutMs);
 				if (!event) throw await this.exitError("Claude Code exited before completing its response");
 				if (event.type === "assistant") {
@@ -1099,7 +1100,7 @@ class ClaudeProcess {
 			if (
 				!maxTurnsBoundary &&
 				!nativeFailureHandled &&
-				(result.is_error === true || result.subtype !== "success")
+				((result.is_error ?? false) || result.subtype !== "success")
 			) {
 				throw new Error(`Claude Code request failed: ${result.subtype ?? "unknown result"}`);
 			}
@@ -1110,7 +1111,8 @@ class ClaudeProcess {
 			}
 
 			// 課金はもう済んでいるが、ここで止めれば luna のループが追加の要求を超過分に積まない。
-			if (rateLimit?.isUsingOverage === true) throw usageCreditsChargeError(rateLimit);
+			const chargeError = usageCreditsChargeError(rateLimit);
+			if (chargeError) throw chargeError;
 
 			return {
 				message,
@@ -1245,7 +1247,7 @@ async function acquireProcess(
 		}
 
 		// 同時に来た要求にキャッシュの会話を触らせない。セッション ID の無い要求と同じく使い捨てのプロセスにする。
-		const retain = sessionId !== undefined && cached?.busy !== true;
+		const retain = sessionId !== undefined && !(cached?.busy ?? false);
 		if (retain) {
 			while (processCache.size >= MAX_CACHED_CLAUDE_PROCESSES) {
 				const victim = [...processCache.entries()]
@@ -1397,7 +1399,11 @@ export async function runClaudeRequest(input: RunClaudeInput): Promise<RunClaude
 	} catch (error) {
 		await discardProcess(acquired);
 		// 温まったプロセスは古い隠れた状態を持ち得る。出力も API への到達も無ければ見せても課金してもいないので、新しいプロセスで一度だけやり直す。
-		if (acquired.continuation && !acquired.worker.startedOutput && input.signal?.aborted !== true) {
+		if (
+			acquired.continuation &&
+			!acquired.worker.startedOutput &&
+			!(input.signal?.aborted ?? false)
+		) {
 			return await runClaudeRequest(input);
 		}
 		throw error;

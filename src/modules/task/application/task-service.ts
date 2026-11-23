@@ -151,7 +151,7 @@ export class TaskService {
 		});
 		const run = this.#runs.get(taskId);
 		// 質問を報告した直後に届いた返答は、実行の終わりに未配送として拾い直して続きを渡す。
-		if (run?.running === true && run.opened !== undefined && task.status === "running") {
+		if (run !== undefined && run.running && run.opened !== undefined && task.status === "running") {
 			run.opened.session.steer(this.#messagesInput(taskId));
 		} else if (task.status === "waiting_input") {
 			this.#update(taskId, { status: "queued" });

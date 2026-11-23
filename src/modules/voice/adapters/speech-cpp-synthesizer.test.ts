@@ -63,7 +63,7 @@ describe("SpeechCppSynthesizer", () => {
 		const [url, init] = fetchMock.mock.calls[0] ?? [];
 		expect(url).toEqual(new URL("http://192.168.0.150:8090/v1/audio/speech"));
 		expect(init?.method).toBe("POST");
-		if (typeof init?.body !== "string") throw new Error("expected a JSON body");
+		if (typeof init?.body !== "string") throw new TypeError("expected a JSON body");
 		expect(JSON.parse(init.body)).toEqual({
 			input: "こんにちは",
 			voice: "luna",

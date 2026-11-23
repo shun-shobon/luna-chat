@@ -322,7 +322,7 @@ export class PiAgentSession implements AgentSession {
 		await this.#agent.prompt(messages.map((message) => createLunaInputMessage(message, timestamp)));
 
 		let transientAttempts = 0;
-		for (;;) {
+		while (true) {
 			const last = this.#agent.state.messages.at(-1);
 			if (
 				this.#isAbortRequested() ||

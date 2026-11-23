@@ -251,7 +251,7 @@ function createChannel(
 		recipient:
 			input.type === ChannelType.DM ? createUser({ id: input.recipientId ?? "400" }) : null,
 		...(isThread
-			? { members: { me: input.lunaIsThreadMember === true ? { id: "999" } : null } }
+			? { members: { me: (input.lunaIsThreadMember ?? false) ? { id: "999" } : null } }
 			: isDm
 				? {}
 				: { members: collection([]) }),

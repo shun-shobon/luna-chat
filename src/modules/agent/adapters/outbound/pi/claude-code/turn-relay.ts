@@ -32,7 +32,7 @@ export class AnthropicCapture {
 	}
 
 	private consumeFrames(): void {
-		for (;;) {
+		while (true) {
 			const match = /\r?\n\r?\n/u.exec(this.pending);
 			if (!match) return;
 			const frame = this.pending.slice(0, match.index);

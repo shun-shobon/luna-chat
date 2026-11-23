@@ -218,7 +218,7 @@ class DiscordVoiceLink implements VoiceLink {
 	}
 
 	#listen(connection: VoiceConnection, userId: string): void {
-		if (this.#listening.has(userId) || this.channel.members.get(userId)?.user.bot !== false) return;
+		if (this.#listening.has(userId) || (this.channel.members.get(userId)?.user.bot ?? true)) return;
 		const listening: Listening = {
 			// Discordの音声は48kHzステレオだが、Opusは復号時に任意のレートとチャンネル数へ変換できる。
 			decoder: new OpusScript(RECEIVE_SAMPLE_RATE, 1, OpusScript.Application.VOIP),

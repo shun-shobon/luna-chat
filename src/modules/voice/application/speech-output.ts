@@ -178,7 +178,7 @@ export class SpeechReply {
 	}
 
 	async #next(index: number): Promise<Sentence | undefined> {
-		for (;;) {
+		while (true) {
 			const sentence = this.#sentences[index];
 			if (sentence !== undefined) return sentence;
 			if (this.#finished || this.#cancelled) return undefined;

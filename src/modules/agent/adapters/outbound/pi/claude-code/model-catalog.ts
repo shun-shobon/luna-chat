@@ -36,10 +36,10 @@ function catalogModel(id: string): ClaudeCodeModel {
 	}
 	const off = builtin.thinkingLevelMap?.off;
 	CAPABILITIES.set(id, {
-		adaptiveThinking: builtin.compat?.forceAdaptiveThinking === true,
+		adaptiveThinking: builtin.compat?.forceAdaptiveThinking ?? false,
 		// pi は thinking.type: disabled を拒むモデルを off: null で表す。
 		disabledThinking: off === undefined || off != null,
-		nativeToolChanges: builtin.compat?.supportsMidConvoToolChanges === true,
+		nativeToolChanges: builtin.compat?.supportsMidConvoToolChanges ?? false,
 	});
 	const {
 		api: _api,

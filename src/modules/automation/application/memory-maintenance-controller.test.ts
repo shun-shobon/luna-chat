@@ -124,7 +124,7 @@ class FakeScheduleTimer implements AutomationScheduleTimerPort {
 	#onTick: (() => Promise<void>) | undefined;
 
 	schedule(cronTime: Date | string, onTick: () => Promise<void>): ScheduledAutomationJob {
-		if (typeof cronTime !== "string") throw new Error("Unexpected one-shot schedule");
+		if (typeof cronTime !== "string") throw new TypeError("Unexpected one-shot schedule");
 		this.cron = cronTime;
 		this.#onTick = onTick;
 		return { nextRunAt: () => new Date("2026-01-02T04:00:00.000Z"), stop: this.stop };

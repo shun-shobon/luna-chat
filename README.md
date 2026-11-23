@@ -223,9 +223,9 @@ curl -i http://127.0.0.1:3000/events \
 状態変化で起動する対象は、ワークスペースの `home-assistant.toml` にLuna自身が書きます。手で書いても構いません。
 
 ```toml
-watch = ["binary_sensor.front_door", "climate.*"]   # * は任意の文字列
+watch = ["binary_sensor.front_door", "climate.*"] # * は任意の文字列
 ignore = ["sensor.*_battery"]
-cooldown_seconds = 30   # 同じエンティティで起動する最短の間隔（省略時30）
+cooldown_seconds = 30 # 同じエンティティで起動する最短の間隔（省略時30）
 ```
 
 Assistの会話エージェントとして使うには、HAにカスタム統合 [ha-luna](https://github.com/shun-shobon/ha-luna) を入れ、Luna の HTTP API のURL（例 `http://luna.local:3000`）を設定します。HAが別のホストにある場合は `LUNA_HTTP_HOST=0.0.0.0` が必要です。HTTP APIには認証がないため、そのネットワーク内の全員がLunaを動かせます。HA側の設定方法はha-lunaのREADMEを参照してください。

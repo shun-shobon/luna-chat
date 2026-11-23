@@ -152,6 +152,6 @@ function tool(tools: readonly AgentTool[], name: string): AgentTool {
 
 async function call(tools: readonly AgentTool[], name: string, input: JsonValue): Promise<unknown> {
 	const result = await tool(tools, name).execute(input, new AbortController().signal);
-	if (result.isError) throw new Error(`${name} failed: ${result.text}`);
+	if (result.isError) throw new TypeError(`${name} failed: ${result.text}`);
 	return JSON.parse(result.text);
 }
