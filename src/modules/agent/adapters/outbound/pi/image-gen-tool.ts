@@ -164,7 +164,7 @@ async function buildRequest(
 ): Promise<ImageRequest> {
 	const common = {
 		prompt: args.prompt,
-		background: args.transparent_background === true ? "transparent" : "opaque",
+		background: (args.transparent_background ?? false) ? "transparent" : "opaque",
 		model: IMAGE_MODEL,
 		quality: "auto",
 		size: "auto",

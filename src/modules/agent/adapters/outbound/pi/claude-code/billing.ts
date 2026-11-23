@@ -15,7 +15,8 @@ export type RateLimitInfo = z.infer<typeof rateLimitInfoSchema>;
 const USAGE_CREDITS_REJECTION =
 	/third-party apps now draw from (?:your )?extra usage|out of extra usage|draws? from your usage credits/iu;
 
-export function usageCreditsChargeError(info: RateLimitInfo): Error {
+export function usageCreditsChargeError(info: RateLimitInfo | undefined): Error | undefined {
+	if (info === undefined || !(info.isUsingOverage ?? false)) return undefined;
 	const type =
 		info.rateLimitType != null && info.rateLimitType !== "" ? `, ${info.rateLimitType}` : "";
 	return new Error(

@@ -9,7 +9,7 @@ type Handler = (body: unknown, signal: AbortSignal | undefined) => Promise<Respo
 function fetchWith(handler: Handler) {
 	const requests: { url: string; headers: Headers; body: unknown }[] = [];
 	const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-		if (typeof init?.body !== "string") throw new Error("expected a JSON body");
+		if (typeof init?.body !== "string") throw new TypeError("expected a JSON body");
 		const body: unknown = JSON.parse(init.body);
 		const url = input instanceof Request ? input.url : input.toString();
 		requests.push({ url, headers: new Headers(init.headers), body });

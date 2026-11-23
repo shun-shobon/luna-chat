@@ -309,7 +309,7 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 	};
 
 	const allocateSessionId = (): number => {
-		for (;;) {
+		while (true) {
 			const id = randomInt(1_000, 100_000);
 			if (!sessions.has(id)) {
 				return id;
@@ -364,7 +364,7 @@ export function createShellTools(options: ShellToolsOptions): ShellTools {
 			args.workdir == null || args.workdir === ""
 				? options.cwd
 				: path.resolve(options.cwd, args.workdir);
-		if (args.run_in_background === true) {
+		if (args.run_in_background ?? false) {
 			if (
 				args.tty !== undefined ||
 				args.yield_time_ms !== undefined ||
@@ -699,7 +699,7 @@ function exitCodeOf(code: number | null, signal: NodeJS.Signals | null): number 
 }
 
 function allocateBackgroundId(taken: ReadonlyMap<string, unknown>): string {
-	for (;;) {
+	while (true) {
 		const id = `bg-${randomBytes(4).toString("hex")}`;
 		if (!taken.has(id)) {
 			return id;

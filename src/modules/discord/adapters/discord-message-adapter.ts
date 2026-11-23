@@ -245,7 +245,7 @@ function toReaction(value: unknown): DiscordMessage["reactions"][number] {
 			kind: "custom",
 			id: reaction.emoji.id,
 			name: reaction.emoji.name,
-			animated: reaction.emoji.animated === true,
+			animated: reaction.emoji.animated ?? false,
 		},
 		count: reaction.count,
 		me: reaction.me,
