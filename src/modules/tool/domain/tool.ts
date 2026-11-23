@@ -6,7 +6,8 @@ export type ToolOrigin =
 			session: Readonly<{ key: string; source: string; context: JsonValue }>;
 	  }>
 	| Readonly<{ kind: "event"; eventId: string; eventType: string }>
-	| Readonly<{ kind: "task"; taskId: string }>;
+	// worker は作業エージェントの選択肢の名前。セッションの開き方（ツールと指示）を選ぶのに使う。
+	| Readonly<{ kind: "task"; taskId: string; worker: string }>;
 
 export type ActivityHandle = Readonly<{
 	// 作業を止めた後の通知は捨てる。

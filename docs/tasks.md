@@ -11,7 +11,7 @@
 | `task_cancel`  | `{ task_id: string, reason?: string(1〜2000文字) }`                                  | `{ task_id, status: "cancelled" }`      |
 
 - 文字列は前後の空白を除いた長さで検証する。制約を満たさない入力はツールの失敗となる。
-- `task_create` の `worker` は `[models.worker]`（[SPEC.md](./SPEC.md) の設定）の選択肢の名前で、省略すると `default` になる。選択肢にない名前はツールの失敗とする。`task_create` の説明には、選択肢ごとの名前と `description`、どれが既定かを並べる。選んだモデルと推論強度はタスクに保存し、そのタスクの実行（再起動後の再開を含む）はすべてそれを使う。後から設定を変えても、作成済みのタスクのモデルは変わらない。
+- `task_create` の `worker` は `[models.worker]`（[SPEC.md](./SPEC.md) の設定）の選択肢の名前で、省略すると `default` になる。選択肢にない名前はツールの失敗とする。`task_create` の説明には、選択肢ごとの名前と `description`、どれが既定かを並べる。選んだモデルと推論強度はタスクに保存し、そのタスクの実行（再起動後の再開を含む）はすべてそれを使う。後から設定を変えても、作成済みのタスクのモデルは変わらない。設定から選択肢を消すと、その名前のタスクは実行を始める時に失敗とする。
 - `task_message` と `task_cancel` は、依頼元から見えるタスクで、かつ終了していないものだけに使える。それ以外はツールの失敗とする。
 - `[minecraft]` を設定すると、`worker` の選択肢に `minecraft` が加わる（[minecraft.md](./minecraft.md)・未実装）。`task_create` の説明には `[models.minecraft]` の `description` を並べる。この種類のタスクは `[models.minecraft]` のモデルと推論強度を使い、Minecraftのツールを持つ。終了していない `minecraft` のタスクがあるときに `minecraft` を選ぶと、ツールの失敗とする。
 - 作業エージェントは `task_create` を使えない。
@@ -126,5 +126,7 @@ type TaskSummary = {
 - 作業セッションのツール集合は、Discordの読み取り、`task_report`、`wait` で構成する（汎用ツールはアダプターが加える）。
 - 通知は `TaskDeliveryPort` を介して、会話には `ConversationCoordinator.accept`、イベント起点にはEventExecutorの新規実行として渡す。配送の受理時刻を報告に記録し、未受理の通知は起動時に再配送する。
 - 会話とイベントの入力に同梱するタスク一覧は、`ConversationTaskBoardPort` / `EventTaskBoardPort` を介して `TaskService.listFor` から取得する。conversation・eventモジュールをtaskモジュールに依存させないため。
-- 未実装（[minecraft.md](./minecraft.md)）: `TaskService` は作業エージェントの種類（`WorkerKind`）を、コンポジションルートから受け取る。種類は、モデルと推論強度、追加のツールプロバイダ、開発者指示に足す文、実行枠の扱い（共有の枠を使うか、未終了を1件までにするか）を持つ。`minecraft` は minecraft モジュールのツールプロバイダを持ち、共有の枠を使わず未終了を1件までとする種類として配線する。task モジュールは minecraft モジュールに依存しない。`waiting_input` のセッションは、急ぎの通知（`waitForActivity()` の結果）でも再開する。
+- 作業エージェントの選択肢（`WorkerChoice`）は、モデルと推論強度に加えて `exclusive` を持つ。`exclusive` の選択肢のタスクは共有の実行枠を使わず、終了していないものを同時に1件までとする。`TaskService` は実行を始めるたびに選択肢をタスクの `worker.name` で引き、見つからなければ失敗にする。
+- 作業セッションは `{ kind: "task", taskId, worker }` の実行元で開く。セッションファクトリは `worker`（選択肢の名前）からプロファイル（ツール集合と開発者指示）を選ぶ。どの名前にどのプロファイルを使うかはコンポジションルートが決めるため、task モジュールは個々の種類を知らない（未実装（[minecraft.md](./minecraft.md)）: `minecraft` の選択肢とプロファイル）。
+- `question` で保持したセッションは `waitForActivity("urgent")` を待ち、急ぎの通知が届いたらタスクを `queued` に戻す。再開した実行は、未配送のメッセージがあれば `task_message`、なければ空の入力（保留中の通知だけ）で続ける。
 - 取消・シャットダウンでは、作業セッションの `ownerId` で `ToolSet.release` を呼んで `wait` を打ち切り、セッションを `abort` してバックグラウンド実行を止める。

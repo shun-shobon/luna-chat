@@ -11,6 +11,7 @@ import type {
 } from "../../tool/ports/agent-session-factory-port";
 import {
 	describeOrigin,
+	findWorkerChoice,
 	isNotifiedReport,
 	isTerminalStatus,
 	isVisibleTo,
@@ -28,6 +29,7 @@ import type {
 	TaskReportKind,
 	TaskStatus,
 	TaskViewer,
+	WorkerCatalog,
 	WorkerChoice,
 } from "../domain/task";
 import type { TaskDeliveryPort } from "../ports/task-delivery-port";
@@ -50,9 +52,12 @@ type TaskServiceDependencies = Readonly<{
 	openSession: OpenAgentSession;
 	releaseTools: (ownerId: string) => Promise<void>;
 	store: TaskStorePort;
+	workers: WorkerCatalog;
 }>;
 
 type ActiveRun = {
+	// 共有の実行枠を使わない選択肢のタスクか。
+	exclusive: boolean;
 	nudged: boolean;
 	opened: OpenedAgentSession | undefined;
 	running: boolean;
@@ -116,6 +121,14 @@ export class TaskService {
 	): Promise<Task> {
 		if (!this.#accepting) throw new TaskError("Task intake is stopped");
 		if (origin.kind === "task") throw new TaskError("A background task cannot create a task");
+		if (
+			input.worker.exclusive &&
+			[...this.#tasks.values()].some(
+				(task) => task.worker.name === input.worker.name && !isTerminalStatus(task.status),
+			)
+		) {
+			throw new TaskError(`A ${input.worker.name} task is already open`);
+		}
 		const now = this.#timestamp();
 		const task: Task = {
 			version: 2,
@@ -217,7 +230,7 @@ export class TaskService {
 	snapshot(): TaskBoardStatus {
 		return {
 			maxConcurrent: this.dependencies.maxConcurrent,
-			running: this.#runs.size,
+			running: this.#sharedRuns(),
 			tasks: this.#recentTasks().slice(0, BOARD_LIMIT),
 		};
 	}
@@ -238,8 +251,14 @@ export class TaskService {
 			.filter((task) => task.status === "queued" && !this.#runs.has(task.id))
 			.toSorted((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
 		for (const task of queued) {
-			if (this.#runs.size >= this.dependencies.maxConcurrent) return;
+			const choice = findWorkerChoice(this.dependencies.workers, task.worker.name);
+			if (choice === undefined) {
+				this.#fail(task.id, `Worker ${task.worker.name} is no longer configured.`);
+				continue;
+			}
+			if (!choice.exclusive && this.#sharedRuns() >= this.dependencies.maxConcurrent) continue;
 			const run: ActiveRun = {
+				exclusive: choice.exclusive,
 				nudged: false,
 				opened: this.#parked.get(task.id),
 				running: false,
@@ -265,12 +284,15 @@ export class TaskService {
 			}
 			const opened =
 				run.opened ??
-				(await this.dependencies.openSession({ kind: "task", taskId }, workerModelOf(task)));
+				(await this.dependencies.openSession(
+					{ kind: "task", taskId, worker: task.worker.name },
+					workerModelOf(task),
+				));
 			run.opened = opened;
 			if (isStopped(run)) return;
-			let messages: readonly AgentInputMessage[] | undefined = [
-				resumed ? this.#messagesInput(taskId) : this.#assignmentInput(taskId),
-			];
+			let messages: readonly AgentInputMessage[] | undefined = resumed
+				? this.#resumeInput(taskId)
+				: [this.#assignmentInput(taskId)];
 			while (messages !== undefined) messages = await this.#runOnce(taskId, run, opened, messages);
 		} catch (error: unknown) {
 			if (isStopped(run)) return;
@@ -303,7 +325,7 @@ export class TaskService {
 			return [this.#messagesInput(taskId)];
 		}
 		if (current.status === "waiting_input") {
-			this.#parked.set(taskId, opened);
+			this.#park(taskId, opened);
 			run.opened = undefined;
 			return undefined;
 		}
@@ -337,6 +359,29 @@ export class TaskService {
 		} finally {
 			run.wake = undefined;
 		}
+	}
+
+	#sharedRuns(): number {
+		return [...this.#runs.values()].filter((run) => !run.exclusive).length;
+	}
+
+	// 質問の返事を待つ間も続いている作業は動き続けるため、急ぎの通知が届いたら返事を待たずに再開する。
+	#park(taskId: string, opened: OpenedAgentSession): void {
+		this.#parked.set(taskId, opened);
+		void opened.session.waitForActivity("urgent").then((wakeup) => {
+			if (wakeup !== "urgent" || this.#parked.get(taskId) !== opened) return;
+			if (this.#require(taskId).status !== "waiting_input") return;
+			this.#update(taskId, { status: "queued" });
+			this.#pump();
+		});
+	}
+
+	// 待機していたセッションで続ける時の入力。返事がなく急ぎの通知で起きた時は、通知だけで続ける。
+	#resumeInput(taskId: string): readonly AgentInputMessage[] {
+		const undelivered = this.#require(taskId).messages.some(
+			(message) => message.deliveredAt == null,
+		);
+		return undelivered ? [this.#messagesInput(taskId)] : [];
 	}
 
 	#assignmentInput(taskId: string): AgentInputMessage {

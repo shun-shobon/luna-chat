@@ -16,18 +16,20 @@ const eventOrigin: ToolOrigin = {
 	eventId: "event-1",
 	eventType: "system.heartbeat.fired.v1",
 };
-const taskOrigin: ToolOrigin = { kind: "task", taskId: "task-1" };
+const taskOrigin: ToolOrigin = { kind: "task", taskId: "task-1", worker: "standard" };
 const workers = {
 	defaultName: "standard",
 	choices: [
 		{
 			name: "standard",
 			description: "Everyday research and production.",
+			exclusive: false,
 			model: { provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
 		},
 		{
 			name: "deep",
 			description: "Hard implementation and long reasoning.",
+			exclusive: false,
 			model: { provider: "claude-code", model: "claude-opus-5-5", thinking: "high" },
 		},
 	],

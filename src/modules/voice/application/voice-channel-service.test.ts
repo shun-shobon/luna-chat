@@ -286,7 +286,7 @@ describe("VoiceChannelService", () => {
 
 		it.each<[string, ToolOrigin]>([
 			["イベント実行", { kind: "event", eventId: "e1", eventType: "system.heartbeat.fired.v1" }],
-			["作業エージェント", { kind: "task", taskId: "t1" }],
+			["作業エージェント", { kind: "task", taskId: "t1", worker: "standard" }],
 			[
 				"Discord以外の会話",
 				{

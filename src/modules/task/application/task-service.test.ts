@@ -12,7 +12,7 @@ import type { LunaEvent } from "../../event/domain/luna-event";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
-import type { Task, TaskOrigin, TaskReportKind, WorkerChoice } from "../domain/task";
+import type { Task, TaskOrigin, TaskReportKind, WorkerCatalog, WorkerChoice } from "../domain/task";
 import type { TaskDeliveryPort } from "../ports/task-delivery-port";
 import { TaskService } from "./task-service";
 
@@ -41,12 +41,21 @@ const heartbeatOrigin = {
 const STANDARD_WORKER = {
 	name: "standard",
 	description: "ふだんの作業",
+	exclusive: false,
 	model: { provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
 } as const satisfies WorkerChoice;
 const DEEP_WORKER = {
 	name: "deep",
 	description: "難しい作業",
+	exclusive: false,
 	model: { provider: "claude-code", model: "claude-opus-5-5", thinking: "high" },
+} as const satisfies WorkerChoice;
+
+const EXCLUSIVE_WORKER = {
+	name: "minecraft",
+	description: "遊ぶ",
+	exclusive: true,
+	model: { provider: "claude-code", model: "claude-sonnet-5-5", thinking: "low" },
 } as const satisfies WorkerChoice;
 
 const COMPLETED: AgentRunResult = { status: "completed", finalText: null };
@@ -64,7 +73,7 @@ describe("TaskService", () => {
 		await harness.waitForRuns(1);
 
 		expect(harness.openSession).toHaveBeenCalledWith(
-			{ kind: "task", taskId: task.id },
+			{ kind: "task", taskId: task.id, worker: "standard" },
 			STANDARD_WORKER.model,
 		);
 		expect(harness.runs[0]?.messages).toEqual([
@@ -282,6 +291,63 @@ describe("TaskService", () => {
 		expect(harness.openSession).toHaveBeenCalledTimes(2);
 	});
 
+	it("question で待機中でも続いている作業の急ぎの通知で、同じセッションを通知だけで再開する", async () => {
+		const harness = await createHarness();
+		const task = await harness.service.create(channelOrigin, input("play"));
+		await harness.waitForRuns(1);
+		harness.sessions[0]?.background.start();
+		await harness.report(task.id, "question", "どこへ行く？");
+		harness.finishRun(0);
+		await vi.waitFor(() => expect(harness.service.snapshot().running).toBe(0));
+
+		harness.sessions[0]?.background.notifyUrgent();
+		await harness.waitForRuns(2);
+
+		expect(harness.runs[1]).toEqual({ sessionId: "session-1", messages: [] });
+		expect(harness.latest(task.id)).toMatchObject({ status: "running", attempts: 1 });
+	});
+
+	it("専用枠の選択肢は共有の実行枠を使わず、終了していないものがあれば作れない", async () => {
+		const harness = await createHarness({
+			maxConcurrent: 1,
+			workers: { defaultName: "standard", choices: [STANDARD_WORKER, EXCLUSIVE_WORKER] },
+		});
+		await harness.service.create(channelOrigin, input("shared"));
+		await harness.waitForRuns(1);
+
+		const exclusive = await harness.service.create(channelOrigin, input("play", EXCLUSIVE_WORKER));
+		await harness.waitForRuns(2);
+
+		expect(harness.openSession).toHaveBeenLastCalledWith(
+			{ kind: "task", taskId: exclusive.id, worker: "minecraft" },
+			EXCLUSIVE_WORKER.model,
+		);
+		expect(harness.service.snapshot()).toMatchObject({ maxConcurrent: 1, running: 1 });
+		await expect(
+			harness.service.create(channelOrigin, input("play again", EXCLUSIVE_WORKER)),
+		).rejects.toThrow("A minecraft task is already open");
+	});
+
+	it("設定から消えた選択肢のタスクは実行せずに失敗させる", async () => {
+		const harness = await createHarness({
+			tasks: [
+				storedTask({
+					id: "orphan",
+					status: "queued",
+					worker: { name: "removed", ...STANDARD_WORKER.model },
+				}),
+			],
+		});
+
+		await vi.waitFor(() =>
+			expect(harness.latest("orphan")).toMatchObject({
+				status: "failed",
+				outcome: "Worker removed is no longer configured.",
+			}),
+		);
+		expect(harness.openSession).not.toHaveBeenCalled();
+	});
+
 	it("実行中のmessageをsteerで渡し、配送済みとして記録する", async () => {
 		const harness = await createHarness();
 		const task = await harness.service.create(channelOrigin, input("steer"));
@@ -455,7 +521,7 @@ describe("TaskService", () => {
 		await harness.waitForRuns(1);
 
 		expect(harness.openSession).toHaveBeenCalledWith(
-			{ kind: "task", taskId: "interrupted" },
+			{ kind: "task", taskId: "interrupted", worker: "deep" },
 			DEEP_WORKER.model,
 		);
 		expect(JSON.parse(harness.runs[0]?.messages[0]?.text ?? "")).toMatchObject({
@@ -603,7 +669,7 @@ describe("TaskService", () => {
 		).rejects.toThrow("Only a task worker can report");
 		await expect(harness.report("done", "result", "again")).rejects.toThrow("is not running");
 		await expect(
-			harness.service.create({ kind: "task", taskId: "done" }, input("nested")),
+			harness.service.create({ kind: "task", taskId: "done", worker: "standard" }, input("nested")),
 		).rejects.toThrow("cannot create a task");
 	});
 
@@ -646,6 +712,7 @@ async function createHarness(
 		) => boolean;
 		maxConcurrent?: number;
 		tasks?: Task[];
+		workers?: WorkerCatalog;
 	} = {},
 ) {
 	const calls: string[] = [];
@@ -714,6 +781,10 @@ async function createHarness(
 		openSession,
 		releaseTools,
 		store: { loadAll: async () => options.tasks ?? [], save },
+		workers: options.workers ?? {
+			defaultName: "standard",
+			choices: [STANDARD_WORKER, DEEP_WORKER],
+		},
 	});
 	await service.start();
 
@@ -745,7 +816,11 @@ async function createHarness(
 			kind: TaskReportKind,
 			summary: string,
 			artifacts: string[] = [],
-		) => await service.report({ kind: "task", taskId }, { kind, summary, artifacts }),
+		) =>
+			await service.report(
+				{ kind: "task", taskId, worker: "standard" },
+				{ kind, summary, artifacts },
+			),
 		runs,
 		save,
 		service,

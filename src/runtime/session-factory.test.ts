@@ -70,7 +70,7 @@ describe("createSessionFactory", () => {
 		],
 		[
 			"タスク",
-			{ kind: "task", taskId: "task-1" },
+			{ kind: "task", taskId: "task-1", worker: "standard" },
 			"worker",
 			"task:task-1",
 			"WORKER PROTOCOL\n\nSKILLS",
@@ -134,9 +134,9 @@ describe("createSessionFactory", () => {
 	it("作業エージェントはモデルを指定しなければ開かない", async () => {
 		const harness = createHarness(await createWorkspace({}));
 
-		await expect(harness.open({ kind: "task", taskId: "task-1" })).rejects.toThrow(
-			"A worker session needs a model",
-		);
+		await expect(
+			harness.open({ kind: "task", taskId: "task-1", worker: "standard" }),
+		).rejects.toThrow("A worker session needs a model");
 		expect(harness.agent.open).not.toHaveBeenCalled();
 	});
 
@@ -227,7 +227,7 @@ function createHarness(workspaceDir: string) {
 		profiles: {
 			conversation: profile("conversation"),
 			event: profile("event"),
-			worker: profile("worker"),
+			worker: () => profile("worker"),
 		},
 		readSkillsPrompt,
 		workspaceDir,

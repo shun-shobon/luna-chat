@@ -138,6 +138,7 @@ import {
 } from "./agent-runtime";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { buildSystemPrompt, createSessionFactory } from "./session-factory";
+import type { SessionProfile } from "./session-factory";
 import { SESSION_DEVELOPER_INSTRUCTIONS } from "./session-instructions";
 
 const TYPING_REFRESH_INTERVAL_MS = 8_000;
@@ -230,6 +231,7 @@ export async function startLunaApplication(
 					accept: (input) => conversation?.accept(input) ?? false,
 					logger,
 				});
+	const workerCatalog = workerCatalogOf(workspace.config.models.worker);
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
 	const discordHistory = new DiscordConversationHistory(readAdapter);
 	const waitTools = createWaitToolProvider();
@@ -238,7 +240,7 @@ export async function startLunaApplication(
 			createDiscordToolProvider({ actions: actionAdapter, delegation, read: readAdapter }),
 			createHttpResponseToolProvider(httpResponses),
 			createAssistToolProvider(assistResponses),
-			createTaskBoardToolProvider(taskBoard, workerCatalogOf(workspace.config.models.worker)),
+			createTaskBoardToolProvider(taskBoard, workerCatalog),
 			waitTools,
 			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
 			...(voice === undefined ? [] : [createVoiceToolProvider(voice)]),
@@ -285,6 +287,14 @@ export async function startLunaApplication(
 		HOME_ASSISTANT_TOOL_INSTRUCTIONS,
 		HOME_ASSISTANT_WATCH_INSTRUCTIONS,
 	];
+	const generalWorkerProfile: SessionProfile = {
+		developerInstructions: withHomeAssistant(SESSION_DEVELOPER_INSTRUCTIONS.worker, [
+			HOME_ASSISTANT_TOOL_INSTRUCTIONS,
+		]),
+		includeWorkspaceInstructions: false,
+		model: undefined,
+		tools: workerTools,
+	};
 	const openSession = createSessionFactory({
 		agent,
 		fastMode: (origin) =>
@@ -310,14 +320,7 @@ export async function startLunaApplication(
 				model: () => workspace.config.models.event,
 				tools,
 			},
-			worker: {
-				developerInstructions: withHomeAssistant(SESSION_DEVELOPER_INSTRUCTIONS.worker, [
-					HOME_ASSISTANT_TOOL_INSTRUCTIONS,
-				]),
-				includeWorkspaceInstructions: false,
-				model: undefined,
-				tools: workerTools,
-			},
+			worker: () => generalWorkerProfile,
 		},
 		readSkillsPrompt: () => readWorkspaceSkillsPrompt(workspace.workspaceDir),
 		workspaceDir: workspace.workspaceDir,
@@ -368,6 +371,7 @@ export async function startLunaApplication(
 			store: new JsonFileTaskStore(workspace.tasksDir, (path, error) => {
 				logger.error("task.file_invalid", { error, path });
 			}),
+			workers: workerCatalog,
 		});
 		tasks = taskService;
 		const intentMatcher = new IntentMatcher(

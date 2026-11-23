@@ -92,7 +92,12 @@ function withGpt62Models(
 
 export function workerCatalogOf(setting: WorkerSetting): WorkerCatalog {
 	const choices = Object.entries(setting.choices).map(
-		([name, { description, ...model }]): WorkerChoice => ({ name, description, model }),
+		([name, { description, ...model }]): WorkerChoice => ({
+			name,
+			description,
+			model,
+			exclusive: false,
+		}),
 	);
 	const [first, ...rest] = choices;
 	if (first === undefined) throw new Error("models.worker.choices must not be empty");
