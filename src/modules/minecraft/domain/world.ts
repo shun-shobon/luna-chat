@@ -52,6 +52,8 @@ export const worldSnapshotSchema = z.strictObject({
 			kind: entityKindSchema,
 			position: vec3Schema,
 			distance: z.number().min(0),
+			// 足元のマスが水か、水を含むブロック（海草・昆布など）か。
+			inWater: z.boolean(),
 		}),
 	),
 	visibleBlocks: z.array(

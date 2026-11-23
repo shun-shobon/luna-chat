@@ -146,9 +146,30 @@ describe("listCandidates", () => {
 		const candidates = listCandidates({
 			snapshot: snapshotWith({
 				visibleEntities: [
-					{ id: 1, name: "zombie", kind: "hostile", position: { x: 5, y: 64, z: 0 }, distance: 5 },
-					{ id: 2, name: "cow", kind: "passive", position: { x: 8, y: 64, z: 0 }, distance: 8 },
-					{ id: 3, name: "oak_log", kind: "item", position: { x: 2, y: 64, z: 0 }, distance: 2 },
+					{
+						id: 1,
+						name: "zombie",
+						kind: "hostile",
+						position: { x: 5, y: 64, z: 0 },
+						distance: 5,
+						inWater: false,
+					},
+					{
+						id: 2,
+						name: "cow",
+						kind: "passive",
+						position: { x: 8, y: 64, z: 0 },
+						distance: 8,
+						inWater: false,
+					},
+					{
+						id: 3,
+						name: "oak_log",
+						kind: "item",
+						position: { x: 2, y: 64, z: 0 },
+						distance: 2,
+						inWater: false,
+					},
 				],
 			}),
 			memory: memoryWith(),
@@ -168,6 +189,51 @@ describe("listCandidates", () => {
 
 	it("wait は上限より先に終わる", () => {
 		expect(WAIT_MS).toBeLessThan(ACTION_TIMEOUT_MS.wait);
+	});
+
+	it("水中の生き物には攻撃の候補を出さず、逃げる候補は残す", () => {
+		const candidates = listCandidates({
+			snapshot: snapshotWith({
+				visibleEntities: [
+					{
+						id: 1,
+						name: "salmon",
+						kind: "passive",
+						position: { x: 4, y: 62, z: 0 },
+						distance: 4,
+						inWater: true,
+					},
+					{
+						id: 2,
+						name: "drowned",
+						kind: "hostile",
+						position: { x: 6, y: 62, z: 0 },
+						distance: 6,
+						inWater: true,
+					},
+					{
+						id: 3,
+						name: "pig",
+						kind: "passive",
+						position: { x: 9, y: 64, z: 0 },
+						distance: 9,
+						inWater: false,
+					},
+				],
+			}),
+			memory: memoryWith(),
+			goal: GOAL,
+		});
+
+		expect(
+			candidates.flatMap((candidate) =>
+				candidate.action.type === "attack" ? [candidate.action.entityId] : [],
+			),
+		).toEqual([3]);
+		expect(candidates.map((candidate) => candidate.action)).toContainEqual({
+			type: "retreat",
+			from: { x: 6, y: 62, z: 0 },
+		});
 	});
 
 	it("チェストがそばにあれば、持ち物の預け入れと、最後に見た中身の取り出しを出す", () => {

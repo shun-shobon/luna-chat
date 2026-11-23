@@ -48,6 +48,16 @@ const QUIT_TIMEOUT_MS = 5_000;
 // 経路探索で使う、落ちてよい高さ（SPEC §25.4）。
 const MAX_DROP = 3;
 const COMMON_BLOCKS: ReadonlySet<string> = new Set(["stone", "water", "sand", "gravel", "lava"]);
+const waterloggedSchema = z.looseObject({ waterlogged: z.literal(true) });
+// 水そのものと、常に水を含む水草。waterlogged の性質を持たないため名前で見る。
+const WATERY_BLOCKS: ReadonlySet<string> = new Set([
+	"water",
+	"bubble_column",
+	"kelp",
+	"kelp_plant",
+	"seagrass",
+	"tall_seagrass",
+]);
 const FIND_COMMON_PER_KIND = 16;
 const FIND_RARE_LIMIT = 256;
 const VISIBLE_PER_KIND = 3;
@@ -202,6 +212,7 @@ export class MineflayerPlayer {
 				kind: this.#kindOf(entity),
 				position: toPosition(entity.position),
 				distance,
+				inWater: this.#entityInWater(entity),
 			})),
 			visibleBlocks: this.#visibleBlocks(targetBlocks).map(({ block, distance }) => ({
 				name: block.name,
@@ -622,6 +633,8 @@ export class MineflayerPlayer {
 				while (!signal.aborted && Date.now() < deadline) {
 					const target = bot.entities[action.entityId];
 					if (target === undefined || !target.isValid) return done("the target is gone");
+					// 追って水に入ると攻撃が当たらないまま潜り続けて溺れたため、水に入った相手は追わない。
+					if (this.#entityInWater(target)) throw new Error("the target is in the water");
 					if (bot.entity.position.distanceTo(target.position) > 3) {
 						bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true);
 					} else {
@@ -937,6 +950,14 @@ export class MineflayerPlayer {
 		if (category.includes("Hostile")) return "hostile";
 		if (category.includes("Passive")) return "passive";
 		return "other";
+	}
+
+	#entityInWater(entity: Entity): boolean {
+		const block = this.#bot.blockAt(entity.position);
+		if (block == null) return false;
+		return (
+			WATERY_BLOCKS.has(block.name) || waterloggedSchema.safeParse(block.getProperties()).success
+		);
 	}
 
 	#entityName(entity: Entity): string {

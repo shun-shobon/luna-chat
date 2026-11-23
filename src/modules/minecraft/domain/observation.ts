@@ -88,6 +88,7 @@ export function buildObservation(
 				kind: entity.kind,
 				position: roundVec(entity.position),
 				distance: round(entity.distance),
+				in_water: entity.inWater,
 			})),
 		visible_blocks: visibleBlocks.map((block) => ({
 			name: block.name,

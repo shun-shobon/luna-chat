@@ -277,7 +277,8 @@ export function listCandidates(input: CandidateInput): readonly ActionCandidate[
 	const creatures = entities.filter(
 		(entity) => entity.kind === "hostile" || entity.kind === "passive",
 	);
-	for (const creature of creatures.slice(0, ATTACK_LIMIT)) {
+	// 水中の生き物を追うと水に潜って攻撃が当たらず、溺れたため攻撃しない。
+	for (const creature of creatures.filter((entity) => !entity.inWater).slice(0, ATTACK_LIMIT)) {
 		push(
 			{ type: "attack", entityId: creature.id },
 			`Attack the ${creature.kind} ${creature.name} at ${away(creature.position)}`,
