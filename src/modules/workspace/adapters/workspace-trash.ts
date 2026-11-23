@@ -6,7 +6,7 @@ import { hasErrorCode } from "../../../shared/error-code";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { TrashFolderStatus, WorkspaceStatus } from "../domain/workspace-status";
 
-// ゴミ箱の中身は捨てた日の日付フォルダに置く。保持期間は docs/SPEC.md のゴミ箱の節で定めたもの。
+// ゴミ箱の中身は捨てた日の日付フォルダに置く。保持期間は docs/SPEC.md のワークスペースの節で定めたもの。
 export const TRASH_RETENTION_DAYS = 14;
 const DATE_FOLDER_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 const DAY_MS = 24 * 60 * 60 * 1000;
