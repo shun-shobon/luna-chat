@@ -37,6 +37,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
 
       - name: Setup | Development environment
@@ -63,6 +64,7 @@ jobs:
       - name: Setup | Checkout Merged Commit
         uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - name: Run | Create Draft Release
@@ -85,6 +87,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ needs.draft.outputs.commit }}
 
       - name: Setup | QEMU
@@ -129,6 +132,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ needs.draft.outputs.commit }}
 
       - name: Setup | Buildx

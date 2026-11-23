@@ -5,7 +5,7 @@ runs:
   using: composite
   steps:
     - name: Setup | mise
-      uses: jdx/mise-action@v5.2.10
+      uses: jdx/mise-action@v5.2.10 # zizmor: ignore[unpinned-uses] 呼び出し元ワークフローのactions.lockで固定される
 
     - name: Setup | Resolve pnpm store
       id: pnpm-store
@@ -13,7 +13,7 @@ runs:
       run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
     - name: Setup | Cache pnpm store
-      uses: actions/cache@v6.1.0
+      uses: actions/cache@v6.1.0 # zizmor: ignore[unpinned-uses] 呼び出し元ワークフローのactions.lockで固定される
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
         key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
