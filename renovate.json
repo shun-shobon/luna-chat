@@ -1,0 +1,22 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["github>shun-shobon/renovate-config"],
+	"packageRules": [
+		{
+			"description": "開発環境（mise）と Docker イメージの Node.js がずれないよう、1つのPRで上げる",
+			"matchPackageNames": ["node"],
+			"groupName": "Node.js"
+		},
+		{
+			"description": "@types/node と @tsconfig/node-lts は実行する Node.js のメジャーに合わせるため、Node.js のメジャー更新と一緒に上げる",
+			"matchPackageNames": ["node", "@types/node", "@tsconfig/node-lts"],
+			"matchUpdateTypes": ["major"],
+			"groupName": "Node.js"
+		},
+		{
+			"description": "compose.yml は利用者に最新のリリースを使わせるため、自分のイメージは latest のまま digest で固定しない",
+			"matchPackageNames": ["ghcr.io/shun-shobon/luna-chat"],
+			"enabled": false
+		}
+	]
+}
