@@ -43,6 +43,8 @@ pnpm run knip
 pnpm run typecheck
 pnpm run test
 pnpm run build
+jactionlint
+zizmor .
 docker compose build
 ```
 

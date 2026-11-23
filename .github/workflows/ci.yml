@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -17,6 +21,8 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
@@ -30,6 +36,8 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
@@ -43,6 +51,8 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
@@ -59,6 +69,8 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
@@ -72,6 +84,8 @@ jobs:
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup | Development environment
         uses: $/.github/actions/setup
@@ -79,8 +93,40 @@ jobs:
       - name: Run | Test
         run: pnpm run test
 
+  jactionlint:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup | Development environment
+        uses: $/.github/actions/setup
+
+      - name: Run | jactionlint
+        run: jactionlint
+
+  zizmor:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup | Development environment
+        uses: $/.github/actions/setup
+
+      - name: Run | zizmor
+        run: zizmor --format=github .
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   status-check:
-    needs: [format, lint, knip, typecheck, test]
+    needs: [format, lint, knip, typecheck, test, jactionlint, zizmor]
     if: ${{ always() }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
