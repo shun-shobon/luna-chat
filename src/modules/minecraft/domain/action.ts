@@ -81,8 +81,11 @@ export const ACTION_TIMEOUT_MS: Readonly<Record<MinecraftActionType, number>> = 
 	sleep: 10_000,
 	attack: 15_000,
 	retreat: 15_000,
-	wait: 2_000,
+	wait: 5_000,
 };
+
+// wait で止まる長さ。上限と同じにすると、毎回上限が先に来て失敗と数えていた。
+export const WAIT_MS = 2_000;
 
 const EXPLORE_DISTANCE = 32;
 // Jev の選択肢の上限。
@@ -288,7 +291,7 @@ export function listCandidates(input: CandidateInput): readonly ActionCandidate[
 			`Run away from the ${hostile.name} at ${away(hostile.position)}`,
 		);
 	}
-	push({ type: "wait" }, "Wait for 2 seconds");
+	push({ type: "wait" }, `Wait for ${String(WAIT_MS / 1_000)} seconds`);
 
 	return candidates.slice(0, MAX_CANDIDATES);
 }

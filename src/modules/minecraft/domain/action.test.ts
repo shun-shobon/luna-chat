@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GOAL, memoryWith, NOW, snapshotWith } from "../testing/world-fixtures";
-import { listCandidates, MAX_CANDIDATES } from "./action";
+import { ACTION_TIMEOUT_MS, listCandidates, MAX_CANDIDATES, WAIT_MS } from "./action";
 
 describe("listCandidates", () => {
 	it("見えていて掘れるブロックだけを、種類ごとに近い順に3件まで候補にする", () => {
@@ -164,6 +164,10 @@ describe("listCandidates", () => {
 			]),
 		);
 		expect(candidates.filter((candidate) => candidate.action.type === "retreat")).toHaveLength(1);
+	});
+
+	it("wait は上限より先に終わる", () => {
+		expect(WAIT_MS).toBeLessThan(ACTION_TIMEOUT_MS.wait);
 	});
 
 	it("チェストがそばにあれば、持ち物の預け入れと、最後に見た中身の取り出しを出す", () => {

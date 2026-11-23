@@ -6,7 +6,7 @@ import pathfinderModule from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { z } from "zod";
 
-import { ACTION_TIMEOUT_MS } from "../domain/action";
+import { ACTION_TIMEOUT_MS, WAIT_MS } from "../domain/action";
 import type { MinecraftAction } from "../domain/action";
 import {
 	CRAFT_CANDIDATES,
@@ -642,7 +642,7 @@ export class MineflayerPlayer {
 				);
 				return done("moved away");
 			case "wait":
-				await sleep(ACTION_TIMEOUT_MS.wait);
+				await sleep(WAIT_MS);
 				return done("waited");
 			default: {
 				const unknownAction: never = action;
