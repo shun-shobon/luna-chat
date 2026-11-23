@@ -82,6 +82,15 @@ import { HttpResponseRegistry } from "../modules/http/application/http-response-
 import { HTTP_EVENT_SOURCE } from "../modules/http/domain/http-event";
 import { IntentFileStore } from "../modules/intent/adapters/intent-file-store";
 import { IntentMatcher } from "../modules/intent/application/intent-matcher";
+import { JsonWorldMemoryStore } from "../modules/minecraft/adapters/json-world-memory-store";
+import { createMinecraftToolProvider } from "../modules/minecraft/adapters/minecraft-tool-provider";
+import {
+	createMineflayerConnector,
+	spawnMineflayerWorker,
+} from "../modules/minecraft/adapters/mineflayer-connection";
+import { PiDecisionModel } from "../modules/minecraft/adapters/pi-decision-model";
+import { MinecraftPlayService } from "../modules/minecraft/application/minecraft-play-service";
+import { MINECRAFT_WORKER_INSTRUCTIONS } from "../modules/minecraft/minecraft-instructions";
 import { createPinoLogger } from "../modules/observability/adapters/pino-logger";
 import { RecentLogBuffer } from "../modules/observability/adapters/recent-log-buffer";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
@@ -91,6 +100,7 @@ import {
 	createTaskReportToolProvider,
 } from "../modules/task/adapters/task-tool-provider";
 import { TaskService } from "../modules/task/application/task-service";
+import type { WorkerCatalog } from "../modules/task/domain/task";
 import { createWaitToolProvider } from "../modules/tool/adapters/wait-tool-provider";
 import { createToolSet } from "../modules/tool/application/tool-set";
 import { AivisSpeechSynthesizer } from "../modules/voice/adapters/aivis-speech-synthesizer";
@@ -127,7 +137,12 @@ import {
 	readHeartbeatContext,
 	readWorkspaceBaseInstructions,
 } from "../modules/workspace/application/workspace-instructions";
-import type { TtsSetting, VoiceSetting } from "../modules/workspace/domain/workspace-config";
+import { MINECRAFT_WORKER_NAME } from "../modules/workspace/domain/workspace-config";
+import type {
+	MinecraftSetting,
+	TtsSetting,
+	VoiceSetting,
+} from "../modules/workspace/domain/workspace-config";
 import {
 	createChatGptBackend,
 	createAgentModels,
@@ -231,7 +246,35 @@ export async function startLunaApplication(
 					accept: (input) => conversation?.accept(input) ?? false,
 					logger,
 				});
-	const workerCatalog = workerCatalogOf(workspace.config.models.worker);
+	const minecraftSetting = workspace.config.minecraft;
+	const minecraft =
+		minecraftSetting === undefined
+			? undefined
+			: await createMinecraft({
+					setting: minecraftSetting,
+					lunaHomeDir: workspace.lunaHomeDir,
+					logger,
+				});
+	const generalWorkers = workerCatalogOf(workspace.config.models.worker);
+	const workerCatalog: WorkerCatalog =
+		minecraftSetting === undefined
+			? generalWorkers
+			: {
+					...generalWorkers,
+					choices: [
+						...generalWorkers.choices,
+						{
+							name: MINECRAFT_WORKER_NAME,
+							description: minecraftSetting.planner.description,
+							model: {
+								provider: minecraftSetting.planner.provider,
+								model: minecraftSetting.planner.model,
+								thinking: minecraftSetting.planner.thinking,
+							},
+							exclusive: true,
+						},
+					],
+				};
 	const readAdapter = new DiscordReadAdapter(createDiscordReadClient(client));
 	const discordHistory = new DiscordConversationHistory(readAdapter);
 	const waitTools = createWaitToolProvider();
@@ -247,17 +290,23 @@ export async function startLunaApplication(
 		],
 		logger,
 	);
-	const workerTools = createToolSet(
-		[
-			createDiscordReadToolProvider(readAdapter),
-			createTaskReportToolProvider(taskBoard),
-			waitTools,
-			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
-		],
-		logger,
-	);
+	const workerProviders = [
+		createDiscordReadToolProvider(readAdapter),
+		createTaskReportToolProvider(taskBoard),
+		waitTools,
+		...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
+	];
+	const workerTools = createToolSet(workerProviders, logger);
+	const minecraftTools =
+		minecraft === undefined
+			? undefined
+			: createToolSet([...workerProviders, createMinecraftToolProvider(minecraft)], logger);
 	const releaseTools = async (ownerId: string): Promise<void> => {
-		await Promise.all([tools.release(ownerId), workerTools.release(ownerId)]);
+		await Promise.all([
+			tools.release(ownerId),
+			workerTools.release(ownerId),
+			minecraftTools?.release(ownerId),
+		]);
 	};
 	const backend = createChatGptBackend(models);
 	const agent = createPiAgentRuntime({
@@ -270,7 +319,10 @@ export async function startLunaApplication(
 		requestTimeoutMs: workspace.config.agent.requestTimeoutMs,
 		skillUsage: new SkillUsageStore(resolve(workspace.lunaHomeDir, "state", "skill-usage.json")),
 	});
-	validateModelSelections(agent, modelSelectionsOf(workspace.config.models));
+	validateModelSelections(agent, {
+		...modelSelectionsOf(workspace.config.models),
+		...(minecraftSetting === undefined ? {} : { minecraft: minecraftSetting.planner }),
+	});
 	const usage = new UsagePoller({
 		fetch: async (signal) => await fetchUsage(backend, signal),
 		filePath: resolve(workspace.lunaHomeDir, "state", "usage.json"),
@@ -295,6 +347,17 @@ export async function startLunaApplication(
 		model: undefined,
 		tools: workerTools,
 	};
+	const minecraftProfile: SessionProfile | undefined =
+		minecraftTools === undefined
+			? undefined
+			: {
+					...generalWorkerProfile,
+					developerInstructions: [
+						...generalWorkerProfile.developerInstructions,
+						MINECRAFT_WORKER_INSTRUCTIONS,
+					],
+					tools: minecraftTools,
+				};
 	const openSession = createSessionFactory({
 		agent,
 		fastMode: (origin) =>
@@ -320,7 +383,10 @@ export async function startLunaApplication(
 				model: () => workspace.config.models.event,
 				tools,
 			},
-			worker: () => generalWorkerProfile,
+			worker: (name) =>
+				name === MINECRAFT_WORKER_NAME && minecraftProfile !== undefined
+					? minecraftProfile
+					: generalWorkerProfile,
 		},
 		readSkillsPrompt: () => readWorkspaceSkillsPrompt(workspace.workspaceDir),
 		workspaceDir: workspace.workspaceDir,
@@ -332,6 +398,7 @@ export async function startLunaApplication(
 		() => homeAssistant?.connection.stop(),
 		() => typing.releaseAll(),
 		async () => await voice?.stop(),
+		async () => await minecraft?.stop(),
 		async () => await client.destroy(),
 		async () => await usage.stop(),
 	];
@@ -573,6 +640,7 @@ export async function startLunaApplication(
 					activity: () => recentLogs.list(),
 					agent: () => agent.status(),
 					homeAssistant: () => homeAssistant?.watcher.status() ?? null,
+					minecraft: () => minecraft?.snapshot() ?? null,
 					automation: () => automation.snapshot(),
 					workspace: () => trash.status(),
 					conversations: () => coordinator.snapshot(),
@@ -621,6 +689,7 @@ export async function startLunaApplication(
 					typingRelease: () => typing.releaseAll(),
 					usageStop: () => usage.stop(),
 					voiceStop: async () => await voice?.stop(),
+					minecraftStop: async () => await minecraft?.stop(),
 				});
 				await shutdownPromise;
 			},
@@ -647,6 +716,7 @@ export async function shutdownApplication(input: {
 	httpClose(): Promise<void>;
 	httpFailPending(): void;
 	logger: LoggerPort & Readonly<{ flush(): Promise<void> }>;
+	minecraftStop(): Promise<void>;
 	tasks: Pick<TaskService, "drain" | "stopIntake">;
 	typingRelease(): void;
 	usageStop(): Promise<void>;
@@ -678,6 +748,8 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.homeAssistant.stop()),
 			input.httpClose(),
 			input.dashboardClose(),
+			// タスクのセッションを閉じるとプレイも終わるが、ワーカーが残らないよう直接も止める。
+			input.minecraftStop(),
 			runCleanup(() => input.typingRelease()),
 			input.usageStop(),
 			input.clientDestroy(),
@@ -739,6 +811,38 @@ const VOICE_EVENT_TYPES: ReadonlySet<string> = new Set([
 	VOICE_DELEGATED_EVENT_TYPE,
 	VOICE_TRANSCRIPT_EVENT_TYPE,
 ]);
+
+async function createMinecraft(
+	input: Readonly<{ setting: MinecraftSetting; lunaHomeDir: string; logger: LoggerPort }>,
+): Promise<MinecraftPlayService> {
+	const { setting } = input;
+	const decisions = await PiDecisionModel.create({
+		...setting.decisionModel,
+		timeoutMs: setting.decisionTimeoutMs,
+		fetch: globalThis.fetch,
+	});
+	return new MinecraftPlayService({
+		connect: createMineflayerConnector(
+			{ host: setting.host, port: setting.port, username: setting.username },
+			spawnMineflayerWorker,
+		),
+		decisions,
+		memory: new JsonWorldMemoryStore(
+			resolve(input.lunaHomeDir, "minecraft", setting.world, "memory.json"),
+		),
+		logger: input.logger,
+		now: () => new Date(),
+		schedule: (callback, milliseconds) => {
+			const timer = setTimeout(callback, milliseconds);
+			return () => clearTimeout(timer);
+		},
+		settings: {
+			world: setting.world,
+			decisionTimeoutMs: setting.decisionTimeoutMs,
+			plannerIntervalMs: setting.plannerIntervalMs,
+		},
+	});
+}
 
 async function createVoice(
 	input: Readonly<{

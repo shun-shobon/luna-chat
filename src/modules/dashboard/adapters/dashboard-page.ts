@@ -145,6 +145,7 @@ details > summary::-webkit-details-marker { display: none; }
 		<section class="panel wide"><h2>タスクボード <span class="count" id="tasks-count"></span></h2><div id="tasks" class="list"></div></section>
 		<section class="panel wide"><h2>オートメーション</h2><div id="automation" class="list"></div></section>
 		<section class="panel wide" id="home-assistant-panel" hidden><h2>Home Assistant</h2><div id="home-assistant" class="list"></div></section>
+		<section class="panel wide" id="minecraft-panel" hidden><h2>Minecraft</h2><div id="minecraft" class="list"></div></section>
 		<section class="panel wide"><h2>ワークスペース</h2><div id="workspace" class="list"></div></section>
 		<section class="panel wide">
 			<h2>最近の出来事 <span class="count" id="activity-count"></span>
@@ -556,6 +557,35 @@ details > summary::-webkit-details-marker { display: none; }
 		replace("home-assistant", h("div", { class: "grid" }, [connection, watch]));
 	}
 
+	var MC_CONNECTION = {
+		idle: ["遊んでいない", "s-idle"],
+		connected: ["接続中", "s-ok"],
+		reconnecting: ["再接続待ち", "s-bad"]
+	};
+
+	function renderMinecraft(s) {
+		var mc = s.minecraft;
+		document.getElementById("minecraft-panel").hidden = mc === null;
+		if (mc === null) return;
+		var goal = mc.goal;
+		var status = mc.goalStatus;
+		var play = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "ワールド " + mc.world }), badge(MC_CONNECTION[mc.connection] || [mc.connection, "s-idle"])),
+			h("div", { class: "facts" }, [
+				mc.taskId ? fact("タスク", mc.taskId) : null,
+				status ? fact("目標の状態", status.status + "（" + status.probability.toFixed(2) + "）") : null,
+				mc.lastDecisionMs === null ? null : fact("判断の待ち時間", mc.lastDecisionMs + "ms")
+			]),
+			goal ? h("div", { class: "block", text: "目標: " + goal.objective }) : null);
+		var actions = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "直近の行動" })),
+			h("div", { class: "block code", text: mc.recentActions.slice().reverse().map(function (a) { return clock(a.at) + " " + a.result + " " + a.action + ": " + a.detail; }).join("\n") || "（なし）" }));
+		var events = h("div", { class: "card" },
+			h("div", { class: "top" }, h("span", { class: "title", text: "直近の出来事" })),
+			h("div", { class: "block code", text: mc.recentEvents.slice().reverse().map(function (e) { return clock(e.at) + " " + e.type + ": " + e.detail; }).join("\n") || "（なし）" }));
+		replace("minecraft", h("div", { class: "grid" }, [play, actions, events]));
+	}
+
 	function gib(value) { return (value / 1024 / 1024 / 1024).toFixed(1) + " GiB"; }
 
 	function renderWorkspace(s) {
@@ -668,6 +698,7 @@ details > summary::-webkit-details-marker { display: none; }
 		renderTasks(s);
 		renderAutomation(s);
 		renderHomeAssistant(s);
+		renderMinecraft(s);
 		renderWorkspace(s);
 		renderActivity(s);
 		tick();

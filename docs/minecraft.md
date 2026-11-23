@@ -1,7 +1,5 @@
 # Minecraft
 
-この文書は未実装の設計である。ほかの文書で「未実装」と示したMinecraftの記述も同じ。
-
 `config.toml` に `[minecraft]` と `[models.minecraft]`（[SPEC.md](./SPEC.md) の設定）を書くと、ルナがMinecraft Java Editionのサーバーにプレイヤーとして入り、遊べる。`[minecraft]` がなければ、この文書のツールと `minecraft` の作業エージェントは使わない。
 
 ## 設定
@@ -101,8 +99,8 @@ type MinecraftObservation = {
 
 1. 観測を作り、今できる行動の候補を下の表から列挙する。種類ごとに近い順に数を絞り、合計を255件以内にする。
 2. `decision_model` に、観測を `state` として、2つの質問を1回のリクエストで送る。`action` は候補から1つを選ぶ質問、`goal` は目標が `done`（達成した）・`in_progress`（進んでいる）・`stuck`（行き詰まった）のどれかを選ぶ質問とする。タイムアウトは `decision_timeout_ms` で、再試行しない。
-3. 答えを待つ間に、位置が1ブロック以上動いた、体力が減った、新しい敵が見えた、のいずれかが起きたら、答えを捨てて1に戻る。
-4. 選ばれた行動を実行する。実行中に被弾するか新しい敵が見えたら、行動を止めて（結果は `interrupted`）1に戻る。
+3. 答えを待つ間に、位置が1ブロック以上動いた、体力が減った、16ブロック以内に新しい敵が見えた、のいずれかが起きたら、答えを捨てて1に戻る。
+4. 選ばれた行動を実行する。実行中に被弾するか、16ブロック以内に新しい敵が見えたら、行動を止めて（結果は `interrupted`）1に戻る。行動を始めた時に見えていた敵は新しい敵に数えない。
 5. 結果を `recent_actions` に入れる。
 
 | 行動             | 候補の対象                                                     | 上限時間 |
@@ -121,7 +119,7 @@ type MinecraftObservation = {
 | `retreat`        | 見えている敵から離れる                                         | 15秒     |
 | `wait`           | 2秒待つ                                                        | 2秒      |
 
-- 経路はMineflayerの経路探索に任せる。3ブロックを超える落下と、溶岩・火を通る経路は使わない。移動のためのブロックの掘削と、持っている土・丸石の設置はしてよい。
+- 経路はMineflayerの経路探索に任せる。3ブロックを超える落下（水への落下を含む）と、溶岩・火を通る経路は使わない。移動のためのブロックの掘削と、持っている土・丸石の設置はしてよい。経路が見つからない移動は失敗とする。
 - 次のどちらかで、目標の状態を計画役へ通知する（[出来事](#出来事)）。
   - `goal_done`: `goal` の答えが確率0.8以上の `done` で、それが2回続いた。
   - `goal_stuck`: `goal` の答えが確率0.8以上の `stuck` で、それが3回続いた。または、行動の失敗（決定モデルの失敗とタイムアウトを含む）が3回続いた。3の理由で答えを3回続けて捨てたら、行動の失敗1回と数える。
@@ -186,28 +184,28 @@ type MinecraftEvent = {
 
 ## 内部設計
 
-この節も未実装の設計である。
-
 ```text
 minecraft_goal / minecraft_observe / minecraft_name_place（minecraft の作業エージェントだけに渡す）
         │ ToolExecution（ownerId・origin・activities）
         ▼
-MinecraftPlayService ── プレイ（同時に1つ）
-   ├─ DecisionLoop ── 候補の列挙（domain）─► DecisionModelPort ◄─ PiDecisionModel（pi-ai の classify）
-   ├─ 出来事の判定（domain）─► activity.notify（urgent・replaceKey = type）
-   ├─ WorldMemory ── WorldMemoryStorePort ◄─ JSONファイル
-   ▼
-MinecraftClientPort ◄─ MineflayerClient ── MessagePort ──► worker thread
-                                                           ├ Mineflayer・経路探索
-                                                           ├ 見える判定と観測の素材
-                                                           └ 反射（毎tick）
+MinecraftPlayService ── プレイ（同時に1つ）: 判断のループ・出来事・再接続・interval
+   ├─ listCandidates / buildObservation / GoalTracker / rememberSnapshot（domain）
+   ├─ DecisionModelPort ◄─ PiDecisionModel（pi-ai の classify）
+   ├─ WorldMemoryStorePort ◄─ JsonWorldMemoryStore
+   └─ MinecraftConnector ◄─ createMineflayerConnector ── worker_threads のメッセージ ──► minecraft-worker（MineflayerPlayer）
+                                                                                         ├ Mineflayer・経路探索
+                                                                                         ├ 見える判定と観測の素材（WorldSnapshot）
+                                                                                         ├ 行動の実行と、被弾・新しい敵での中断
+                                                                                         └ 反射（毎tick）
 ```
 
-- `MinecraftPlayService`（application）はプレイを1つだけ持つ。最初のツール呼び出しで、`ToolExecution.activities` から続いている作業（[tools.md](./tools.md)）を始めて接続する。作業が止められた時（セッションを閉じる、取消、シャットダウン）の後始末で入力を離して切断する。プレイ中に別の `ownerId` から呼ばれたらツールの失敗にする。
-- 出来事は作業のハンドルの `notify` で渡し、`replaceKey` に出来事の `type` を使う。計画役がまだ読んでいない同じ種類の出来事を、新しいもので置き換えるため。`interval` のタイマーは、ツールが呼ばれるたびと出来事を渡すたびに仕掛け直す。
-- domain には、外部に触れない規則を置く。観測の組み立て、行動の候補の列挙と255件への絞り込み、判断の答えから出来事を決める規則（確率0.8、連続回数）、反射のきっかけの判定。反射のきっかけの判定は worker thread からも使う。
-- `DecisionLoop` は候補に `a0` から順にキーを振り、説明文を `criteria` にして1つの `choice` の質問にする。目標の状態は別の `choice` の質問として同じリクエストに入れる。答えのキーが候補にない、または `stopReason` が `stop` でない答えは失敗として数える。
-- `PiDecisionModel`（adapter）は `PiInterruptClassifier` と同じく、OpenAI と TypeSafe のプロバイダだけを入れた専用の pi-ai `Models` で `classify` を呼ぶ。作る時にモデルの有無と鍵を確かめる。
-- `MineflayerClient`（adapter）は Mineflayer と経路探索を worker_threads で動かす。mineflayer-pathfinder は経路を探す間、1tickあたり最大40ms（`tickTimeout` の既定）イベントループを止めるため、20msごとにフレームを送るVCの再生と同じスレッドに置かない。反射は worker thread の中で毎tick判定して動き、メインスレッドとの往復を待たない。メインスレッドとは MessagePort で、観測の要求、行動の実行と中断、反射・死亡・切断の通知をやりとりし、受け取った側でZodで検証する。
-- `WorldMemoryStorePort` の実装は、`world` ごとのJSONファイルを直列化した書き込みと一時ファイルからの置き換えで保存する。
+- `MinecraftPlayService`（application）はプレイを1つだけ持つ。最初のツール呼び出しで記憶を読み、接続してから `ToolExecution.activities` で続いている作業（[tools.md](./tools.md)）を始める。作業が止められた時（セッションを閉じる、取消、シャットダウン）の後始末で、判断のループを止めて切断する。プレイ中に別の `ownerId` から呼ばれたらツールの失敗にする。
+- 判断のループは、観測、候補の列挙、決定モデル、推論後の観測との比較、行動の実行の順に1手ずつ回す。目標がない間、目標の状態を通知した後、切断中は、新しい目標か再接続で起こされるまで眠る。終わりは別の非同期処理から来るため、await をまたぐ判定はそのたびに読み直す。
+- 出来事は作業のハンドルの `notify` で渡し、`replaceKey` に出来事の `type` を使う。計画役がまだ読んでいない同じ種類の出来事を、新しいもので置き換えるため。`interval` のタイマーは、ツールが呼ばれるたびと出来事を渡すたびに仕掛け直す。タイマーはコンストラクタに渡す `schedule` で仕掛け、テストから進められるようにする。
+- domain には、外部に触れない規則を置く。観測の組み立て、行動の候補の列挙と255件への絞り込み、判断の答えから出来事を決める規則（確率0.8、連続回数）、反射のきっかけの判定、ワールドの記憶の更新、アイテムの分類。反射のきっかけの判定とアイテムの分類は worker thread からも使う。
+- `PiDecisionModel`（adapter）は候補に `a0` から順にキーを振り、説明文を `criteria` にして1つの `choice` の質問にする。目標の状態は別の `choice` の質問として同じリクエストに入れる。答えのキーが候補にない、または `stopReason` が `stop` でない答えは例外にする。`PiInterruptClassifier` と同じく、OpenAI と TypeSafe のプロバイダだけを入れた専用の pi-ai `Models` で `classify` を呼び、作る時にモデルの有無と鍵を確かめる。
+- Mineflayer と経路探索は worker_threads で動かす。mineflayer-pathfinder は経路を探す間、1tickあたり最大40ms（`tickTimeout` の既定）イベントループを止めるため、20msごとにフレームを送るVCの再生と同じスレッドに置かない。接続するたびに新しいワーカーを起こし、切断したら止める。反射はワーカーの中で毎tick判定して動き、メインスレッドとの往復を待たない。メインスレッドとは要求と返事（番号で対応づける）、反射・死亡・切断の通知をやりとりし、受け取った側でZodで検証する（`mineflayer-protocol.ts`）。行動の上限時間はメインスレッドが持ち、過ぎたら中断を送ってワーカーの返事を待つ。
+- ワーカーの入口は、ビルドでは `dist/minecraft-worker.mjs`（tsdown の2つ目の入口）、tsx で動かす開発時とテストではソースの `.ts` を tsx で読む。`spawnMineflayerWorker` が `import.meta.url` の拡張子で選ぶ。
+- Mineflayer の型に載っていない値（`isInWater`・`isInLava`・`eyeHeight`、`world.raycast` が返すブロックの `position`、燃えている印のメタデータ）は、読む時にZodで検証する。prismarine-* は直接の依存にせず、型は Mineflayer の `Bot` から取る。
+- ワールドの記憶は、変わった時だけ `SerialQueue` で順に `JsonWorldMemoryStore` へ書く。ストアは一時ファイルからの置き換えで保存する。
 - `snapshot` はダッシュボード（[dashboard.md](./dashboard.md)）に、接続状態、目標、直近の行動と出来事、判断の待ち時間を渡す。

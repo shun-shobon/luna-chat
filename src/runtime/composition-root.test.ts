@@ -30,6 +30,9 @@ describe("application composition lifecycle", () => {
 			dashboardClose: async () => {
 				calls.push("dashboard.close");
 			},
+			minecraftStop: async () => {
+				calls.push("minecraft.stop");
+			},
 			events: {
 				stopActivities: vi.fn(async () => {
 					calls.push("events.stopActivities");
@@ -104,6 +107,7 @@ describe("application composition lifecycle", () => {
 				"homeAssistant.stop",
 				"http.close",
 				"dashboard.close",
+				"minecraft.stop",
 				"typing.release",
 				"usage.stop",
 				"client.destroy",

@@ -63,6 +63,7 @@ const snapshot: DashboardSnapshot = {
 	events: [],
 	generatedAt: "2026-10-20T00:00:00.000Z",
 	homeAssistant: null,
+	minecraft: null,
 	startedAt: "2026-10-19T23:00:00.000Z",
 	tasks: { maxConcurrent: 2, running: 0, tasks: [] },
 	workspace: {
