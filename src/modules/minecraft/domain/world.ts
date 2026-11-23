@@ -4,6 +4,17 @@ export const vec3Schema = z.strictObject({ x: z.number(), y: z.number(), z: z.nu
 export type Vec3 = Readonly<z.infer<typeof vec3Schema>>;
 
 const entityKindSchema = z.enum(["hostile", "passive", "player", "item", "other"]);
+
+export const directionSchema = z.enum(["north", "south", "east", "west"]);
+export type Direction = z.infer<typeof directionSchema>;
+
+// 東西南北の1マスの向き。北は -z、東は +x。
+export const DIRECTION_STEP: Readonly<Record<Direction, Readonly<{ x: number; z: number }>>> = {
+	north: { x: 0, z: -1 },
+	south: { x: 0, z: 1 },
+	east: { x: 1, z: 0 },
+	west: { x: -1, z: 0 },
+};
 export type EntityKind = z.infer<typeof entityKindSchema>;
 
 // 観測の対象にする距離（ブロック）。見える判定もこの距離までとする。
@@ -60,6 +71,17 @@ export const worldSnapshotSchema = z.strictObject({
 	smeltable: z.array(z.string()),
 	equippable: z.array(z.string()),
 	placeable: z.array(z.string()),
+	// 土・丸石・板材など、足場や壁に置けるブロック。
+	buildingBlocks: z.array(z.string()),
+	// 触れている周りのブロックへの操作のうち、今できるもの。ワーカーが足元・頭上・隣のブロックを見て決める。
+	surroundings: z.strictObject({
+		digDown: z.boolean(),
+		stairs: z.array(directionSchema),
+		tunnels: z.array(directionSchema),
+		placeAbove: z.boolean(),
+		placeBelow: z.boolean(),
+		placeToward: z.array(directionSchema),
+	}),
 	reflexActive: z.boolean(),
 });
 export type WorldSnapshot = Readonly<z.infer<typeof worldSnapshotSchema>>;

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type { MinecraftGoal } from "./goal";
 import {
+	DIRECTION_STEP,
+	directionSchema,
 	distanceBetween,
 	formatPosition,
 	isNight,
@@ -9,11 +11,8 @@ import {
 	SIGHT_DISTANCE,
 	vec3Schema,
 } from "./world";
-import type { Vec3, WorldSnapshot } from "./world";
+import type { Direction, Vec3, WorldSnapshot } from "./world";
 import type { WorldMemory } from "./world-memory";
-
-const directionSchema = z.enum(["north", "south", "east", "west"]);
-type Direction = z.infer<typeof directionSchema>;
 
 // 決定モデルが選ぶ1手（SPEC §25.4）。経路と照準はワーカーのMineflayerに任せる。
 export const minecraftActionSchema = z.discriminatedUnion("type", [
@@ -27,6 +26,14 @@ export const minecraftActionSchema = z.discriminatedUnion("type", [
 	}),
 	z.strictObject({ type: z.literal("craft"), item: z.string(), table: vec3Schema.nullable() }),
 	z.strictObject({ type: z.literal("place"), item: z.string() }),
+	z.strictObject({ type: z.literal("dig_down") }),
+	z.strictObject({ type: z.literal("dig_stair"), direction: directionSchema }),
+	z.strictObject({ type: z.literal("tunnel"), direction: directionSchema }),
+	z.strictObject({
+		type: z.literal("place_block"),
+		item: z.string(),
+		where: z.enum(["above", "below", ...directionSchema.options]),
+	}),
 	z.strictObject({
 		type: z.literal("smelt"),
 		furnace: vec3Schema,
@@ -62,6 +69,10 @@ export const ACTION_TIMEOUT_MS: Readonly<Record<MinecraftActionType, number>> = 
 	collect: 30_000,
 	craft: 10_000,
 	place: 10_000,
+	dig_down: 15_000,
+	dig_stair: 30_000,
+	tunnel: 20_000,
+	place_block: 10_000,
 	smelt: 10_000,
 	store: 10_000,
 	take: 10_000,
@@ -82,6 +93,8 @@ const ENTITY_LIMIT = 8;
 const ATTACK_LIMIT = 6;
 const RETREAT_LIMIT = 3;
 const ITEM_LIMIT = 10;
+// 置く候補にするブロックの種類の数。種類ごとに、頭上・足元・4方向の置き場所が並ぶ。
+const BUILDING_KINDS = 3;
 
 export type ActionCandidate = Readonly<{ action: MinecraftAction; description: string }>;
 
@@ -174,6 +187,42 @@ export function listCandidates(input: CandidateInput): readonly ActionCandidate[
 		push({ type: "place", item }, `Place a ${item} next to you`);
 	}
 
+	const around = snapshot.surroundings;
+	if (around.digDown)
+		push({ type: "dig_down" }, "Dig the block under your feet and drop down one block");
+	for (const direction of around.stairs) {
+		push(
+			{ type: "dig_stair", direction },
+			`Dig one step of a staircase down to the ${direction} and step onto it`,
+		);
+	}
+	for (const direction of around.tunnels) {
+		push(
+			{ type: "tunnel", direction },
+			`Dig the two blocks in front of you to the ${direction} and step forward`,
+		);
+	}
+	for (const item of snapshot.buildingBlocks.slice(0, BUILDING_KINDS)) {
+		if (around.placeAbove) {
+			push(
+				{ type: "place_block", item, where: "above" },
+				`Place ${item} above your head to close the opening`,
+			);
+		}
+		if (around.placeBelow) {
+			push(
+				{ type: "place_block", item, where: "below" },
+				`Jump and place ${item} under your feet to rise one block`,
+			);
+		}
+		for (const direction of around.placeToward) {
+			push(
+				{ type: "place_block", item, where: direction },
+				`Place ${item} next to you to the ${direction}`,
+			);
+		}
+	}
+
 	if (furnace !== undefined) {
 		for (const item of snapshot.smeltable.slice(0, ITEM_LIMIT)) {
 			push(
@@ -245,16 +294,11 @@ export function listCandidates(input: CandidateInput): readonly ActionCandidate[
 }
 
 function exploreTarget(position: Vec3, direction: Direction): Vec3 {
-	const step: Readonly<Record<Direction, Readonly<{ x: number; z: number }>>> = {
-		north: { x: 0, z: -EXPLORE_DISTANCE },
-		south: { x: 0, z: EXPLORE_DISTANCE },
-		east: { x: EXPLORE_DISTANCE, z: 0 },
-		west: { x: -EXPLORE_DISTANCE, z: 0 },
-	};
+	const step = DIRECTION_STEP[direction];
 	return {
-		x: Math.floor(position.x) + step[direction].x,
+		x: Math.floor(position.x) + step.x * EXPLORE_DISTANCE,
 		y: Math.floor(position.y),
-		z: Math.floor(position.z) + step[direction].z,
+		z: Math.floor(position.z) + step.z * EXPLORE_DISTANCE,
 	};
 }
 
@@ -272,6 +316,13 @@ export function describeAction(action: MinecraftAction): string {
 			return `craft ${action.item}`;
 		case "place":
 			return `place ${action.item}`;
+		case "dig_down":
+			return "dig_down";
+		case "dig_stair":
+		case "tunnel":
+			return `${action.type} ${action.direction}`;
+		case "place_block":
+			return `place_block ${action.item} ${action.where}`;
 		case "smelt":
 			return `smelt ${action.operation}${action.item == null ? "" : ` ${action.item}`}`;
 		case "store":

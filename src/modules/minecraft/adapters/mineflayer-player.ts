@@ -10,6 +10,7 @@ import { ACTION_TIMEOUT_MS } from "../domain/action";
 import type { MinecraftAction } from "../domain/action";
 import {
 	CRAFT_CANDIDATES,
+	isBuildingBlock,
 	isEquippable,
 	isFuel,
 	isPlaceable,
@@ -24,7 +25,14 @@ import {
 	WATER_ESCAPE_DISTANCE,
 } from "../domain/reflex";
 import type { ReflexTrigger } from "../domain/reflex";
-import { blockPosition, isInterestingBlock, REACH_DISTANCE, SIGHT_DISTANCE } from "../domain/world";
+import {
+	blockPosition,
+	DIRECTION_STEP,
+	directionSchema,
+	isInterestingBlock,
+	REACH_DISTANCE,
+	SIGHT_DISTANCE,
+} from "../domain/world";
 import type { EntityKind, Vec3 as Position, WorldSnapshot } from "../domain/world";
 import type { ActionOutcome, ObserveRequest } from "../ports/minecraft-connection-port";
 
@@ -39,7 +47,6 @@ const SPAWN_TIMEOUT_MS = 30_000;
 const QUIT_TIMEOUT_MS = 5_000;
 // 経路探索で使う、落ちてよい高さ（SPEC §25.4）。
 const MAX_DROP = 3;
-const WATER_PATH_COST = 20;
 const COMMON_BLOCKS: ReadonlySet<string> = new Set(["stone", "water", "sand", "gravel", "lava"]);
 const FIND_COMMON_PER_KIND = 16;
 const FIND_RARE_LIMIT = 256;
@@ -49,6 +56,19 @@ const THREAT_CHECK_TICKS = 10;
 const ATTACK_INTERVAL_MS = 650;
 const DEATH_MESSAGE_WINDOW_MS = 2_000;
 const SAFE_SEARCH_RADIUS = 6;
+const PILLAR_JUMP_MS = 1_000;
+const CENTER_TOLERANCE = 0.2;
+const SETTLE_MS = 2_000;
+// 掘った先や立つ先の床にしないブロック。
+const DANGEROUS_FLOORS: ReadonlySet<string> = new Set(["lava", "magma_block", "fire", "campfire"]);
+const NEIGHBOR_OFFSETS = [
+	{ x: 0, y: -1, z: 0 },
+	{ x: 0, y: 1, z: 0 },
+	{ x: 1, y: 0, z: 0 },
+	{ x: -1, y: 0, z: 0 },
+	{ x: 0, y: 0, z: 1 },
+	{ x: 0, y: 0, z: -1 },
+] as const;
 
 // Mineflayer が物理の計算で足すが、型には載っていない項目。外部の値なので読む時に検証する。
 const entityPhysicsSchema = z.looseObject({
@@ -204,6 +224,8 @@ export class MineflayerPlayer {
 					![5, 6, 7, 8].some((slot) => bot.inventory.slots[slot]?.name === name),
 			),
 			placeable: Object.keys(inventory).filter(isPlaceable),
+			buildingBlocks: Object.keys(inventory).filter(isBuildingBlock),
+			surroundings: this.#surroundings(items),
 			reflexActive: this.#reflex !== undefined,
 		};
 	}
@@ -271,9 +293,6 @@ export class MineflayerPlayer {
 		movements.allow1by1towers = true;
 		// 既定では水への落下に高さの上限がない。
 		movements.infiniteLiquidDropdownDistance = false;
-		// 既定（1）では深い水の中も平地と同じように通り、潜ったまま溺れた。浅い川は渡れる程度に、水を通る経路を避けさせる。
-		// liquidCost は実装にあるが型定義に載っていない。
-		Object.assign(movements, { liquidCost: WATER_PATH_COST });
 		movements.scafoldingBlocks = SCAFFOLDING_BLOCKS.flatMap((name) => {
 			const item = bot.registry.itemsByName[name];
 			return item === undefined ? [] : [item.id];
@@ -301,6 +320,7 @@ export class MineflayerPlayer {
 	}
 
 	#tick(): void {
+		this.#float();
 		if (this.#reflex !== undefined) return;
 		this.#threatTick = (this.#threatTick + 1) % THREAT_CHECK_TICKS;
 		const trigger = judgeReflex(this.#reflexState());
@@ -315,6 +335,20 @@ export class MineflayerPlayer {
 	}
 
 	#knownHostiles = new Set<number>();
+	#floating = false;
+
+	// 水の中ではジャンプを押し続けて水面に浮かせる。経路探索に任せると泳ぎながら沈み、浮いては潜って溺れた。
+	// 経路探索も毎tick入力を決めるため、その後に登録したこのリスナーで上書きする。
+	#float(): void {
+		const inWater = entityPhysicsSchema.parse(this.#bot.entity).isInWater ?? false;
+		if (inWater) {
+			this.#bot.setControlState("jump", true);
+			this.#floating = true;
+		} else if (this.#floating) {
+			this.#bot.setControlState("jump", false);
+			this.#floating = false;
+		}
+	}
 
 	#visibleHostileIds(): Set<number> {
 		return new Set(
@@ -487,6 +521,53 @@ export class MineflayerPlayer {
 				await bot.placeBlock(reference, new Vec3(0, 1, 0));
 				return done(`placed ${action.item}`);
 			}
+			case "dig_down": {
+				const feet = this.#feet();
+				const below = this.#blockAt(feet.offset(0, -1, 0));
+				await this.#digBlock(below);
+				await this.#settle(signal);
+				return done(`dug down through ${below.name}`);
+			}
+			case "dig_stair":
+			case "tunnel": {
+				const step = DIRECTION_STEP[action.direction];
+				const feet = this.#feet();
+				const front = feet.offset(step.x, 0, step.z);
+				const standAt = action.type === "dig_stair" ? front.offset(0, -1, 0) : front;
+				const cells =
+					action.type === "dig_stair"
+						? [front.offset(0, 1, 0), front, front.offset(0, -1, 0)]
+						: [front.offset(0, 1, 0), front];
+				for (const cell of cells) {
+					if (signal.aborted) break;
+					const block = this.#blockAt(cell);
+					if (block.boundingBox === "block") await this.#digBlock(block);
+				}
+				await this.#goto(new goals.GoalBlock(standAt.x, standAt.y, standAt.z), signal);
+				return done(
+					`${action.type === "dig_stair" ? "dug a step down" : "tunneled"} to the ${action.direction}`,
+				);
+			}
+			case "place_block": {
+				const item = bot.inventory.items().find((entry) => entry.name === action.item);
+				if (item === undefined) throw new Error(`no ${action.item} in the inventory`);
+				await bot.equip(item, "hand");
+				const feet = this.#feet();
+				if (action.where === "below") {
+					await this.#pillarUp(feet, signal);
+					return done(`placed ${action.item} under her feet`);
+				}
+				const target =
+					action.where === "above"
+						? feet.offset(0, 2, 0)
+						: feet.offset(DIRECTION_STEP[action.where].x, 0, DIRECTION_STEP[action.where].z);
+				const reference = this.#supportFor(target);
+				if (reference === undefined) throw new Error("nothing to place the block against");
+				await bot.placeBlock(reference.block, reference.face);
+				return done(
+					`placed ${action.item} ${action.where === "above" ? "above her head" : `to the ${action.where}`}`,
+				);
+			}
 			case "smelt": {
 				const furnace = await bot.openFurnace(this.#blockAt(action.furnace));
 				try {
@@ -568,6 +649,119 @@ export class MineflayerPlayer {
 				throw new Error(`Unknown Minecraft action: ${JSON.stringify(unknownAction)}`);
 			}
 		}
+	}
+
+	// 足元・頭上・隣のブロックへの操作のうち、今できるもの（SPEC §25.4）。
+	#surroundings(items: readonly Item[]): WorldSnapshot["surroundings"] {
+		const feet = this.#feet();
+		const inWater = entityPhysicsSchema.parse(this.#bot.entity).isInWater ?? false;
+		const diggable = (cell: Vec3): boolean => {
+			const block = this.#bot.blockAt(cell);
+			return (
+				block != null &&
+				!isLiquid(block) &&
+				(block.boundingBox === "empty" || this.#harvestable(block, items))
+			);
+		};
+		const safeFloor = (cell: Vec3): boolean => {
+			const block = this.#bot.blockAt(cell);
+			return block?.boundingBox === "block" && !DANGEROUS_FLOORS.has(block.name);
+		};
+		const open = (cell: Vec3): boolean => {
+			const block = this.#bot.blockAt(cell);
+			return block?.boundingBox === "empty" && !isLiquid(block);
+		};
+		const below = this.#bot.blockAt(feet.offset(0, -1, 0));
+		const fronts = directionSchema.options.map((direction) => {
+			const step = DIRECTION_STEP[direction];
+			return { direction, front: feet.offset(step.x, 0, step.z) };
+		});
+		return {
+			digDown:
+				below?.boundingBox === "block" &&
+				this.#harvestable(below, items) &&
+				safeFloor(feet.offset(0, -2, 0)),
+			stairs: fronts
+				.filter(
+					({ front }) =>
+						[front.offset(0, 1, 0), front, front.offset(0, -1, 0)].every(diggable) &&
+						safeFloor(front.offset(0, -2, 0)),
+				)
+				.map(({ direction }) => direction),
+			tunnels: fronts
+				.filter(
+					({ front }) =>
+						[front.offset(0, 1, 0), front].every(diggable) &&
+						[front.offset(0, 1, 0), front].some((cell) => !open(cell)) &&
+						safeFloor(front.offset(0, -1, 0)),
+				)
+				.map(({ direction }) => direction),
+			placeAbove:
+				open(feet.offset(0, 2, 0)) && this.#supportFor(feet.offset(0, 2, 0)) !== undefined,
+			placeBelow:
+				!inWater &&
+				this.#bot.entity.onGround &&
+				safeFloor(feet.offset(0, -1, 0)) &&
+				open(feet.offset(0, 2, 0)),
+			placeToward: fronts
+				.filter(({ front }) => open(front) && this.#supportFor(front) !== undefined)
+				.map(({ direction }) => direction),
+		};
+	}
+
+	// cell にブロックを置く時の土台。隣の固いブロックと、そこから cell へ向く面を返す。
+	#supportFor(cell: Vec3): Readonly<{ block: Block; face: Vec3 }> | undefined {
+		for (const offset of NEIGHBOR_OFFSETS) {
+			const block = this.#bot.blockAt(cell.offset(offset.x, offset.y, offset.z));
+			if (block?.boundingBox === "block") {
+				return { block, face: new Vec3(-offset.x, -offset.y, -offset.z) };
+			}
+		}
+		return undefined;
+	}
+
+	async #digBlock(block: Block): Promise<void> {
+		const tool = this.#bot.pathfinder.bestHarvestTool(block);
+		if (tool != null) await this.#bot.equip(tool, "hand");
+		await this.#bot.dig(block, true);
+	}
+
+	// 跳んで、元の足の位置へ持っているブロックを置き、その上に乗る。
+	async #pillarUp(feet: Vec3, signal: AbortSignal): Promise<void> {
+		const bot = this.#bot;
+		const ground = this.#blockAt(feet.offset(0, -1, 0));
+		// マスの中心から外れて立っていると体が置く先のマスにかかり、サーバーが置くのを断った。先に中心へ寄る。
+		const position = bot.entity.position;
+		if (
+			Math.abs(position.x - feet.x - 0.5) > CENTER_TOLERANCE ||
+			Math.abs(position.z - feet.z - 0.5) > CENTER_TOLERANCE
+		) {
+			await this.#goto(new goals.GoalBlock(feet.x, feet.y, feet.z), signal);
+		}
+		bot.setControlState("jump", true);
+		try {
+			const deadline = Date.now() + PILLAR_JUMP_MS;
+			while (bot.entity.position.y < feet.y + 1 && Date.now() < deadline && !signal.aborted) {
+				await once(bot, "physicsTick");
+			}
+			if (bot.entity.position.y < feet.y + 1) throw new Error("could not jump high enough");
+			await bot.placeBlock(ground, new Vec3(0, 1, 0));
+		} finally {
+			bot.setControlState("jump", false);
+		}
+		await this.#settle(signal);
+	}
+
+	// 掘ったり置いたりした後、足が地面に着くまで待つ。
+	async #settle(signal: AbortSignal): Promise<void> {
+		const deadline = Date.now() + SETTLE_MS;
+		while (!this.#bot.entity.onGround && Date.now() < deadline && !signal.aborted) {
+			await once(this.#bot, "physicsTick");
+		}
+	}
+
+	#feet(): Vec3 {
+		return this.#bot.entity.position.floored();
 	}
 
 	async #goto(goal: InstanceType<typeof goals.Goal>, signal: AbortSignal): Promise<void> {
@@ -909,4 +1103,8 @@ function axisWalk(from: number, to: number): { step: number; next: number; delta
 	const cell = Math.floor(from);
 	const boundary = step > 0 ? cell + 1 : cell;
 	return { step, next: (boundary - from) / length, delta: Math.abs(1 / length) };
+}
+
+function isLiquid(block: Readonly<{ name: string }>): boolean {
+	return block.name === "water" || block.name === "lava";
 }

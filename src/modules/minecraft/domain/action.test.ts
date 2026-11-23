@@ -187,6 +187,56 @@ describe("listCandidates", () => {
 		);
 	});
 
+	it("周りでできる掘る・置く操作を、置けるブロックごとに候補にする", () => {
+		const candidates = listCandidates({
+			snapshot: snapshotWith({
+				buildingBlocks: ["dirt", "cobblestone", "oak_planks", "stone"],
+				surroundings: {
+					digDown: true,
+					stairs: ["east"],
+					tunnels: ["north", "west"],
+					placeAbove: true,
+					placeBelow: true,
+					placeToward: ["south"],
+				},
+			}),
+			memory: memoryWith(),
+			goal: GOAL,
+		});
+
+		const actions = candidates.map((candidate) => candidate.action);
+		expect(actions).toEqual(
+			expect.arrayContaining([
+				{ type: "dig_down" },
+				{ type: "dig_stair", direction: "east" },
+				{ type: "tunnel", direction: "north" },
+				{ type: "tunnel", direction: "west" },
+				{ type: "place_block", item: "dirt", where: "above" },
+				{ type: "place_block", item: "dirt", where: "below" },
+				{ type: "place_block", item: "oak_planks", where: "south" },
+			]),
+		);
+		// 置くブロックは3種類まで。
+		expect(actions.filter((action) => action.type === "place_block")).toHaveLength(9);
+		expect(candidates.find((candidate) => candidate.action.type === "dig_stair")?.description).toBe(
+			"Dig one step of a staircase down to the east and step onto it",
+		);
+	});
+
+	it("できない掘る・置く操作は候補に出さない", () => {
+		const candidates = listCandidates({
+			snapshot: snapshotWith({ buildingBlocks: ["dirt"] }),
+			memory: memoryWith(),
+			goal: GOAL,
+		});
+
+		expect(
+			candidates.some((candidate) =>
+				["dig_down", "dig_stair", "tunnel", "place_block"].includes(candidate.action.type),
+			),
+		).toBe(false);
+	});
+
 	it(`候補を ${String(MAX_CANDIDATES)} 件までに収める`, () => {
 		const candidates = listCandidates({
 			snapshot: snapshotWith({

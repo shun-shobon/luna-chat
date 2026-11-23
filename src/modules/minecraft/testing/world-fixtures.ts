@@ -38,6 +38,15 @@ export function snapshotWith(overrides: SnapshotOverrides = {}): WorldSnapshot {
 		smeltable: [],
 		equippable: [],
 		placeable: [],
+		buildingBlocks: [],
+		surroundings: {
+			digDown: false,
+			stairs: [],
+			tunnels: [],
+			placeAbove: false,
+			placeBelow: false,
+			placeToward: [],
+		},
 		reflexActive: false,
 		...rest,
 	};

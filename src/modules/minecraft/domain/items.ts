@@ -66,5 +66,19 @@ export function isPlaceable(item: string): boolean {
 	return ["crafting_table", "furnace", "chest", "torch"].includes(item) || item.endsWith("_bed");
 }
 
+const BUILDING_BLOCKS: ReadonlySet<string> = new Set([
+	"dirt",
+	"cobblestone",
+	"cobbled_deepslate",
+	"stone",
+	"netherrack",
+	"sandstone",
+]);
+
+// 足場や壁として置くブロック。落ちる砂・砂利は外す。
+export function isBuildingBlock(item: string): boolean {
+	return BUILDING_BLOCKS.has(item) || item.endsWith("_planks");
+}
+
 // 経路探索が足場に使ってよいブロック（SPEC §25.4）。
 export const SCAFFOLDING_BLOCKS: readonly string[] = ["dirt", "cobblestone"];
