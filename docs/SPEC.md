@@ -12,7 +12,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 
 - Discordの投稿を会話単位に集約し、エージェントのセッションへ渡す。
 - HTTPで受けたイベントを独立した実行または会話セッションへ渡す。
-- エージェントが呼び出したツール（メッセージ送信・返信・リアクション、シェル、ファイル、Web検索、画像生成等）を即時に実行する。
+- エージェントが呼び出したツール（メッセージの送信・返信・編集・削除・リアクション、シェル、ファイル、Web検索、画像生成等）を即時に実行する。
 - 定期ハートビートおよびスケジュール設定に基づき、自律的にエージェントを実行する。
 - `LUNA.md`（人格設定）、`MEMORY.md`（長期記憶）、ワークスペースのskill一覧をロードし、セッションのシステムプロンプトを構築する。
 - アイドル終了前の会話ログを日次記憶に保存し、定期cronにより記憶とワークスペースを自律的に整理する。
@@ -76,7 +76,7 @@ Luna自身の投稿を除き、以下のメッセージ（`messageCreate`）を�
 - 一時セッションが有効なスコープへ届いたすべてのメッセージ
 - `allow_dm = true` の環境に届いたすべてのDM
 
-人間、他のBot、Webhook、Discordのシステムメッセージはすべて入力として受け付ける。メッセージの編集やリアクションの追加・削除は新規の実行を開始しない。また、親チャンネルで一時セッション中であっても、その配下に作成されたスレッドにはセッションが自動継承されない（スレッド側でのメンションが必要）。
+人間、他のBot、Webhook、Discordのシステムメッセージはすべて入力として受け付ける。メッセージの編集・削除とリアクションは、会話セッションが知っているメッセージに対するものだけを受け付ける（§5.7）。また、親チャンネルで一時セッション中であっても、その配下に作成されたスレッドにはセッションが自動継承されない（スレッド側でのメンションが必要）。
 
 Guildチャンネル配下のスレッドおよびフォーラム投稿は、受信時点でDiscord.jsのキャッシュにLuna自身のメンバー情報が存在する場合にのみ常設として扱われる。キャッシュに存在しない場合は未参加とみなし、常設としては扱わない（外部APIへの追加問い合わせは行わない）。
 
@@ -99,24 +99,26 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 
 エージェントへの入力は種類（`kind`）付きのメッセージとして渡す。各メッセージはモデルには `<luna_input kind="...">` で包んだuserメッセージとして見え、本文は検証済みのオブジェクトを `JSON.stringify` したものとする。
 
-| `kind`                                            | 本文                                                | 渡す場面                                                 |
-| ------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| `discord_message`                                 | `discord.message.created.v1` の `LunaEvent`         | 会話への投稿                                             |
-| `delegated_conversation`                          | `discord.conversation.delegated.v1` の `LunaEvent`  | 会話委譲                                                 |
-| `task_report`                                     | `luna.task.reported.v1` の `LunaEvent`              | タスクの報告の通知（§20.6）                              |
-| `heartbeat` / `schedule` / `memory_maintenance`   | 各 `system.*.fired.v1` の `LunaEvent`               | オートメーション                                         |
-| `http_request`                                    | `source: "http"` の `LunaEvent`                     | HTTPイベント                                             |
-| `home_assistant_state`                            | `home_assistant.state_changed.v1` の `LunaEvent`    | Home Assistantの状態変化（§22.3）                        |
-| `assist_request`                                  | `home_assistant.assist.requested.v1` の `LunaEvent` | Assistへの発話（§22.4）                                  |
-| `voice_utterance`                                 | `discord.voice.utterance.v1` の `LunaEvent`         | ボイスチャンネルでの発話（§24.2）                        |
-| `voice_delegation`                                | `discord.voice.delegated.v1` の `LunaEvent`         | 音声モードの表からの依頼（§24.5）                        |
-| `voice_transcript`                                | `discord.voice.transcript.v1` の `LunaEvent`        | 音声モードを終えた時の残りの会話記録（§24.5）            |
-| `event`                                           | 上記以外の `LunaEvent`                              | その他のイベント                                         |
-| `history`                                         | `LunaEvent[]`                                       | 会話セッションの最初の実行（初回コンテキストがある場合） |
-| `task_board`                                      | `TaskSummary[]`（§20.5）                            | 会話とイベント実行の各実行の開始時                       |
-| `session_end`                                     | `{ date: string }`（ローカル日付）                  | セッション記憶保存                                       |
-| `task_assignment` / `task_message` / `task_check` | §20.3                                               | 作業エージェント                                         |
-| `background_exit`                                 | `BackgroundExit`（§9.2）                            | バックグラウンド実行の終了                               |
+| `kind`                                                | 本文                                                                       | 渡す場面                                                 |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `discord_message`                                     | `discord.message.created.v1` の `LunaEvent`                                | 会話への投稿                                             |
+| `discord_message_edited` / `discord_message_deleted`  | `discord.message.edited.v1` / `discord.message.deleted.v1` の `LunaEvent`  | 既知のメッセージの編集・削除（§5.7）                     |
+| `discord_reaction_added` / `discord_reaction_removed` | `discord.reaction.added.v1` / `discord.reaction.removed.v1` の `LunaEvent` | 既知のメッセージへのリアクションの追加・削除（§5.7）     |
+| `delegated_conversation`                              | `discord.conversation.delegated.v1` の `LunaEvent`                         | 会話委譲                                                 |
+| `task_report`                                         | `luna.task.reported.v1` の `LunaEvent`                                     | タスクの報告の通知（§20.6）                              |
+| `heartbeat` / `schedule` / `memory_maintenance`       | 各 `system.*.fired.v1` の `LunaEvent`                                      | オートメーション                                         |
+| `http_request`                                        | `source: "http"` の `LunaEvent`                                            | HTTPイベント                                             |
+| `home_assistant_state`                                | `home_assistant.state_changed.v1` の `LunaEvent`                           | Home Assistantの状態変化（§22.3）                        |
+| `assist_request`                                      | `home_assistant.assist.requested.v1` の `LunaEvent`                        | Assistへの発話（§22.4）                                  |
+| `voice_utterance`                                     | `discord.voice.utterance.v1` の `LunaEvent`                                | ボイスチャンネルでの発話（§24.2）                        |
+| `voice_delegation`                                    | `discord.voice.delegated.v1` の `LunaEvent`                                | 音声モードの表からの依頼（§24.5）                        |
+| `voice_transcript`                                    | `discord.voice.transcript.v1` の `LunaEvent`                               | 音声モードを終えた時の残りの会話記録（§24.5）            |
+| `event`                                               | 上記以外の `LunaEvent`                                                     | その他のイベント                                         |
+| `history`                                             | `LunaEvent[]`                                                              | 会話セッションの最初の実行（初回コンテキストがある場合） |
+| `task_board`                                          | `TaskSummary[]`（§20.5）                                                   | 会話とイベント実行の各実行の開始時                       |
+| `session_end`                                         | `{ date: string }`（ローカル日付）                                         | セッション記憶保存                                       |
+| `task_assignment` / `task_message` / `task_check`     | §20.3                                                                      | 作業エージェント                                         |
+| `background_exit`                                     | `BackgroundExit`（§9.2）                                                   | バックグラウンド実行の終了                               |
 
 - HTTPイベントの `data` は `{ payload: 送信されたevent.data, response_mode }` であり、IDと受信時刻はLunaが生成する。
 - 添付ファイルはURLやメタデータのみを渡し、ランタイム側でのファイル自動ダウンロードは行わない。
@@ -128,6 +130,26 @@ Guildチャンネル、Guildスレッド、DMはそれぞれ独立した会話�
 - `/luna model [model] [effort]`: セッションで使用するモデル（`provider/model`）と推論強度を変更する。モデルのカタログにある組み合わせのみ受け付け、現在のセッションに即時適用する（セッション終了時に設定は破棄される）。
 - `/luna end`: 現在のセッションの終了を要求する。実行中の処理と記憶保存の完了を待ってセッションを閉じる。
 - `/luna channel add` / `/luna channel remove`: 実行したチャンネルを常設チャンネルに追加または削除する。Guild内であれば誰でも実行可能であり、`config.toml` を更新して即座に反映する。
+
+### 5.7 メッセージの編集・削除とリアクション
+
+会話セッションが知っているメッセージについて、Luna以外による編集・削除と、リアクションの追加・削除をそのセッションへ入力として渡す。セッションが知っているメッセージは次の3つで、セッションを閉じると忘れる。
+
+- そのセッションで受け付けたメッセージ
+- 初回コンテキスト（§5.4）として渡した過去ログ
+- セッションが開いている間に、そのスコープへ投稿されたLuna自身のメッセージ
+
+これらの入力は通常の投稿と同じく集約と順序制御（§5.3）を経て実行を始め、実行中なら割り込み入力になる。セッションのないスコープへの変更、知らないメッセージへの変更、記憶保存や終了の処理に入ったセッションへの変更は渡さず、新しいセッションも始めない。
+
+| 入力                     | `data`                                                                           | `occurredAt` |
+| ------------------------ | -------------------------------------------------------------------------------- | ------------ |
+| 編集                     | `{ scope, message }`（編集後のメッセージ全体）                                   | 編集時刻     |
+| 削除                     | `{ scope, messageId }`                                                           | 受信時刻     |
+| リアクションの追加・削除 | `{ scope, messageId, emoji, user }`（`user` は `{ id, username, displayName }`） | 受信時刻     |
+
+- 編集は編集時刻が変わった更新に限る。埋め込みの展開やピン留めによる更新は渡さない。
+- Discordは削除した人を通知しないため、Luna自身の投稿の削除は投稿者で見分けて渡さない。投稿者がキャッシュに残っていないメッセージは見分けられず、Luna自身の投稿でも渡す。
+- リアクションの全削除、絵文字ごとの削除、メッセージの一括削除は渡さない。Lunaの起動後に一度も見ていないユーザーによるリアクションの削除は、そのユーザーがDiscord.jsのキャッシュになく受信されないため渡せない。
 
 ## 6. 会話セッションのライフサイクル
 
@@ -212,7 +234,7 @@ Home Assistantの接続を設定した場合（§22）は、どの種類にもHo
 - 場面ファイルはJSONの配列で、各場面は `{ id, note?, inputs: [{ kind, text }] }`。`inputs` は会話の記録（§15）の `luna_input` と同じ形で、1回の実行に渡す入力の列とする。
 - 位置引数の指示の組（`<名前>=<ディレクトリ>`）ごとに、そのディレクトリの `LUNA.md` と `MEMORY.md` を、会話と同じ開発者指示と現在のワークスペースのskill一覧に連結してシステムプロンプトとする。指示の組は1つ以上、名前は重複不可。
 - モデルは `[models.conversation]`、リクエストのタイムアウトは `request_timeout_ms` を使う。資格情報は通常の実行と同じものを使う。
-- ツールは会話と同じものを渡すが、外へ作用させない。Discordへの投稿・リアクション、会話の委任、タスクの作成・指示・取消、Assistへの返答は呼び出しを記録して成功を返す。Home Assistantのツール（§22.1）は渡さない。`exec_command`・`write_stdin`・`stop_background`・`edit`・`write`・`image_gen` は実行せずに記録して成功を返す。`read`・`view_image`・`web_run` は実際に実行する。Discordの履歴の読み取りは空を返す。
+- ツールは会話と同じものを渡すが、外へ作用させない。Discordへの投稿・編集・削除・リアクション、会話の委任、タスクの作成・指示・取消、Assistへの返答は呼び出しを記録して成功を返す。Home Assistantのツール（§22.1）は渡さない。`exec_command`・`write_stdin`・`stop_background`・`edit`・`write`・`image_gen` は実行せずに記録して成功を返す。`read`・`view_image`・`web_run` は実際に実行する。Discordの履歴の読み取りは空を返す。
 - 1つの場面でツール呼び出しが12回に達したら、その場面の実行を打ち切る。
 - 出力先に、全結果の `results.json`（場面・指示の組・終了状態・ツール呼び出しの列）、場面ごとに候補の並びを無作為に入れ替えて A, B… と名付けた `blind.json`、その対応の `blind-key.json` を書く。再生の会話記録は残さない。
 
@@ -220,27 +242,28 @@ Home Assistantの接続を設定した場合（§22）は、どの種類にもHo
 
 エージェントのセッションを開くとき、実行の種類に応じたツールを渡す。ツールは呼び出された時点で実行し、結果（失敗時はエラーの内容）をそのままエージェントへ返す。同じ応答で呼ばれた複数のツールは並行して実行する。入力スキーマに合わない呼び出しは、検証エラーをツールの失敗として返す。
 
-| ツール                                                                                                 | 内容                                                                                                                                                                                | 会話・イベント | 作業エージェント |
-| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------- |
-| `exec_command` / `write_stdin`                                                                         | シェルコマンドの実行。終わらないコマンドはセッションIDを返し、`write_stdin` で入力と出力の取得を続ける（PTYは使わない）。`run_in_background` で実行の終了を待たずに動かせる（§9.2） | ◯              | ◯                |
-| `stop_background`                                                                                      | バックグラウンド実行を止める（§9.2）                                                                                                                                                | ◯              | ◯                |
-| `read` / `edit` / `write`                                                                              | ワークスペースのファイルの読み書き                                                                                                                                                  | ◯              | ◯                |
-| `view_image`                                                                                           | 画像ファイルを読み、必要なら縮小してエージェントへ渡す                                                                                                                              | ◯              | ◯                |
-| `web_run`                                                                                              | Web検索・ページの閲覧（ChatGPTのバックエンドを使う）                                                                                                                                | ◯              | ◯                |
-| `image_gen`                                                                                            | 画像の生成・編集。結果を一時ディレクトリ（§9.1）へ保存する                                                                                                                          | ◯              | ◯                |
-| `read_message_history` / `list_channels` / `get_user_detail` / `list_guild_emojis` / `get_guild_emoji` | Discordの読み取り                                                                                                                                                                   | ◯              | ◯                |
-| `send_message` / `reply_message` / `add_reaction` / `remove_reaction` / `start_typing` / `stop_typing` | Discordへの書き込み                                                                                                                                                                 | ◯              | ×                |
-| `open_conversation`                                                                                    | 指定スコープへ背景情報を渡して会話を委譲                                                                                                                                            | ◯              | ×                |
-| `task_create` / `task_message` / `task_cancel`                                                         | バックグラウンドタスクの依頼・追加指示・取消（§20.2）                                                                                                                               | ◯              | ×                |
-| `task_report`                                                                                          | 作業エージェントからの報告（§20.3）                                                                                                                                                 | ×              | ◯                |
-| `http_respond`                                                                                         | HTTPの完了待ちリクエストへの応答（§10.1）                                                                                                                                           | ◯              | ×                |
-| `wait`                                                                                                 | 指定秒数の待機（§10.2）                                                                                                                                                             | ◯              | ◯                |
-| `ha_list_entities` / `ha_get_state` / `ha_list_services` / `ha_call_service`                           | Home Assistantの状態の取得と操作（§22.1）。HAの接続を設定した場合のみ                                                                                                               | ◯              | ◯                |
-| `assist_respond`                                                                                       | Assistへの返答（§22.4）                                                                                                                                                             | ◯              | ×                |
-| `voice_join` / `voice_leave` / `voice_report`                                                          | ボイスチャンネルへの参加・退出、音声モードの依頼の結果の報告（§24）。`[voice]` を設定した場合のみ                                                                                   | ◯              | ×                |
+| ツール                                                                                                                                     | 内容                                                                                                                                                                                | 会話・イベント | 作業エージェント |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------- |
+| `exec_command` / `write_stdin`                                                                                                             | シェルコマンドの実行。終わらないコマンドはセッションIDを返し、`write_stdin` で入力と出力の取得を続ける（PTYは使わない）。`run_in_background` で実行の終了を待たずに動かせる（§9.2） | ◯              | ◯                |
+| `stop_background`                                                                                                                          | バックグラウンド実行を止める（§9.2）                                                                                                                                                | ◯              | ◯                |
+| `read` / `edit` / `write`                                                                                                                  | ワークスペースのファイルの読み書き                                                                                                                                                  | ◯              | ◯                |
+| `view_image`                                                                                                                               | 画像ファイルを読み、必要なら縮小してエージェントへ渡す                                                                                                                              | ◯              | ◯                |
+| `web_run`                                                                                                                                  | Web検索・ページの閲覧（ChatGPTのバックエンドを使う）                                                                                                                                | ◯              | ◯                |
+| `image_gen`                                                                                                                                | 画像の生成・編集。結果を一時ディレクトリ（§9.1）へ保存する                                                                                                                          | ◯              | ◯                |
+| `read_message_history` / `list_channels` / `get_user_detail` / `list_guild_emojis` / `get_guild_emoji`                                     | Discordの読み取り                                                                                                                                                                   | ◯              | ◯                |
+| `send_message` / `reply_message` / `edit_message` / `delete_message` / `add_reaction` / `remove_reaction` / `start_typing` / `stop_typing` | Discordへの書き込み                                                                                                                                                                 | ◯              | ×                |
+| `open_conversation`                                                                                                                        | 指定スコープへ背景情報を渡して会話を委譲                                                                                                                                            | ◯              | ×                |
+| `task_create` / `task_message` / `task_cancel`                                                                                             | バックグラウンドタスクの依頼・追加指示・取消（§20.2）                                                                                                                               | ◯              | ×                |
+| `task_report`                                                                                                                              | 作業エージェントからの報告（§20.3）                                                                                                                                                 | ×              | ◯                |
+| `http_respond`                                                                                                                             | HTTPの完了待ちリクエストへの応答（§10.1）                                                                                                                                           | ◯              | ×                |
+| `wait`                                                                                                                                     | 指定秒数の待機（§10.2）                                                                                                                                                             | ◯              | ◯                |
+| `ha_list_entities` / `ha_get_state` / `ha_list_services` / `ha_call_service`                                                               | Home Assistantの状態の取得と操作（§22.1）。HAの接続を設定した場合のみ                                                                                                               | ◯              | ◯                |
+| `assist_respond`                                                                                                                           | Assistへの返答（§22.4）                                                                                                                                                             | ◯              | ×                |
+| `voice_join` / `voice_leave` / `voice_report`                                                                                              | ボイスチャンネルへの参加・退出、音声モードの依頼の結果の報告（§24）。`[voice]` を設定した場合のみ                                                                                   | ◯              | ×                |
 
 - シェルツールの子プロセスには `DISCORD_BOT_TOKEN`・`OPENAI_API_KEY`・`TYPESAFE_API_KEY` を渡さない（`HOME_ASSISTANT_TOKEN` は渡す）。
 - Discordへの送信・返信では、文字数上限やファイルの存在・読み取り可否を事前に検証する。失敗はツールの失敗として返し、自動分割や平文変換は行わない。
+- `edit_message`（本文だけを置き換え、添付はそのまま残す）と `delete_message` は、Luna自身の投稿にだけ使える。他人の投稿を指定するとツールの失敗を返す。
 - `start_typing` で始めたタイピング表示は、`stop_typing` または実行の完了で止まる。
 
 ### 9.1 一時ディレクトリ

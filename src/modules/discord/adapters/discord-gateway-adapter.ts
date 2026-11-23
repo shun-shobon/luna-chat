@@ -1,14 +1,19 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 
-import type { DiscordGatewayPort } from "../ports/discord-gateway-port";
-import { toDiscordGatewayMessage, toDiscordGatewayTyping } from "./discord-message-adapter";
+import type { DiscordGatewayEventName, DiscordGatewayPort } from "../ports/discord-gateway-port";
+import {
+	toDiscordGatewayMessage,
+	toDiscordGatewayMessageDelete,
+	toDiscordGatewayMessageEdit,
+	toDiscordGatewayReaction,
+	toDiscordGatewayTyping,
+} from "./discord-message-adapter";
 
-type DiscordGatewayEvent = "messageCreate" | "typingStart";
-type DiscordGatewayListener = (payload: unknown) => void;
+type DiscordGatewayListener = (...payload: unknown[]) => void;
 
 export type DiscordGatewayEventClient = Readonly<{
-	on(event: DiscordGatewayEvent, listener: DiscordGatewayListener): unknown;
-	off(event: DiscordGatewayEvent, listener: DiscordGatewayListener): unknown;
+	on(event: DiscordGatewayEventName, listener: DiscordGatewayListener): unknown;
+	off(event: DiscordGatewayEventName, listener: DiscordGatewayListener): unknown;
 }>;
 
 export function createDiscordGatewayClient(options: Readonly<{ voice: boolean }>): Client {
@@ -16,47 +21,88 @@ export function createDiscordGatewayClient(options: Readonly<{ voice: boolean }>
 		intents: [
 			GatewayIntentBits.Guilds,
 			GatewayIntentBits.GuildMessages,
+			GatewayIntentBits.GuildMessageReactions,
 			GatewayIntentBits.GuildMessageTyping,
 			GatewayIntentBits.DirectMessages,
+			GatewayIntentBits.DirectMessageReactions,
 			GatewayIntentBits.DirectMessageTyping,
 			GatewayIntentBits.MessageContent,
 			...(options.voice ? [GatewayIntentBits.GuildVoiceStates] : []),
 		],
-		partials: [Partials.Channel],
+		// 初回コンテキストの過去ログはキャッシュしないため、Message と Reaction の partial がないとその編集・削除・リアクションが届かない。
+		partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 	});
 }
 
 export class DiscordGatewayAdapter {
-	readonly #messageListener: DiscordGatewayListener;
-	readonly #typingListener: DiscordGatewayListener;
+	readonly #listeners: ReadonlyMap<DiscordGatewayEventName, DiscordGatewayListener>;
 
 	constructor(
 		private readonly client: DiscordGatewayEventClient,
 		private readonly port: DiscordGatewayPort,
 	) {
-		this.#messageListener = (message) => {
-			this.#dispatch("messageCreate", () => {
-				this.port.onMessage(toDiscordGatewayMessage(message));
-			});
-		};
-		this.#typingListener = (typing) => {
-			this.#dispatch("typingStart", () => {
-				this.port.onTyping(toDiscordGatewayTyping(typing));
-			});
-		};
+		this.#listeners = new Map<DiscordGatewayEventName, DiscordGatewayListener>([
+			[
+				"messageCreate",
+				(message) => {
+					this.#dispatch("messageCreate", () => {
+						this.port.onMessage(toDiscordGatewayMessage(message));
+					});
+				},
+			],
+			[
+				"messageUpdate",
+				(oldMessage, newMessage) => {
+					this.#dispatch("messageUpdate", () => {
+						const edit = toDiscordGatewayMessageEdit(oldMessage, newMessage);
+						if (edit != null) this.port.onMessageEdit(edit);
+					});
+				},
+			],
+			[
+				"messageDelete",
+				(message) => {
+					this.#dispatch("messageDelete", () => {
+						this.port.onMessageDelete(toDiscordGatewayMessageDelete(message));
+					});
+				},
+			],
+			[
+				"messageReactionAdd",
+				(reaction, user) => {
+					this.#dispatch("messageReactionAdd", () => {
+						this.port.onReaction(toDiscordGatewayReaction("added", reaction, user));
+					});
+				},
+			],
+			[
+				"messageReactionRemove",
+				(reaction, user) => {
+					this.#dispatch("messageReactionRemove", () => {
+						this.port.onReaction(toDiscordGatewayReaction("removed", reaction, user));
+					});
+				},
+			],
+			[
+				"typingStart",
+				(typing) => {
+					this.#dispatch("typingStart", () => {
+						this.port.onTyping(toDiscordGatewayTyping(typing));
+					});
+				},
+			],
+		]);
 	}
 
 	start(): void {
-		this.client.on("messageCreate", this.#messageListener);
-		this.client.on("typingStart", this.#typingListener);
+		for (const [event, listener] of this.#listeners) this.client.on(event, listener);
 	}
 
 	stop(): void {
-		this.client.off("messageCreate", this.#messageListener);
-		this.client.off("typingStart", this.#typingListener);
+		for (const [event, listener] of this.#listeners) this.client.off(event, listener);
 	}
 
-	#dispatch(event: DiscordGatewayEvent, operation: () => void): void {
+	#dispatch(event: DiscordGatewayEventName, operation: () => void): void {
 		try {
 			operation();
 		} catch (error: unknown) {

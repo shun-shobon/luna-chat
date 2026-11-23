@@ -122,7 +122,10 @@ describe("DiscordConversationDelegation", () => {
 	});
 });
 
-function client(channel: Record<string, unknown>, sendable = true): DiscordActionClient {
+function client(
+	channel: Record<string, unknown>,
+	sendable = true,
+): Pick<DiscordActionClient, "channels" | "users"> {
 	return {
 		channels: {
 			fetch: vi.fn(async () => ({
@@ -144,7 +147,7 @@ function dmChannel(id: string): SendableChannel {
 }
 
 function createDelegation(
-	discord: DiscordActionClient,
+	discord: Pick<DiscordActionClient, "channels" | "users">,
 	overrides: Partial<{
 		accept(input: AcceptedConversationEvent): boolean;
 		allowDm: boolean;

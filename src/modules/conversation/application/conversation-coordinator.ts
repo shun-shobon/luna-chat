@@ -63,6 +63,16 @@ export class ConversationCoordinator {
 		return true;
 	}
 
+	acceptFollowUp(input: AcceptedConversationEvent, targetId: string): void {
+		if (!this.#accepting) return;
+		this.#actors.get(input.session.key)?.acceptFollowUp(input.event, targetId);
+	}
+
+	remember(sessionKey: string, id: string): void {
+		if (!this.#accepting) return;
+		this.#actors.get(sessionKey)?.remember(id);
+	}
+
 	configure(session: ConversationSession, settings: ModelSelection): boolean {
 		if (!this.#accepting) return false;
 		return this.#actorFor(session).configure(settings);
@@ -113,6 +123,8 @@ type Command =
 	| Readonly<{ kind: "configure"; settings: ModelSelection }>
 	| Readonly<{ kind: "end" }>
 	| Readonly<{ kind: "accept"; event: LunaEvent }>
+	| Readonly<{ kind: "accept_follow_up"; event: LunaEvent; targetId: string }>
+	| Readonly<{ kind: "remember"; id: string }>
 	| Readonly<{ kind: "typing"; userId: string }>
 	| Readonly<{ kind: "typing_idle"; userId: string; token: number }>
 	| Readonly<{ kind: "debounce"; token: number }>
@@ -137,6 +149,7 @@ class ConversationActor {
 	#mailbox = Promise.resolve();
 	#openingBatch: LunaEvent[] = [];
 	#queue: LunaEvent[] = [];
+	#knownIds = new Set<string>();
 	#opened: OpenedAgentSession | undefined;
 	#purpose: ConversationRunPurpose | undefined;
 	#debounceReady = false;
@@ -195,6 +208,14 @@ class ConversationActor {
 	accept(event: LunaEvent): void {
 		this.#sessionStarted = true;
 		this.#post({ kind: "accept", event });
+	}
+
+	acceptFollowUp(event: LunaEvent, targetId: string): void {
+		this.#post({ kind: "accept_follow_up", event, targetId });
+	}
+
+	remember(id: string): void {
+		this.#post({ kind: "remember", id });
 	}
 
 	configure(settings: ModelSelection): boolean {
@@ -276,7 +297,22 @@ class ConversationActor {
 				}
 				return;
 			case "accept":
+				this.#knownIds.add(command.event.id);
 				this.#handleAccept(command.event);
+				return;
+			case "accept_follow_up":
+				// 終了処理に入ったセッションへ渡すと、次に開くセッションが知らないメッセージの話になる。
+				if (
+					this.#knownIds.has(command.targetId) &&
+					!this.#endRequested &&
+					this.#purpose !== "session_memory" &&
+					this.#phase !== "closing"
+				) {
+					this.#handleAccept(command.event);
+				}
+				return;
+			case "remember":
+				this.#knownIds.add(command.id);
 				return;
 			case "typing":
 				this.#handleTyping(command.userId);
@@ -315,6 +351,7 @@ class ConversationActor {
 			case "session_ready":
 				this.#openingBatch = [];
 				this.#opened = command.opened;
+				for (const event of command.history) this.#knownIds.add(event.id);
 				this.#logger.info("conversation.session_opened", {
 					eventCount: command.batch.length,
 					historyCount: command.history.length,
@@ -594,6 +631,8 @@ class ConversationActor {
 	}
 
 	#resetSession(): void {
+		// 閉じる間に届いた入力は次に開くセッションへ渡るため、そのIDだけを引き継ぐ。
+		this.#knownIds = new Set(this.#queue.map((event) => event.id));
 		this.#opened = undefined;
 		this.#purpose = undefined;
 		this.#modelSettings = undefined;

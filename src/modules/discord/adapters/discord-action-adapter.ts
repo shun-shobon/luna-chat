@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 
 import { AttachmentBuilder } from "discord.js";
-import type { MessageCreateOptions } from "discord.js";
+import type { MessageCreateOptions, MessageEditOptions } from "discord.js";
 
 import type { TypingLeaseRegistry } from "../application/typing-lease-registry";
 import type {
@@ -21,7 +21,10 @@ export type SendableChannel = Readonly<{
 }>;
 
 type MessageHandle = Readonly<{
+	author: Readonly<{ id: string }>;
 	reply(options: MessageCreateOptions): Promise<SentMessage>;
+	edit(options: MessageEditOptions): Promise<unknown>;
+	delete(): Promise<unknown>;
 	react(emoji: string): Promise<unknown>;
 	reactions: Readonly<{
 		resolve(emoji: string): Readonly<{ users: Readonly<{ remove(): Promise<unknown> }> }> | null;
@@ -39,6 +42,7 @@ type FetchedChannel = Readonly<{
 }>;
 
 export type DiscordActionClient = Readonly<{
+	user: Readonly<{ id: string }> | null;
 	channels: Readonly<{ fetch(channelId: string): Promise<FetchedChannel | null> }>;
 	users: Readonly<{ createDM(userId: string): Promise<SendableChannel> }>;
 }>;
@@ -61,6 +65,16 @@ export class DiscordActionAdapter implements DiscordActionPort {
 				const message = await this.#fetchMessage(action.channelId, action.messageId);
 				const sent = await message.reply(await this.#messageOptions(action.content, action.files));
 				return success(action.kind, { channelId: action.channelId, messageId: sent.id });
+			}
+			case "edit_message": {
+				const message = await this.#fetchOwnMessage(action.channelId, action.messageId);
+				await message.edit({ content: action.content });
+				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
+			}
+			case "delete_message": {
+				const message = await this.#fetchOwnMessage(action.channelId, action.messageId);
+				await message.delete();
+				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
 			}
 			case "add_reaction": {
 				const message = await this.#fetchMessage(action.channelId, action.messageId);
@@ -113,6 +127,15 @@ export class DiscordActionAdapter implements DiscordActionPort {
 			throw new Error(`Discord channel does not contain messages: ${channelId}`);
 		}
 		return await channel.messages.fetch(messageId);
+	}
+
+	// 権限があれば他人のメッセージも削除できてしまうため、Luna自身の投稿に限る。
+	async #fetchOwnMessage(channelId: string, messageId: string): Promise<MessageHandle> {
+		const message = await this.#fetchMessage(channelId, messageId);
+		if (message.author.id !== this.client.user?.id) {
+			throw new Error(`Discord message is not Luna's own: ${messageId}`);
+		}
+		return message;
 	}
 
 	async #messageOptions(

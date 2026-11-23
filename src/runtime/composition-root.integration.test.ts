@@ -128,7 +128,7 @@ describe("composition root integration", () => {
 		const application = await startLunaApplication({ templatesDir });
 
 		expect(fakes.client.login).toHaveBeenCalledWith("discord-token");
-		expect(fakes.client.on).toHaveBeenCalledTimes(3);
+		expect(fakes.client.on).toHaveBeenCalledTimes(7);
 		expect(fakes.client.application.commands.create).toHaveBeenCalledOnce();
 		expect(fakes.recurringCrons).toEqual(["0 4 * * *"]);
 		const toolNames = createToolSet.mock.results.map((result) =>
@@ -157,7 +157,7 @@ describe("composition root integration", () => {
 
 		await application.shutdown();
 
-		expect(fakes.client.off).toHaveBeenCalledTimes(3);
+		expect(fakes.client.off).toHaveBeenCalledTimes(7);
 		expect(fakes.client.destroy).toHaveBeenCalledOnce();
 	});
 

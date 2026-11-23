@@ -5,6 +5,8 @@ import type { ToolExecution } from "../../tool/domain/tool";
 import { defineTool } from "../../tool/ports/tool-provider";
 import type { ToolDefinition, ToolProvider } from "../../tool/ports/tool-provider";
 import {
+	deleteMessageInputSchema,
+	editMessageInputSchema,
 	reactionInputSchema,
 	replyMessageInputSchema,
 	sendMessageInputSchema,
@@ -147,6 +149,23 @@ function writeDefinitions(actions: DiscordActionPort): readonly ToolDefinition[]
 				"Reply to a Discord message. content is at most 2000 characters; files are absolute paths. A reply needs content or files.",
 			inputSchema: replyMessageInputSchema,
 			parseInput: (input): DiscordAction => ({ kind: "reply_message", ...input }),
+			execute,
+			describeTarget: describeAction,
+		}),
+		defineTool({
+			name: "edit_message",
+			description:
+				"Replace the content of a Discord message Luna posted. content is at most 2000 characters; attachments stay as they are.",
+			inputSchema: editMessageInputSchema,
+			parseInput: (input): DiscordAction => ({ kind: "edit_message", ...input }),
+			execute,
+			describeTarget: describeAction,
+		}),
+		defineTool({
+			name: "delete_message",
+			description: "Delete a Discord message Luna posted.",
+			inputSchema: deleteMessageInputSchema,
+			parseInput: (input): DiscordAction => ({ kind: "delete_message", ...input }),
 			execute,
 			describeTarget: describeAction,
 		}),

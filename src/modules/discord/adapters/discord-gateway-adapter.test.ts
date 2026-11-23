@@ -1,21 +1,16 @@
 import { ChannelType } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-	DiscordGatewayMessage,
-	DiscordGatewayPort,
-	DiscordGatewayTyping,
-} from "../ports/discord-gateway-port";
+import type { DiscordGatewayEventName, DiscordGatewayPort } from "../ports/discord-gateway-port";
 import { DiscordGatewayAdapter } from "./discord-gateway-adapter";
 import type { DiscordGatewayEventClient } from "./discord-gateway-adapter";
 
 describe("DiscordGatewayAdapter", () => {
-	it("messageCreateとtypingStartだけを購読し、正規化済みeventをportへ渡す", async () => {
+	it("messageCreateとtypingStartを正規化済みeventとしてportへ渡す", async () => {
 		const client = new FakeGatewayClient();
-		const onMessage = vi.fn((_event: DiscordGatewayMessage) => undefined);
-		const onTyping = vi.fn((_event: DiscordGatewayTyping) => undefined);
-		const onError = vi.fn<DiscordGatewayPort["onError"]>();
-		const adapter = new DiscordGatewayAdapter(client, { onMessage, onTyping, onError });
+		const port = createPort();
+		const { onMessage, onTyping } = port;
+		const adapter = new DiscordGatewayAdapter(client, port);
 
 		adapter.start();
 		client.emit("messageCreate", createMessage());
@@ -43,37 +38,146 @@ describe("DiscordGatewayAdapter", () => {
 
 	it("変換失敗とport失敗を明示的にonErrorへ渡す", () => {
 		const client = new FakeGatewayClient();
-		const onError = vi.fn<DiscordGatewayPort["onError"]>();
-		const adapter = new DiscordGatewayAdapter(client, {
-			onMessage: vi.fn(() => {
-				throw new Error("port failed");
-			}),
-			onTyping: vi.fn(),
-			onError,
+		const port = createPort();
+		port.onMessage.mockImplementation(() => {
+			throw new Error("port failed");
 		});
+		const { onError } = port;
+		const adapter = new DiscordGatewayAdapter(client, port);
 		adapter.start();
 
 		client.emit("messageCreate", createMessage());
+		client.emit("messageUpdate", {}, {});
+		client.emit("messageDelete", {});
+		client.emit("messageReactionAdd", {}, createUser());
+		client.emit("messageReactionRemove", {}, createUser());
 		client.emit("typingStart", {});
-		expect(onError.mock.calls.map((call) => call[1])).toEqual(["messageCreate", "typingStart"]);
+		expect(onError.mock.calls.map((call) => call[1])).toEqual([
+			"messageCreate",
+			"messageUpdate",
+			"messageDelete",
+			"messageReactionAdd",
+			"messageReactionRemove",
+			"typingStart",
+		]);
+	});
+
+	it("編集時刻が変わったmessageUpdateだけを編集として渡す", () => {
+		const client = new FakeGatewayClient();
+		const port = createPort();
+		new DiscordGatewayAdapter(client, port).start();
+		const editedAt = Date.parse("2026-07-23T01:05:00.000Z");
+
+		client.emit(
+			"messageUpdate",
+			{ editedTimestamp: null },
+			createMessage({ editedTimestamp: null }),
+		);
+		client.emit(
+			"messageUpdate",
+			{ editedTimestamp: editedAt },
+			createMessage({ editedTimestamp: editedAt }),
+		);
+		client.emit(
+			"messageUpdate",
+			{ editedTimestamp: null },
+			createMessage({ content: "fixed", editedTimestamp: editedAt }),
+		);
+
+		expect(port.onMessageEdit).toHaveBeenCalledOnce();
+		expect(port.onMessageEdit).toHaveBeenCalledWith({
+			editedAt: "2026-07-23T01:05:00.000Z",
+			message: expect.objectContaining({ id: "100", content: "fixed" }),
+			scope: { kind: "guild_channel", guildId: "200", channelId: "300" },
+		});
+	});
+
+	it("キャッシュにないmessageの削除は投稿者を不明として渡す", () => {
+		const client = new FakeGatewayClient();
+		const port = createPort();
+		new DiscordGatewayAdapter(client, port).start();
+
+		client.emit("messageDelete", {
+			id: "100",
+			guildId: "200",
+			channel: createChannel(),
+			author: null,
+		});
+		client.emit("messageDelete", createMessage());
+
+		expect(port.onMessageDelete.mock.calls).toEqual([
+			[
+				{
+					authorId: null,
+					messageId: "100",
+					scope: { kind: "guild_channel", guildId: "200", channelId: "300" },
+				},
+			],
+			[
+				{
+					authorId: "400",
+					messageId: "100",
+					scope: { kind: "guild_channel", guildId: "200", channelId: "300" },
+				},
+			],
+		]);
+	});
+
+	it.each([
+		["messageReactionAdd", "added"],
+		["messageReactionRemove", "removed"],
+	] as const)("%sを%sのリアクションとして渡す", (event, action) => {
+		const client = new FakeGatewayClient();
+		const port = createPort();
+		new DiscordGatewayAdapter(client, port).start();
+
+		client.emit(
+			event,
+			{
+				emoji: { id: "500", name: "luna", animated: false },
+				message: { id: "100", guildId: "200", channel: createChannel() },
+			},
+			createUser({ id: "401" }),
+		);
+
+		expect(port.onReaction).toHaveBeenCalledWith({
+			action,
+			emoji: { kind: "custom", id: "500", name: "luna", animated: false },
+			messageId: "100",
+			scope: { kind: "guild_channel", guildId: "200", channelId: "300" },
+			user: { id: "401", username: "shun", displayName: "Shun" },
+		});
 	});
 });
 
-class FakeGatewayClient implements DiscordGatewayEventClient {
-	readonly listeners = new Map<string, Set<(payload: unknown) => void>>();
+function createPort() {
+	return {
+		onMessage: vi.fn<DiscordGatewayPort["onMessage"]>(),
+		onMessageEdit: vi.fn<DiscordGatewayPort["onMessageEdit"]>(),
+		onMessageDelete: vi.fn<DiscordGatewayPort["onMessageDelete"]>(),
+		onReaction: vi.fn<DiscordGatewayPort["onReaction"]>(),
+		onTyping: vi.fn<DiscordGatewayPort["onTyping"]>(),
+		onError: vi.fn<DiscordGatewayPort["onError"]>(),
+	};
+}
 
-	on(event: "messageCreate" | "typingStart", listener: (payload: unknown) => void): void {
+type Listener = (...payload: unknown[]) => void;
+
+class FakeGatewayClient implements DiscordGatewayEventClient {
+	readonly listeners = new Map<string, Set<Listener>>();
+
+	on(event: DiscordGatewayEventName, listener: Listener): void {
 		const listeners = this.listeners.get(event) ?? new Set();
 		listeners.add(listener);
 		this.listeners.set(event, listeners);
 	}
 
-	off(event: "messageCreate" | "typingStart", listener: (payload: unknown) => void): void {
+	off(event: DiscordGatewayEventName, listener: Listener): void {
 		this.listeners.get(event)?.delete(listener);
 	}
 
-	emit(event: "messageCreate" | "typingStart", payload: unknown): void {
-		for (const listener of this.listeners.get(event) ?? []) listener(payload);
+	emit(event: DiscordGatewayEventName, ...payload: unknown[]): void {
+		for (const listener of this.listeners.get(event) ?? []) listener(...payload);
 	}
 
 	listenerCount(): number {
@@ -84,12 +188,13 @@ class FakeGatewayClient implements DiscordGatewayEventClient {
 	}
 }
 
-function createMessage() {
+function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
 	return {
 		id: "100",
 		createdAt: new Date("2026-07-23T01:00:00.000Z"),
 		system: false,
 		guild: { id: "200", name: "Luna Lab" },
+		guildId: "200",
 		channel: createChannel(),
 		author: createUser(),
 		member: { displayName: "Shun" },
@@ -105,6 +210,7 @@ function createMessage() {
 			everyone: false,
 		},
 		reference: null,
+		...overrides,
 	};
 }
 

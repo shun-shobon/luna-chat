@@ -70,7 +70,7 @@ src/
 | モジュール       | 主な責務・所有する概念                                                                       | 公開インターフェース（ポート）                                                                                 | 主なアダプター                                                                                 |
 | ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `discord`        | メッセージ正規化、スコープ判定、Discordツール、タイピング管理                                | イベント変換、ツールプロバイダ、Discord API呼び出し、Gateway購読                                               | discord.js Gateway/REST                                                                        |
-| `conversation`   | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定                               | `accept`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`                                           | Discordコントローラー、履歴取得                                                                |
+| `conversation`   | セッション状態、入力キュー、アイドル監視、記憶保存、モデル設定                               | `accept`、`acceptFollowUp`、`remember`、`configure`、`endSession`、`typing`、`stopIntake`、`drain`             | Discordコントローラー、履歴取得                                                                |
 | `agent`          | エージェントのセッション、再試行、圧縮、記録、汎用ツール、認証と使用枠                       | `open`（セッションの `run`・`steer`・`abort`・`setModel`・`close`）、`listModels`、`status`、`ModelStreamPort` | pi-agent-core、pi-ai、pi-coding-agent、ファイル                                                |
 | `event`          | 共通イベント（`LunaEvent`）と入力メッセージへの変換、ワンショット実行                        | `execute`                                                                                                      | なし（EventExecutorがセッションを開いて実行する）                                              |
 | `http`           | HTTPイベントの検証、受付、完了待ち応答                                                       | `submit`、`stopIntake`、`drain`                                                                                | Hono、`http_respond` ツール                                                                    |
@@ -162,6 +162,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 - `RUNNING` の中の再試行待ちと圧縮は、エージェントのセッションの `status()` から読み、ダッシュボードには `retry_wait`・`compacting` として出す。
 - `IDLE` に入る時、バックグラウンド実行が残っていればアイドルタイマーの代わりに `waitForBackground()` を待つ。通知が届けば同じセッションで `RUNNING` に戻り、通知なしにすべて止まっていればアイドルタイマーを始める。待っている間に入力が届いた場合は、トークンを進めて待ちの結果を捨てる。
 - 記憶保存（`session_end`）を始める前に `stopBackground()` を呼ぶ。
+- アクターはセッションが知っているIDの集合を持つ。受け付けた入力と初回コンテキストのイベントID、`remember` で渡されたIDを加え、セッションを閉じる時にキューに残った入力のIDだけにする。`acceptFollowUp(input, targetId)` は対象IDを知っていて終了処理に入っていない時だけ、`accept` と同じ経路で入力を扱う。アクターがなければ何もせず、セッションを開かない。
 
 ## 7. 実行とツールのオーケストレーション
 
@@ -338,9 +339,10 @@ ha-luna ──POST /home-assistant/conversation──► AssistService ──acc
 
 ## 9.2 Discord アダプター
 
-- **Gateway**: `messageCreate` やタイピングイベントを購読し、正規化されたドメインイベントへ変換する。
+- **Gateway**: `messageCreate`・`messageUpdate`・`messageDelete`・`messageReactionAdd`・`messageReactionRemove`・`typingStart` を購読し、正規化されたドメインイベントへ変換する。初回コンテキストの過去ログはキャッシュせずに取得するため、`Partials.Message` と `Partials.Reaction` を有効にし、キャッシュにないメッセージの変更も受け取る。
+- **既知のメッセージへの変更**: `DiscordConversationController` は、Luna自身の投稿を `remember` で、他の人による編集・削除・リアクションを対象メッセージIDつきの `acceptFollowUp` で `ConversationCoordinator` へ渡す。どのメッセージを知っているかの判定はコーディネーターに任せる。
 - **スラッシュコマンド**: `/luna` コマンドを受け付け、セッション設定やチャンネルの許可リスト更新を処理する。
-- **Discordツール**: 読み取り（履歴、チャンネル一覧、ユーザー、絵文字）と書き込み（送信・返信、リアクション、タイピング）と会話委譲を1つのツールプロバイダにまとめる。作業エージェントには読み取りだけのプロバイダを渡す。
+- **Discordツール**: 読み取り（履歴、チャンネル一覧、ユーザー、絵文字）と書き込み（送信・返信・編集・削除、リアクション、タイピング）と会話委譲を1つのツールプロバイダにまとめる。作業エージェントには読み取りだけのプロバイダを渡す。
 - **会話委譲**: バックグラウンドの実行（ハートビート等）がDiscord上で対話を始めたい場合、自身で直接投稿せず、対象スコープの会話セッションへイベントを委譲して処理を委ねる。
 - **タイピング管理**: `start_typing` で始めたタイピング表示を維持し、`stop_typing` または実行の完了（`release`）で確実に解放する。
 

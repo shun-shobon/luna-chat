@@ -12,6 +12,7 @@ import type {
 import { createFakeBackground } from "../../agent/testing/fake-background";
 import type { FakeBackground } from "../../agent/testing/fake-background";
 import type { LunaEvent } from "../../event/domain/luna-event";
+import { toEventMessage } from "../../event/ports/event-message";
 import type { LogEntry, LoggerPort } from "../../observability/ports/logger-port";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
@@ -24,6 +25,11 @@ const session: ConversationSession = {
 	key: "discord:guild_channel:300:200",
 	source: "discord/main",
 	context: { kind: "guild_channel", guildId: "300", channelId: "200" },
+};
+const otherSession: ConversationSession = {
+	key: "discord:guild_channel:300:201",
+	source: "discord/main",
+	context: { kind: "guild_channel", guildId: "300", channelId: "201" },
 };
 const COMPLETED: AgentRunResult = { status: "completed", finalText: null };
 const SOL: ModelSelection = { provider: "openai-codex", model: "gpt-6-sol", thinking: "medium" };
@@ -82,6 +88,64 @@ describe("ConversationCoordinator", () => {
 			await harness.advance(0);
 
 			expect(harness.openSession).toHaveBeenCalledOnce();
+		});
+
+		it("受け付けた入力・初回コンテキスト・記憶したIDに関する入力だけを、新着と同じく実行へ渡す", async () => {
+			const fetchBefore = vi.fn<ConversationHistoryPort["fetchBefore"]>(async () => [
+				event("90", "2026-07-22T23:59:00.000Z"),
+			]);
+			const harness = createHarness({ history: { fetchBefore } });
+			await harness.startFirstRun("100");
+			harness.coordinator.remember(session.key, "110");
+			harness.finishRun(0);
+			await harness.flush();
+
+			for (const [id, targetId] of [
+				["f-1", "100"],
+				["f-2", "90"],
+				["f-3", "110"],
+				["f-4", "999"],
+			] as const) {
+				harness.coordinator.acceptFollowUp({ session, event: followUp(id) }, targetId);
+			}
+			harness.coordinator.acceptFollowUp({ session: otherSession, event: followUp("f-5") }, "100");
+			harness.coordinator.remember(otherSession.key, "100");
+			await harness.advance(100);
+
+			expect(harness.runs[1]?.messages).toEqual([
+				toEventMessage(followUp("f-1")),
+				toEventMessage(followUp("f-2")),
+				toEventMessage(followUp("f-3")),
+				{ kind: "task_board", text: JSON.stringify([{ id: "task-1", status: "running" }]) },
+			]);
+			expect(harness.coordinator.hasSession(otherSession.key)).toBe(false);
+			expect(harness.openSession).toHaveBeenCalledOnce();
+		});
+
+		it("終了処理中のセッションには関連する入力を渡さず、閉じたセッションのIDは次のセッションへ引き継がない", async () => {
+			const harness = createHarness({ sessionMemoryEnabled: true });
+			await harness.startFirstRun("100");
+			harness.finishRun(0);
+			await harness.flush();
+			await harness.advance(1_000);
+
+			harness.accept("101", "2026-07-23T00:00:01.000Z");
+			harness.coordinator.acceptFollowUp({ session, event: followUp("f-1") }, "100");
+			harness.finishRun(1);
+			await harness.flush();
+			expect(harness.runs[2]?.messages).toEqual([
+				eventMessage(event("101", "2026-07-23T00:00:01.000Z")),
+				{ kind: "task_board", text: JSON.stringify([{ id: "task-1", status: "running" }]) },
+			]);
+			harness.finishRun(2);
+			await harness.flush();
+
+			harness.coordinator.acceptFollowUp({ session, event: followUp("f-2") }, "100");
+			harness.coordinator.acceptFollowUp({ session, event: followUp("f-3") }, "101");
+			await harness.advance(100);
+
+			expect(harness.runs).toHaveLength(4);
+			expect(harness.runs[3]?.messages[0]).toEqual(toEventMessage(followUp("f-3")));
 		});
 
 		it("debounce後にhistoryとoccurredAt・id順のbatch、task一覧を新しいセッションへ渡す", async () => {
@@ -936,6 +1000,17 @@ function event(id: string, occurredAt: string): LunaEvent {
 		source: session.source,
 		subject: session.key,
 		occurredAt,
+		data: { value: id },
+	};
+}
+
+function followUp(id: string): LunaEvent {
+	return {
+		id,
+		type: "discord.reaction.added.v1",
+		source: session.source,
+		subject: session.key,
+		occurredAt: "2026-07-23T00:00:05.000Z",
 		data: { value: id },
 	};
 }

@@ -4,9 +4,15 @@ import { z } from "zod";
 import { conversationScopeSchema } from "../domain/conversation-scope";
 import type { ConversationScope } from "../domain/conversation-scope";
 import { discordIdSchema } from "../domain/discord-id";
-import { discordMessageSchema } from "../domain/discord-message";
-import type { DiscordMessage } from "../domain/discord-message";
-import type { DiscordGatewayMessage, DiscordGatewayTyping } from "../ports/discord-gateway-port";
+import { discordMessageSchema, discordReactionEmojiSchema } from "../domain/discord-message";
+import type { DiscordMessage, DiscordReactionEmoji } from "../domain/discord-message";
+import type {
+	DiscordGatewayMessage,
+	DiscordGatewayMessageDelete,
+	DiscordGatewayMessageEdit,
+	DiscordGatewayReaction,
+	DiscordGatewayTyping,
+} from "../ports/discord-gateway-port";
 
 // discord.js の Collection は Map を継承している。
 const collectionSchema = z.custom<ReadonlyMap<unknown, unknown>>((value) => value instanceof Map);
@@ -76,14 +82,35 @@ const stickerSchema = z.object({
 	format: z.union([z.number(), z.string()]),
 });
 
+const emojiSchema = z.object({
+	id: z.string().nullable(),
+	name: z.string().nullable(),
+	animated: z.boolean().nullable(),
+});
+
 const reactionSchema = z.object({
 	count: z.number(),
 	me: z.boolean(),
-	emoji: z.object({
-		id: z.string().nullable(),
-		name: z.string().nullable(),
-		animated: z.boolean().nullable(),
-	}),
+	emoji: emojiSchema,
+});
+
+// partial なメッセージ（キャッシュにないメッセージの削除やリアクション）は id・チャンネル・guildId しか持たない。
+const sdkPartialMessageSchema = z.object({
+	id: z.string(),
+	guildId: z.string().nullable(),
+	channel: channelSchema,
+});
+
+const sdkUpdatedMessageSchema = sdkMessageSchema.extend({
+	editedTimestamp: z.number().nullable(),
+});
+const sdkPreviousMessageSchema = z.object({ editedTimestamp: z.number().nullable() });
+const sdkDeletedMessageSchema = sdkPartialMessageSchema.extend({
+	author: z.object({ id: z.string() }).nullable(),
+});
+const sdkMessageReactionSchema = z.object({
+	emoji: emojiSchema,
+	message: sdkPartialMessageSchema,
 });
 
 const roleSchema = z.object({ id: z.string(), name: z.string().nullable() });
@@ -106,6 +133,52 @@ export function toDiscordGatewayMessage(message: unknown): DiscordGatewayMessage
 		lunaIsThreadMember: resolveLunaIsThreadMember(parsed.channel),
 		message: toDiscordMessageFromParsed(parsed),
 		scope: resolveScope({ channel: parsed.channel, guildId: parsed.guild?.id ?? null }),
+	};
+}
+
+// 埋め込みの展開やピン留めでも messageUpdate が届くため、編集時刻が変わった更新だけを編集とする。
+export function toDiscordGatewayMessageEdit(
+	oldMessage: unknown,
+	newMessage: unknown,
+): DiscordGatewayMessageEdit | null {
+	const previous = sdkPreviousMessageSchema.parse(oldMessage);
+	const parsed = sdkUpdatedMessageSchema.parse(newMessage);
+	if (parsed.editedTimestamp == null || parsed.editedTimestamp === previous.editedTimestamp) {
+		return null;
+	}
+	return {
+		editedAt: new Date(parsed.editedTimestamp).toISOString(),
+		message: toDiscordMessageFromParsed(parsed),
+		scope: resolveScope({ channel: parsed.channel, guildId: parsed.guild?.id ?? null }),
+	};
+}
+
+export function toDiscordGatewayMessageDelete(message: unknown): DiscordGatewayMessageDelete {
+	const parsed = sdkDeletedMessageSchema.parse(message);
+	return {
+		authorId: parsed.author == null ? null : discordIdSchema.parse(parsed.author.id),
+		messageId: discordIdSchema.parse(parsed.id),
+		scope: resolveScope({ channel: parsed.channel, guildId: parsed.guildId }),
+	};
+}
+
+export function toDiscordGatewayReaction(
+	action: DiscordGatewayReaction["action"],
+	reaction: unknown,
+	user: unknown,
+): DiscordGatewayReaction {
+	const parsed = sdkMessageReactionSchema.parse(reaction);
+	const parsedUser = userSchema.parse(user);
+	return {
+		action,
+		emoji: toReactionEmoji(parsed.emoji),
+		messageId: discordIdSchema.parse(parsed.message.id),
+		scope: resolveScope({ channel: parsed.message.channel, guildId: parsed.message.guildId }),
+		user: {
+			id: discordIdSchema.parse(parsedUser.id),
+			username: parsedUser.username,
+			displayName: parsedUser.globalName,
+		},
 	};
 }
 
@@ -232,24 +305,19 @@ function toReplyReference(message: z.infer<typeof sdkMessageSchema>): DiscordMes
 
 function toReaction(value: unknown): DiscordMessage["reactions"][number] {
 	const reaction = reactionSchema.parse(value);
-	if (reaction.emoji.id == null) {
-		return {
-			emoji: { kind: "unicode", value: z.string().min(1).parse(reaction.emoji.name) },
-			count: reaction.count,
-			me: reaction.me,
-		};
-	}
+	return { emoji: toReactionEmoji(reaction.emoji), count: reaction.count, me: reaction.me };
+}
 
-	return {
-		emoji: {
-			kind: "custom",
-			id: reaction.emoji.id,
-			name: reaction.emoji.name,
-			animated: reaction.emoji.animated ?? false,
-		},
-		count: reaction.count,
-		me: reaction.me,
-	};
+function toReactionEmoji(emoji: z.infer<typeof emojiSchema>): DiscordReactionEmoji {
+	if (emoji.id == null) {
+		return { kind: "unicode", value: z.string().min(1).parse(emoji.name) };
+	}
+	return discordReactionEmojiSchema.parse({
+		kind: "custom",
+		id: emoji.id,
+		name: emoji.name,
+		animated: emoji.animated ?? false,
+	});
 }
 
 function collectionValues(collection: ReadonlyMap<unknown, unknown>): unknown[] {

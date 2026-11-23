@@ -29,8 +29,10 @@ const messageLocationShape = {
 	messageId: discordIdSchema,
 };
 
+const contentSchema = z.string().min(1).max(2_000);
+
 const messageBodyShape = {
-	content: z.string().min(1).max(2_000).optional(),
+	content: contentSchema.optional(),
 	files: z.array(sendFileSchema).min(1).optional(),
 };
 
@@ -49,6 +51,11 @@ export const sendMessageInputSchema = z
 export const replyMessageInputSchema = z
 	.strictObject({ ...messageLocationShape, ...messageBodyShape })
 	.superRefine(requireMessageBody);
+export const editMessageInputSchema = z.strictObject({
+	...messageLocationShape,
+	content: contentSchema,
+});
+export const deleteMessageInputSchema = z.strictObject(messageLocationShape);
 export const reactionInputSchema = z.strictObject({
 	...messageLocationShape,
 	emoji: discordEmojiSchema,
@@ -61,6 +68,8 @@ export type DiscordEmoji = z.infer<typeof discordEmojiSchema>;
 export type DiscordAction =
 	| ({ kind: "send_message" } & z.infer<typeof sendMessageInputSchema>)
 	| ({ kind: "reply_message" } & z.infer<typeof replyMessageInputSchema>)
+	| ({ kind: "edit_message" } & z.infer<typeof editMessageInputSchema>)
+	| ({ kind: "delete_message" } & z.infer<typeof deleteMessageInputSchema>)
 	| ({ kind: "add_reaction" } & z.infer<typeof reactionInputSchema>)
 	| ({ kind: "remove_reaction" } & z.infer<typeof reactionInputSchema>)
 	| ({ kind: "start_typing" } & z.infer<typeof typingInputSchema>)
