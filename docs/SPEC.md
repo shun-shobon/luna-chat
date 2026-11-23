@@ -13,6 +13,7 @@
 | [dashboard.md](./dashboard.md)           | 閲覧専用のダッシュボード                                                        |
 | [home-assistant.md](./home-assistant.md) | Home Assistantのツール、状態変化をきっかけにした実行、Assist                    |
 | [voice.md](./voice.md)                   | ボイスチャンネル                                                                |
+| [minecraft.md](./minecraft.md)           | Minecraftのプレイ                                                               |
 
 デスクトップ（ルナ専用の画面）はLunaとは別に配備するもので、[deploy/desktop/README.md](../deploy/desktop/README.md) にある。
 
@@ -29,6 +30,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 - 現在の状態と直近の出来事を、閲覧専用のWebダッシュボードで示す。
 - Home Assistantの状態の取得と操作、状態変化をきっかけにした実行、Assistの会話エージェントとしての応答を行う。
 - Discordのボイスチャンネルで、聞き取った発話に文字または声で返事をする。
+- Minecraftのサーバーにプレイヤーとして入り、作業エージェントの計画と決定モデルの判断で遊ぶ（[minecraft.md](./minecraft.md)・未実装）。
 
 マルチテナント運用、Windows環境、ダッシュボード以外のWeb UI（操作を伴う画面を含む）、外部公開用CLI、HTTPヘルスチェックエンドポイント、Discord上からの過去セッション再開は対象外とする。
 
@@ -41,6 +43,8 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 ダッシュボードは閲覧専用で認証を行わない。会話本文、ツールの入力、タスクの指示と報告を表示するため、到達できる者はそれらを読める。既定では `127.0.0.1` にバインドし、`LUNA_DASHBOARD_HOST=0.0.0.0` を指定した場合は到達可能なネットワーク内の全員が閲覧できる。
 
 デスクトップを入れた場合、neko のパスワードを知る者は、ルナのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
+
+Minecraft（[minecraft.md](./minecraft.md)・未実装）では、設定したサーバーにオフラインモードで接続する。サーバーが送るワールドの内容（ブロック・エンティティ・アイテムの名前と位置、死亡のメッセージ）は観測としてエージェントに渡る。ゲーム内のチャットと看板の文字は渡さない。
 
 エージェントの実行環境には以下の権限が与えられる。
 
@@ -69,6 +73,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 - **セッション記憶保存**: アイドル終了を迎えた会話のエージェント自身が、要約や決定事項を `memory/YYYY-MM-DD.md` に追記する処理。
 - **バックグラウンドタスク**: 会話またはイベント実行（依頼元）が作業エージェントへ委任した作業（[tasks.md](./tasks.md)）。
 - **バックグラウンド実行**: `exec_command` の `run_in_background` で起動し、実行の終了を待たずに動き続けるシェルコマンド（[tools.md](./tools.md)）。
+- **続いている作業**: 実行が終わっても動き続け、出来事をセッションへ通知するもの。バックグラウンド実行と、Minecraftのプレイ（[minecraft.md](./minecraft.md)・未実装）がある。
 
 ## 入力の形式
 
@@ -95,6 +100,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 | `session_end`                                         | `{ date: string }`（ローカル日付）                                         | セッション記憶保存                                         |
 | `task_assignment` / `task_message` / `task_check`     | [tasks.md](./tasks.md) を参照                                              | 作業エージェント                                           |
 | `background_exit`                                     | `BackgroundExit`                                                           | バックグラウンド実行の終了                                 |
+| `minecraft_event`                                     | `MinecraftEvent`（[minecraft.md](./minecraft.md)）                         | Minecraftのプレイの出来事（未実装）                        |
 
 添付ファイルはURLやメタデータのみを渡し、ランタイム側でのファイル自動ダウンロードは行わない。
 
@@ -131,7 +137,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 
 ### `config.toml`
 
-`LUNA_HOME/config.toml` でシステム全体の動作パラメータを設定する。`[memory]` セクションのみが必須で、他は省略可能である。省略した項目は次の値になる。`[voice]` は [voice.md](./voice.md) にある。
+`LUNA_HOME/config.toml` でシステム全体の動作パラメータを設定する。`[memory]` セクションのみが必須で、他は省略可能である。省略した項目は次の値になる。`[voice]` は [voice.md](./voice.md)、`[minecraft]` は [minecraft.md](./minecraft.md) にある。
 
 ```toml
 [discord]
@@ -191,12 +197,18 @@ thinking = "low"
 model = "claude-code/claude-haiku-5-5"
 thinking = "off"
 
+[models.minecraft]
+model = "claude-code/claude-sonnet-5-5"
+thinking = "low"
+description = "Playing Minecraft as Luna: set goals for the in-game controller and replan on game events."
+
 [tasks]
 max_concurrent = 2
 ```
 
 - `[models.*]` の `model` は `provider/model` の形（例: `claude-code/claude-opus-5-5`。提供元は [agent.md](./agent.md)）とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。
 - `[models.worker]` は作業エージェントの選択肢で、`[models.worker.choices.<名前>]` に `model`・`thinking`・`description`（1〜500文字）を書き、`default` にその中の名前を1つ書く。名前は英小文字か数字で始まり、英小文字・数字・`_`・`-` からなる32文字以内とする。依頼元のエージェントには名前と `description` だけを見せるので、`description` にはどんな作業に向くかを書く。`[models.worker]` を書く場合、`default` と1つ以上の選択肢、選択肢のすべての項目を必須とし、`default` が選択肢にない設定は不正とする。
+- `[models.minecraft]` はMinecraft（[minecraft.md](./minecraft.md)・未実装）の計画役のモデルで、`[minecraft]` を書いた場合だけ書け、そのとき `model`・`thinking`・`description`（1〜500文字）をすべて必須とする（上の値は例で、既定値ではない）。`[minecraft]` があって `[models.minecraft]` がない設定、`[models.worker]` に `minecraft` という選択肢がある設定は不正とする。
 - `[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
 - `*_ms` のうちタイマーとして使う値（`transcript_retention_ms` 以外）は、Node.jsのタイマー上限である `2147483647` 以下でなければならない。
 
@@ -214,8 +226,8 @@ max_concurrent = 2
 | `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。                                                                                    |
 | `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://homeassistant.local:8123`）。`http` か `https`。`HOME_ASSISTANT_TOKEN` と組で指定する。 |
 | `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。`HOME_ASSISTANT_URL` と組で指定する。                                             |
-| `OPENAI_API_KEY`       | いいえ | なし         | OpenAI APIの鍵。`[voice].interrupt_model` が `openai/*` のとき必須。                                                    |
-| `TYPESAFE_API_KEY`     | いいえ | なし         | TypeSafeのAPIの鍵。`[voice].interrupt_model` が `typesafe/*` のとき必須。                                               |
+| `OPENAI_API_KEY`       | いいえ | なし         | OpenAI APIの鍵。`[voice].interrupt_model` か `[minecraft].decision_model` が `openai/*` のとき必須。                    |
+| `TYPESAFE_API_KEY`     | いいえ | なし         | TypeSafeのAPIの鍵。`[voice].interrupt_model` か `[minecraft].decision_model` が `typesafe/*` のとき必須。               |
 
 `DISCORD_BOT_TOKEN`・`OPENAI_API_KEY`・`TYPESAFE_API_KEY` は、シェルツールとスケジュールの `check` の子プロセスには渡さない。`HOME_ASSISTANT_TOKEN` は渡す。
 

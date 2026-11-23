@@ -25,7 +25,10 @@ task service（作業エージェント）────────────�
 
 ブラウザ ─► dashboard ─► 各モジュールの snapshot / 直近ログ（読み取りのみ）
 
-外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Claude Code CLI（子プロセス）とAnthropic API / Home Assistant（REST・WebSocket）/ TTSエンジン
+minecraft のツール（minecraft の作業エージェントのみ）─► minecraft ─► Mineflayer（worker thread）─► Minecraftサーバー
+                                                              └─► 決定モデル（pi-ai の classify）
+
+外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Claude Code CLI（子プロセス）とAnthropic API / Home Assistant（REST・WebSocket）/ TTSエンジン / Minecraftサーバー（未実装）
 ```
 
 - エージェントループとツールの実行は常にLunaのプロセス内で行う。`claude-code` だけは、モデルとの通信を Claude Code CLI の子プロセスに任せる（[agent.md](./agent.md)）。
@@ -53,6 +56,7 @@ src/
 │   ├── workspace/       # ファイル初期化, 設定読込, cron監視
 │   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
 │   ├── voice/           # ボイスチャンネルの参加, 聞き取り, 読み上げ
+│   ├── minecraft/       # Minecraftのプレイ, 反射, 1手の判断, ワールドの記憶（未実装）
 │   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
 ├── runtime/             # コンポジションルート, エントリポイント, 開発者指示
 └── shared/              # 機能に依存しない汎用関数・型
@@ -76,6 +80,7 @@ src/
 | `home-assistant` | HAのツール、WebSocketの接続、状態変化の絞り込みとcooldown、Assistの発話と応答待ち            | ツールプロバイダ、`StateChangeWatcher`（`start`・`stop`・`status`）、`AssistService`（`submit`・`stopIntake`） | fetch（REST）、Node.js標準の `WebSocket`、`home-assistant.toml`、Honoのルート                  |
 | `workspace`      | ディレクトリ初期化、設定ファイル（TOML）の読み書き・監視、ゴミ箱、skillの使用記録            | 初期化、プロンプト読み込み、スケジュール読み書き                                                               | ファイルシステム、`smol-toml`、Zod                                                             |
 | `voice`          | ボイスチャンネルの参加・紐づけ・モード、聞き取りとターン確定、表の返事と割り込み、裏への依頼 | ツールプロバイダ、`VoiceChannelService`（`isBound`・`onBatchSettled`・`stop`）                                 | `@discordjs/voice`、`opusscript`、`sherpa-onnx-node`、TTSエンジン（HTTP）、pi-ai の `classify` |
+| `minecraft`      | プレイの期間、観測、行動の候補、1手の判断、反射、出来事、ワールドの記憶（未実装）            | ツールプロバイダ、`MinecraftPlayService`（`snapshot`・`stop`）                                                 | Mineflayer（worker thread）、pi-ai の `classify`、JSONファイル                                 |
 | `dashboard`      | 各モジュールの状態の集約、閲覧用ページ                                                       | `snapshot`                                                                                                     | Hono（`/`、`/api/snapshot`）                                                                   |
 | `observability`  | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持                         | ロガーポート、直近ログの一覧                                                                                   | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ                                         |
 | `runtime`        | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                                     | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）                                  | シグナルハンドラー                                                                             |
@@ -95,7 +100,8 @@ automation   ──► event / workspace
 event        ──► tool / agent（型のみ）
 task         ──► tool / event（型のみ） / agent（型のみ）
 tool         ──► agent（型のみ）
-dashboard    ──► agent / automation / conversation / event / task / home-assistant / observability（型のみ）
+dashboard    ──► agent / automation / conversation / event / task / home-assistant / minecraft / observability（型のみ）
+minecraft    ──► tool / agent（型のみ）
 voice        ──► tool / agent（型のみ） / conversation（型のみ） / event（型のみ） / workspace（型のみ）
 all          ──► observability
 runtime      ──► 全モジュール (composition root)
@@ -160,7 +166,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 1. 環境変数の検証
 2. `LUNA_HOME` および初期ワークスペースファイルの作成・検証
 3. `config.toml` と `cron.toml` の読み込み
-4. ログ・Discordクライアント・RESTアダプターの初期化。`[voice]` があれば音声認識とVADのモデルを読み込む
+4. ログ・Discordクライアント・RESTアダプターの初期化。`[voice]` があれば音声認識とVADのモデルを読み込む。`[minecraft]` があれば決定モデルと鍵を確かめる（未実装）
 5. 資格情報ストアとモデルのカタログの準備、`[models]` の検証、エージェントのランタイムの作成、使用枠の取得の開始
 6. Discordへの接続ログイン
 7. 保存済みタスクの読み込み、未配送通知の再配送、待機タスクの実行開始（オートメーションのイベントがタスクを作成できるよう先に行う）
@@ -173,7 +179,7 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す。イベント実行のバックグラウンド実行を止め、ボイスチャンネルから出る
 3. 受信済みのキュー、実行中のスケジュールのcheck、および実行中の処理がすべて自然完了するのを待機
 4. 正常完了した会話セッションの記憶保存を実行
-5. 完了したセッションを閉じる（記録を確定し、汎用ツールのプロセスを終わらせる）
+5. 完了したセッションを閉じる（記録を確定し、汎用ツールのプロセスを終わらせる。Minecraftのプレイはここで切断する（未実装））
 6. 待機中のHTTPリクエストとAssistのリクエストの完了を確認し、HTTPサーバー、ダッシュボード、タイピングリース、ファイル監視、使用枠の取得、HAのWebSocket接続、Discord接続を停止
 7. ログをフラッシュして終了
 
