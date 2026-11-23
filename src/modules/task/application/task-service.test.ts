@@ -12,7 +12,7 @@ import type { LunaEvent } from "../../event/domain/luna-event";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { OpenAgentSession } from "../../tool/ports/agent-session-factory-port";
-import type { Task, TaskOrigin, TaskReportKind } from "../domain/task";
+import type { Task, TaskOrigin, TaskReportKind, WorkerChoice } from "../domain/task";
 import type { TaskDeliveryPort } from "../ports/task-delivery-port";
 import { TaskService } from "./task-service";
 
@@ -38,6 +38,17 @@ const heartbeatOrigin = {
 	eventType: "system.heartbeat.fired.v1",
 } as const satisfies ToolOrigin;
 
+const STANDARD_WORKER = {
+	name: "standard",
+	description: "ふだんの作業",
+	model: { provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
+} as const satisfies WorkerChoice;
+const DEEP_WORKER = {
+	name: "deep",
+	description: "難しい作業",
+	model: { provider: "claude-code", model: "claude-opus-5-5", thinking: "high" },
+} as const satisfies WorkerChoice;
+
 const COMPLETED: AgentRunResult = { status: "completed", finalText: null };
 
 describe("TaskService", () => {
@@ -47,11 +58,15 @@ describe("TaskService", () => {
 		const task = await harness.service.create(channelOrigin, {
 			title: "調査",
 			instructions: "pi の変更点を調べる",
+			worker: STANDARD_WORKER,
 		});
 		expect(task.status).toBe("queued");
 		await harness.waitForRuns(1);
 
-		expect(harness.openSession).toHaveBeenCalledWith({ kind: "task", taskId: task.id });
+		expect(harness.openSession).toHaveBeenCalledWith(
+			{ kind: "task", taskId: task.id },
+			STANDARD_WORKER.model,
+		);
 		expect(harness.runs[0]?.messages).toEqual([
 			{
 				kind: "task_assignment",
@@ -107,7 +122,7 @@ describe("TaskService", () => {
 
 	it("progressは配送せず、milestoneは配送して作業を続ける", async () => {
 		const harness = await createHarness();
-		const task = await harness.service.create(channelOrigin, input("long"));
+		const task = await harness.service.create(channelOrigin, input("long", DEEP_WORKER));
 		await harness.waitForRuns(1);
 
 		await expect(harness.report(task.id, "progress", "半分")).resolves.toEqual({
@@ -120,6 +135,7 @@ describe("TaskService", () => {
 		expect(harness.delivered[0]?.event.data).toMatchObject({ report: { kind: "milestone" } });
 		expect(harness.service.listFor({ kind: "event" })[0]).toMatchObject({
 			id: task.id,
+			worker: "deep",
 			status: "running",
 			latest_report: { kind: "milestone", summary: "重要な発見" },
 		});
@@ -423,11 +439,12 @@ describe("TaskService", () => {
 		);
 	});
 
-	it("起動時に実行中だったtaskを次のattemptとして再開し、過去の報告をassignmentへ含める", async () => {
+	it("起動時に実行中だったtaskを、作成時に選んだワーカーのモデルで次のattemptとして再開し、過去の報告をassignmentへ含める", async () => {
 		const harness = await createHarness({
 			tasks: [
 				storedTask({
 					id: "interrupted",
+					worker: { name: DEEP_WORKER.name, ...DEEP_WORKER.model },
 					status: "running",
 					attempts: 1,
 					reports: [report(1, "milestone", "前半完了", "2026-10-18T23:00:00.000Z")],
@@ -437,6 +454,10 @@ describe("TaskService", () => {
 
 		await harness.waitForRuns(1);
 
+		expect(harness.openSession).toHaveBeenCalledWith(
+			{ kind: "task", taskId: "interrupted" },
+			DEEP_WORKER.model,
+		);
 		expect(JSON.parse(harness.runs[0]?.messages[0]?.text ?? "")).toMatchObject({
 			id: "interrupted",
 			attempt: 2,
@@ -742,8 +763,11 @@ function taskIdOf(messages: readonly AgentInputMessage[] | undefined): unknown {
 	return typeof value === "object" && value != null && "id" in value ? value.id : undefined;
 }
 
-function input(title: string): { title: string; instructions: string } {
-	return { title, instructions: `${title}の指示` };
+function input(
+	title: string,
+	worker: WorkerChoice = STANDARD_WORKER,
+): { title: string; instructions: string; worker: WorkerChoice } {
+	return { title, instructions: `${title}の指示`, worker };
 }
 
 function report(
@@ -764,9 +788,10 @@ function report(
 
 function storedTask(overrides: Partial<Task> & Pick<Task, "id">): Task {
 	return {
-		version: 1,
+		version: 2,
 		title: overrides.id,
 		instructions: "stored",
+		worker: { name: STANDARD_WORKER.name, ...STANDARD_WORKER.model },
 		origin: channelOrigin,
 		private: false,
 		status: "queued",

@@ -32,6 +32,16 @@ export const taskReportKindSchema = z.enum([
 	"failure",
 ]);
 
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+// 設定を変えても作成済みのタスクは同じモデルで再開するよう、作成時に選んだモデルを持たせる。
+const taskWorkerSchema = z.strictObject({
+	name: z.string().min(1),
+	provider: z.string().min(1),
+	model: z.string().min(1),
+	thinking: z.enum(THINKING_LEVELS),
+});
+
 const taskReportSchema = z.strictObject({
 	seq: z.number().int().min(1),
 	kind: taskReportKindSchema,
@@ -49,10 +59,11 @@ const taskMessageSchema = z.strictObject({
 });
 
 export const taskSchema = z.strictObject({
-	version: z.literal(1),
+	version: z.literal(2),
 	id: z.string().min(1),
 	title: z.string(),
 	instructions: z.string(),
+	worker: taskWorkerSchema,
 	origin: taskOriginSchema,
 	private: z.boolean(),
 	status: z.enum(["queued", "running", "waiting_input", "completed", "failed", "cancelled"]),
@@ -70,6 +81,24 @@ export type TaskStatus = Task["status"];
 export type TaskReport = Task["reports"][number];
 export type TaskReportKind = z.infer<typeof taskReportKindSchema>;
 export type TaskMessage = Task["messages"][number];
+
+export type WorkerModel = Readonly<Omit<Task["worker"], "name">>;
+
+// 依頼元が task_create で選べる作業エージェント。description は選ぶ手がかりとして依頼元のモデルに見せる。
+export type WorkerChoice = Readonly<{ name: string; description: string; model: WorkerModel }>;
+
+export type WorkerCatalog = Readonly<{
+	defaultName: string;
+	choices: readonly [WorkerChoice, ...WorkerChoice[]];
+}>;
+
+export function workerModelOf(task: Task): WorkerModel {
+	return {
+		provider: task.worker.provider,
+		model: task.worker.model,
+		thinking: task.worker.thinking,
+	};
+}
 
 export type TaskBoardStatus = Readonly<{
 	maxConcurrent: number;
@@ -114,6 +143,7 @@ export function summarizeTask(task: Task): JsonObject {
 	return {
 		id: task.id,
 		title: task.title,
+		worker: task.worker.name,
 		status: task.status,
 		origin: describeOrigin(task.origin),
 		created_at: task.createdAt,

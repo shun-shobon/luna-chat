@@ -40,7 +40,15 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => {
 				},
 				heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
 				memory: { enabled: true, maintenanceCron: "0 4 * * *" },
-				models: { compaction: model, conversation: model, event: model, worker: model },
+				models: {
+					compaction: model,
+					conversation: model,
+					event: model,
+					worker: {
+						default: "standard",
+						choices: { standard: { ...model, description: "General background work." } },
+					},
+				},
 				tasks: { maxConcurrent: 2 },
 			},
 			configPath: "/tmp/luna-test/config.toml",
@@ -224,13 +232,23 @@ describe("composition root integration", () => {
 				...workspace.config,
 				models: {
 					...workspace.config.models,
-					worker: { provider: "openai-codex", model: "no-such-model", thinking: "medium" },
+					worker: {
+						default: "standard",
+						choices: {
+							standard: {
+								provider: "openai-codex",
+								model: "no-such-model",
+								thinking: "medium",
+								description: "x",
+							},
+						},
+					},
 				},
 			},
 		});
 
 		await expect(startLunaApplication({ templatesDir })).rejects.toThrow(
-			"models.worker: unknown model openai-codex/no-such-model",
+			"models.worker.choices.standard: unknown model openai-codex/no-such-model",
 		);
 		expect(fakes.client.login).not.toHaveBeenCalled();
 	});

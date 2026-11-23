@@ -6,6 +6,7 @@ import { defineTool } from "../../tool/ports/tool-provider";
 import type { ToolProvider } from "../../tool/ports/tool-provider";
 import type { TaskService } from "../application/task-service";
 import { taskReportKindSchema } from "../domain/task";
+import type { WorkerCatalog, WorkerChoice } from "../domain/task";
 
 type TaskBoard = Pick<TaskService, "cancel" | "create" | "message" | "report">;
 
@@ -13,10 +14,33 @@ function boundedText(maximum: number) {
 	return z.string().trim().min(1).max(maximum);
 }
 
-const createInputSchema = z.strictObject({
-	title: boundedText(120),
-	instructions: boundedText(20_000),
-});
+function createInputSchema(workers: WorkerCatalog) {
+	const [first, ...rest] = workers.choices;
+	return z.strictObject({
+		title: boundedText(120),
+		instructions: boundedText(20_000),
+		worker: z.enum([first.name, ...rest.map((choice) => choice.name)]).optional(),
+	});
+}
+
+function describeTaskCreate(workers: WorkerCatalog): string {
+	const choices = workers.choices.map(
+		(choice) =>
+			`- ${choice.name}${choice.name === workers.defaultName ? " (default)" : ""}: ${choice.description}`,
+	);
+	return [
+		"Delegate long work to a background Luna worker. Returns the task id at once; the worker reports back later.",
+		"Choose the worker that fits the work; omit worker to use the default.",
+		...choices,
+	].join("\n");
+}
+
+function findWorker(workers: WorkerCatalog, name: string | undefined): WorkerChoice {
+	const wanted = name ?? workers.defaultName;
+	const worker = workers.choices.find((choice) => choice.name === wanted);
+	if (worker === undefined) throw new Error(`Unknown worker ${wanted}`);
+	return worker;
+}
 const messageInputSchema = z.strictObject({ task_id: boundedText(200), text: boundedText(8_000) });
 const cancelInputSchema = z.strictObject({
 	task_id: boundedText(200),
@@ -28,18 +52,24 @@ const reportInputSchema = z.strictObject({
 	artifacts: z.array(z.string().refine(isAbsolute, "Artifact paths must be absolute")).optional(),
 });
 
-export function createTaskBoardToolProvider(tasks: TaskBoard): ToolProvider {
+export function createTaskBoardToolProvider(
+	tasks: TaskBoard,
+	workers: WorkerCatalog,
+): ToolProvider {
 	return Object.freeze({
 		definitions: Object.freeze([
 			defineTool({
 				name: "task_create",
-				description:
-					"Delegate long work to a background Luna worker. Returns the task id at once; the worker reports back later.",
-				inputSchema: createInputSchema,
-				parseInput: (input) => input,
+				description: describeTaskCreate(workers),
+				inputSchema: createInputSchema(workers),
+				parseInput: (input) => ({
+					title: input.title,
+					instructions: input.instructions,
+					worker: findWorker(workers, input.worker),
+				}),
 				execute: async (input, execution) => {
 					const task = await tasks.create(execution.origin, input);
-					return { task_id: task.id, status: task.status };
+					return { task_id: task.id, worker: task.worker.name, status: task.status };
 				},
 				describeTarget: () => null,
 			}),

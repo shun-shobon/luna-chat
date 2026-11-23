@@ -9,6 +9,7 @@ import type {
 	ModelSetting,
 	TtsSetting,
 	VoiceSetting,
+	WorkerSetting,
 	WorkspaceConfig,
 } from "../domain/workspace-config";
 
@@ -27,6 +28,25 @@ const DEFAULT_VOICE_TTS_ENGINE = "voicevox";
 const discordSnowflake = z.string().regex(/^\d+$/u);
 const thinkingSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const modelIdSchema = z.string().regex(/^[^/\s]+\/[^\s]+$/u, "model must be provider/model");
+
+// 依頼元のツール入力で列挙値として渡すため、名前は識別子に使える文字に限る。
+const workerNameSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/u);
+const workerSettingSchema = z
+	.strictObject({
+		default: workerNameSchema,
+		choices: z.record(
+			workerNameSchema,
+			z.strictObject({
+				model: modelIdSchema,
+				thinking: thinkingSchema,
+				description: z.string().trim().min(1).max(500),
+			}),
+		),
+	})
+	.refine((worker) => Object.hasOwn(worker.choices, worker.default), {
+		message: "models.worker.default must name one of models.worker.choices.",
+		path: ["default"],
+	});
 
 function modelSettingSchema(fallback: ModelSetting) {
 	return z
@@ -88,7 +108,9 @@ const WorkspaceConfigTomlSchema = z
 				conversation: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.conversation),
 				event: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.event),
 				voice: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.voice),
-				worker: modelSettingSchema(DEFAULT_WORKSPACE_CONFIG.models.worker),
+				worker: workerSettingSchema.default(
+					toWorkerSettingToml(DEFAULT_WORKSPACE_CONFIG.models.worker),
+				),
 			})
 			.prefault({}),
 		tasks: z
@@ -226,7 +248,7 @@ function toWorkspaceConfig(config: WorkspaceConfigToml): WorkspaceConfig {
 			conversation: toModelSetting(config.models.conversation),
 			event: toModelSetting(config.models.event),
 			voice: toModelSetting(config.models.voice),
-			worker: toModelSetting(config.models.worker),
+			worker: toWorkerSetting(config.models.worker),
 		},
 		tasks: {
 			maxConcurrent: config.tasks.max_concurrent,
@@ -265,7 +287,7 @@ function toWorkspaceConfigToml(config: WorkspaceConfig): WorkspaceConfigToml {
 			conversation: toModelSettingToml(config.models.conversation),
 			event: toModelSettingToml(config.models.event),
 			voice: toModelSettingToml(config.models.voice),
-			worker: toModelSettingToml(config.models.worker),
+			worker: toWorkerSettingToml(config.models.worker),
 		},
 		tasks: {
 			max_concurrent: config.tasks.maxConcurrent,
@@ -338,4 +360,30 @@ function splitModelId(id: string): Readonly<{ provider: string; model: string }>
 
 function toModelSettingToml(setting: ModelSetting): WorkspaceConfigToml["models"]["event"] {
 	return { model: `${setting.provider}/${setting.model}`, thinking: setting.thinking };
+}
+
+type WorkerSettingToml = z.infer<typeof workerSettingSchema>;
+
+function toWorkerSetting(setting: WorkerSettingToml): WorkerSetting {
+	return {
+		default: setting.default,
+		choices: Object.fromEntries(
+			Object.entries(setting.choices).map(([name, choice]) => [
+				name,
+				{ ...toModelSetting(choice), description: choice.description },
+			]),
+		),
+	};
+}
+
+function toWorkerSettingToml(setting: WorkerSetting): WorkerSettingToml {
+	return {
+		default: setting.default,
+		choices: Object.fromEntries(
+			Object.entries(setting.choices).map(([name, choice]) => [
+				name,
+				{ ...toModelSettingToml(choice), description: choice.description },
+			]),
+		),
+	};
 }
