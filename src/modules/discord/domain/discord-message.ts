@@ -28,16 +28,18 @@ const discordStickerSchema = z.strictObject({
 	format: z.string().min(1),
 });
 
+export const discordReactionEmojiSchema = z.discriminatedUnion("kind", [
+	z.strictObject({ kind: z.literal("unicode"), value: z.string().min(1) }),
+	z.strictObject({
+		kind: z.literal("custom"),
+		id: discordIdSchema,
+		name: z.string().min(1).nullable(),
+		animated: z.boolean(),
+	}),
+]);
+
 const discordReactionSchema = z.strictObject({
-	emoji: z.discriminatedUnion("kind", [
-		z.strictObject({ kind: z.literal("unicode"), value: z.string().min(1) }),
-		z.strictObject({
-			kind: z.literal("custom"),
-			id: discordIdSchema,
-			name: z.string().min(1).nullable(),
-			animated: z.boolean(),
-		}),
-	]),
+	emoji: discordReactionEmojiSchema,
 	count: z.number().int().nonnegative(),
 	me: z.boolean(),
 });
@@ -85,3 +87,4 @@ export const discordMessageSchema = z.strictObject({
 });
 
 export type DiscordMessage = z.infer<typeof discordMessageSchema>;
+export type DiscordReactionEmoji = z.infer<typeof discordReactionEmojiSchema>;

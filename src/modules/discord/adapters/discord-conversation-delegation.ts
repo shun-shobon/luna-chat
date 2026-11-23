@@ -11,7 +11,7 @@ import { toConversationScope } from "./discord-message-adapter";
 
 export class DiscordConversationDelegation implements DiscordConversationDelegationPort {
 	constructor(
-		private readonly client: DiscordActionClient,
+		private readonly client: Pick<DiscordActionClient, "channels" | "users">,
 		private readonly input: Readonly<{
 			accept(input: AcceptedConversationEvent): boolean;
 			allowDm: boolean;

@@ -44,6 +44,43 @@ describe("DiscordActionAdapter", () => {
 		expect(channel.send).not.toHaveBeenCalled();
 	});
 
+	it("Luna自身のmessageの本文を置き換え、削除する", async () => {
+		const channel = createChannel({ authorId: "999" });
+		const adapter = createAdapter(createClient(channel));
+
+		await expect(
+			adapter.execute(
+				{ kind: "edit_message", channelId: "200", messageId: "300", content: "fixed" },
+				"turn-1",
+			),
+		).resolves.toEqual({
+			actionKind: "edit_message",
+			detail: { channelId: "200", messageId: "300" },
+		});
+		await expect(
+			adapter.execute({ kind: "delete_message", channelId: "200", messageId: "300" }, "turn-1"),
+		).resolves.toEqual({
+			actionKind: "delete_message",
+			detail: { channelId: "200", messageId: "300" },
+		});
+		expect(channel.message.edit).toHaveBeenCalledWith({ content: "fixed" });
+		expect(channel.message.delete).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ kind: "edit_message", channelId: "200", messageId: "300", content: "fixed" },
+		{ kind: "delete_message", channelId: "200", messageId: "300" },
+	] as const)("他人のmessageは$kindせずに失敗する", async (action) => {
+		const channel = createChannel({ authorId: "100" });
+		const adapter = createAdapter(createClient(channel));
+
+		await expect(adapter.execute(action, "turn-1")).rejects.toThrow(
+			"Discord message is not Luna's own: 300",
+		);
+		expect(channel.message.edit).not.toHaveBeenCalled();
+		expect(channel.message.delete).not.toHaveBeenCalled();
+	});
+
 	it("ownerが開始したtypingだけを停止する", async () => {
 		vi.useFakeTimers();
 		const channel = createChannel();
@@ -102,6 +139,7 @@ function createClient(
 	dm: ReturnType<typeof createChannel> = createChannel(),
 ) {
 	return {
+		user: { id: "999" },
 		channels: { fetch: vi.fn(async (_channelId: string) => channel) },
 		users: { createDM: vi.fn(async (_userId: string) => dm) },
 	} satisfies DiscordActionClient;
@@ -109,17 +147,22 @@ function createClient(
 
 function createChannel(
 	overrides: {
+		authorId?: string;
 		reply?: (options: unknown) => Promise<{ id: string }>;
 		resolve?: (emoji: string) => { users: { remove(): Promise<unknown> } } | null;
 	} = {},
 ) {
 	const message = {
+		author: { id: overrides.authorId ?? "999" },
 		reply: overrides.reply ?? vi.fn(async () => ({ id: "301" })),
+		edit: vi.fn(async (_options: unknown) => undefined),
+		delete: vi.fn(async () => undefined),
 		react: vi.fn(async () => undefined),
 		reactions: { resolve: overrides.resolve ?? vi.fn(() => null) },
 	};
 	return {
 		id: "200",
+		message,
 		send: vi.fn(async () => ({ id: "300" })),
 		sendTyping: vi.fn(async () => undefined),
 		messages: { fetch: vi.fn(async () => message) },

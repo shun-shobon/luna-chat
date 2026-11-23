@@ -3,6 +3,10 @@ import type { LunaEvent } from "../domain/luna-event";
 
 const MESSAGE_KIND_BY_EVENT_TYPE: Readonly<Record<string, string>> = {
 	"discord.message.created.v1": "discord_message",
+	"discord.message.edited.v1": "discord_message_edited",
+	"discord.message.deleted.v1": "discord_message_deleted",
+	"discord.reaction.added.v1": "discord_reaction_added",
+	"discord.reaction.removed.v1": "discord_reaction_removed",
 	"discord.conversation.delegated.v1": "delegated_conversation",
 	"luna.task.reported.v1": "task_report",
 	"system.heartbeat.fired.v1": "heartbeat",

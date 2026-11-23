@@ -6,6 +6,10 @@ import { toEventMessage } from "./event-message";
 describe("toEventMessage", () => {
 	it.each([
 		["discord.message.created.v1", "discord/main", "discord_message"],
+		["discord.message.edited.v1", "discord/main", "discord_message_edited"],
+		["discord.message.deleted.v1", "discord/main", "discord_message_deleted"],
+		["discord.reaction.added.v1", "discord/main", "discord_reaction_added"],
+		["discord.reaction.removed.v1", "discord/main", "discord_reaction_removed"],
 		["discord.conversation.delegated.v1", "luna/discord", "delegated_conversation"],
 		["luna.task.reported.v1", "luna/task", "task_report"],
 		["system.heartbeat.fired.v1", "luna/system", "heartbeat"],

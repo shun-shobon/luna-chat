@@ -20,6 +20,8 @@ const READ_TOOLS = [
 const WRITE_TOOLS = [
 	"send_message",
 	"reply_message",
+	"edit_message",
+	"delete_message",
 	"add_reaction",
 	"remove_reaction",
 	"start_typing",
@@ -99,6 +101,16 @@ describe("Discord tool provider", () => {
 				},
 			},
 			{
+				name: "edit_message",
+				input: { channelId: "200", messageId: "300", content: "fixed" },
+				action: { kind: "edit_message", channelId: "200", messageId: "300", content: "fixed" },
+			},
+			{
+				name: "delete_message",
+				input: { channelId: "200", messageId: "300" },
+				action: { kind: "delete_message", channelId: "200", messageId: "300" },
+			},
+			{
 				name: "add_reaction",
 				input: { channelId: "200", messageId: "300", emoji: { kind: "unicode", value: "🌙" } },
 				action: {
@@ -158,6 +170,12 @@ describe("Discord tool provider", () => {
 			"2000文字を超える本文",
 			"send_message",
 			{ target: { kind: "channel", channelId: "300" }, content: "x".repeat(2_001) },
+		],
+		["本文のない編集", "edit_message", { channelId: "300", messageId: "100" }],
+		[
+			"2000文字を超える編集",
+			"edit_message",
+			{ channelId: "300", messageId: "100", content: "x".repeat(2_001) },
 		],
 		[
 			"snowflakeでないchannelId",

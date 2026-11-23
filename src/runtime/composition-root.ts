@@ -522,6 +522,8 @@ export async function startLunaApplication(
 		const gatewayController = new DiscordConversationController(coordinator, lunaUserId, {
 			allowDm: workspace.config.discord.allowDm,
 			allowedChannelIds: allowedChannels.ids,
+			createId: randomUUID,
+			now: () => new Date(),
 			isVoiceBound: (sessionKey) => voice?.isBound(sessionKey) ?? false,
 			onAccepted: (event) => {
 				logger
