@@ -9,7 +9,7 @@ import { hasErrorCode } from "../../../shared/error-code";
 import type { IntentFireStates, StandingIntent } from "../domain/standing-intent";
 import type { IntentStorePort } from "../ports/intent-store-port";
 
-// 既定値は docs/SPEC.md の intents.toml の節で定めたもの。
+// 既定値は docs/automation.md の intents.toml の節で定めたもの。
 const DEFAULT_COOLDOWN_HOURS = 24;
 const DEFAULT_MAX_FIRES = 3;
 

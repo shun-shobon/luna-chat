@@ -8,7 +8,7 @@ import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { WatchConfigState } from "../domain/home-assistant-status";
 import type { WatchConfigPort } from "../ports/watch-config-port";
 
-// 既定値は docs/SPEC.md の home-assistant.toml の節で定めたもの。
+// 既定値は docs/home-assistant.md の home-assistant.toml の節で定めたもの。
 const DEFAULT_COOLDOWN_SECONDS = 30;
 
 const nonBlank = z.string().refine((value) => value.trim().length > 0, "must not be blank");

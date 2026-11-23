@@ -1,6 +1,6 @@
 # 作業規約 (Repository Workflow)
 
-本書は開発時の作業規約です。機能や外部仕様については `docs/SPEC.md`、内部設計については `docs/ARCHITECTURE.md` を参照してください。実装を変更した際は、ソースコード、`SPEC.md`、`ARCHITECTURE.md` を常に同期させてください。
+本書は開発時の作業規約です。機能をまたぐ外部仕様は `docs/SPEC.md`、内部設計は `docs/ARCHITECTURE.md` にあり、機能ごとの仕様と設計は `docs/` の機能別のファイル（一覧は `docs/SPEC.md` の冒頭）にあります。実装を変更した際は、ソースコードと該当するドキュメントを常に同期させてください。
 
 ## コミュニケーション
 
@@ -12,7 +12,7 @@
 
 - プロジェクト規模に応じたモジュラーヘキサゴナルアーキテクチャ、SOLID原則、DDDを適用します。
 - YAGNI、KISS、DRYを重視します。
-- 不要な互換処理やエイリアス、暗黙のフォールバック、デフォルト値による補完は追加しないでください。`SPEC.md` で明記されたフォールバックやデフォルト値のみを実装します。
+- 不要な互換処理やエイリアス、暗黙のフォールバック、デフォルト値による補完は追加しないでください。`docs/` の仕様で明記されたフォールバックやデフォルト値のみを実装します。
 - モジュール間の連携は公開されたアプリケーションポートを直接呼び出し、内部イベントバスやDIフレームワークは導入しません。
 - `shared` に特定の機能に依存する型を配置しないでください。
 
@@ -56,7 +56,9 @@ docker compose build
 
 ## リリース
 
-GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を選びます。作られた準備PRをmainへマージすると、タグ付け、GHCRへのDockerイメージのpush、GitHub Releaseの公開まで進みます。流れと失敗時の扱いは `docs/SPEC.md` の「19. リリース」に、更新対象のファイルは `.github/easy-release.json` にあります。
+GitHub Actionsの `release` ワークフローをmainブランチから手動実行し、`patch`・`minor`・`major` を選びます。easy-releaseが最新の安定版Gitタグ（なければ `0.0.0`）から次のバージョンを計算し、`package.json` の更新と `pnpm format` の結果を含む準備PRを作ります。更新対象のファイルは `.github/easy-release.json` にあります。
+
+準備PRをmainへマージすると、`vX.Y.Z` のタグとドラフトReleaseを作り、Linuxのamd64・arm64向けDockerイメージをビルドしてGitHub Artifact Attestationsを付けてGHCRへpushし、`latest` を更新してGitHub Releaseを公開します。通常のPR、未マージで閉じたPR、別リポジトリからのPRは公開しません。ビルドや証明の付与に失敗した場合はドラフトのまま残り、`latest` は更新されません。
 
 準備PRの作成には、GitHubの「Settings > Actions > General > Workflow permissions」で「Allow GitHub Actions to create and approve pull requests」を有効にしておく必要があります。
 

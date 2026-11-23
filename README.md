@@ -30,7 +30,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - **HTTP API**：ローカルのHTTPでイベントを受け、単発の実行や会話として処理します。
 - **Home Assistant**：家の機器の状態を読み、操作します。見ておきたい機器の変化（玄関が開いた、洗濯機が終わったなど）をLuna自身が `home-assistant.toml` に書き、変化があると起きて動きます。HAのAssistの会話エージェントとしても選べ、音声で話しかけられます。
 - **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
-- **ボイスチャンネル**：Discordのボイスチャンネルにルナが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがルナとして喋り、調べ物や操作はいつものルナに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[SPEC.md](./docs/SPEC.md#24-ボイスチャンネル)）。
+- **ボイスチャンネル**：Discordのボイスチャンネルにルナが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがルナとして喋り、調べ物や操作はいつものルナに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[voice.md](./docs/voice.md)）。
 - **デスクトップ**：ルナ専用のデスクトップとChromeを常駐させます。ルナがログインの要るサイトやアプリを画面で操作し、人はその画面をブラウザから見て手伝えます（Linuxのホストのみ）。
 
 ## 動作要件
@@ -78,7 +78,7 @@ DISCORD_BOT_TOKEN=... pnpm start
 
 ### Claudeのモデルを使う
 
-Lunaを動かすユーザーで `claude` をPATHに置き、`LUNA_HOME/claude-code` を設定ディレクトリにしてログインしておくと、`config.toml` の `[models.*]` で `claude-code/claude-opus-5-5` などを選べます（[SPEC.md](./docs/SPEC.md#8-エージェントの実行基盤)）。リクエストはClaude Code CLIを通してサブスクリプションの枠で送られ、超過課金に回された時点でLunaは実行を止めます。
+Lunaを動かすユーザーで `claude` をPATHに置き、`LUNA_HOME/claude-code` を設定ディレクトリにしてログインしておくと、`config.toml` の `[models.*]` で `claude-code/claude-opus-5-5` などを選べます（[agent.md](./docs/agent.md)）。リクエストはClaude Code CLIを通してサブスクリプションの枠で送られ、超過課金に回された時点でLunaは実行を止めます。
 
 ```sh
 CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
@@ -154,7 +154,7 @@ allow_dm = true
 
 - `memory.enabled`: アイドル終了時の記憶保存と日次整理をまとめて有効/無効にします。
 - `memory.maintenance_cron`: 日次整理を実行するcronスケジュール（ローカルタイムゾーン）。
-- 設定の変更は再起動で反映されます（`/luna channel add/remove` による変更を除く）。モデル、ハートビート間隔、タスクの同時実行数などの全項目は [SPEC.md](./docs/SPEC.md#14-設定仕様) を参照してください。
+- 設定の変更は再起動で反映されます（`/luna channel add/remove` による変更を除く）。モデル、ハートビート間隔、タスクの同時実行数などの全項目は [SPEC.md](./docs/SPEC.md#設定) を参照してください。
 
 ### `cron.toml`
 
@@ -175,7 +175,7 @@ check = "./scripts/check-release.sh"
 prompt = "data.check_output にある新しいリリースを要約し、Discordへ報告する"
 ```
 
-定期ジョブの `check` には、発火時にエージェントより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があれば、その内容を `check_output` としてプロンプトとともに渡します。出力が空、または失敗・タイムアウト（120秒）した場合はエージェントを起動しません。詳細は [SPEC.md](./docs/SPEC.md#131-事前判定コマンド-check) を参照してください。
+定期ジョブの `check` には、発火時にエージェントより先にワークスペースで実行するシェルコマンドを指定できます。終了コード0で標準出力があれば、その内容を `check_output` としてプロンプトとともに渡します。出力が空、または失敗・タイムアウト（120秒）した場合はエージェントを起動しません。詳細は [automation.md](./docs/automation.md#事前判定コマンド) を参照してください。
 
 ## 使いかた
 
@@ -252,11 +252,11 @@ Ubuntu 24.04 のホスト（native、実行ユーザー `luna`、ログインシ
 deploy/desktop/install.sh
 ```
 
-Google Chrome、neko、AT-SPI、上のバーと下のドック（tint2）などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、ルナの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとルナが使えます。構成は [SPEC.md](./docs/SPEC.md#23-デスクトップ) を参照してください。
+Google Chrome、neko、AT-SPI、上のバーと下のドック（tint2）などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、ルナの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとルナが使えます。構成は [deploy/desktop/README.md](./deploy/desktop/README.md) を参照してください。
 
 ### 指示の比較（再生）
 
-記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [SPEC.md](./docs/SPEC.md#82-再生-luna-chat-replay) を参照してください。
+記録した会話の入力を、異なる `LUNA.md`・`MEMORY.md` で再生して振る舞いを比べられます。外へ作用するツールは実行せず、呼び出しを記録します。詳細は [agent.md](./docs/agent.md#再生) を参照してください。
 
 ```sh
 pnpm exec luna-chat replay --scenes scenes.json --out ./replay-out \
@@ -271,7 +271,7 @@ SIGINTまたはSIGTERMを受け取ると、新しいメッセージの受付を�
 
 ## ドキュメント
 
-- [SPEC.md](./docs/SPEC.md)：機能仕様、設定項目、エラー時の挙動
+- [SPEC.md](./docs/SPEC.md)：機能仕様、設定項目、エラー時の挙動（機能ごとのファイルへの一覧を含む）
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)：内部アーキテクチャ、状態遷移、設計方針
 - [AGENTS.md](./AGENTS.md)：開発の手順と規約、リリース手順
 

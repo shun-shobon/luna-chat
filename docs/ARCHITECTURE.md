@@ -1,18 +1,16 @@
 # Luna アーキテクチャ設計書
 
-## 1. 設計方針と目標
+本書は、Lunaの内部設計のうち機能をまたぐもの（モジュール構成、依存の方向、会話セッションの状態遷移、起動と終了）を定める。機能ごとの内部設計は、[SPEC.md](./SPEC.md) の一覧にある各ファイルの「内部設計」の節にある。
 
-Lunaは、単一のNode.jsプロセス内でDiscordとHTTPの会話、自律タスクを並行処理する、モジュラーヘキサゴナルアーキテクチャ（クリーンアーキテクチャ）として構築される。
+## 設計方針
 
-### 主要な原則
+Lunaは、単一のNode.jsプロセス内でDiscordとHTTPの会話、自律タスクを並行処理する、モジュラーヘキサゴナルアーキテクチャとして構築される。
 
-1. **外部境界の分離**: Discord、エージェントの実行基盤（pi）、ファイルシステム、システムクロックをドメインおよびアプリケーション層から完全に分離する。
-2. **スコープ単位の直列化と並行性**: 会話スコープ内の状態変更は直列化し、異なるスコープ間は完全に並行動作させる。
-3. **外部入力の厳格な検証**: 未検証の外部入力はシステムの境界でZod等を用いて検証し、内部に `unknown` や未検証の型を持ち込まない。
-4. **影響範囲の局所化**: モデルへのリクエストの失敗、ツールの失敗、実行の失敗の影響範囲を明確に分離する。ツールの失敗は実行を止めずにエージェントへ返す。
-5. **フレームワーク非依存**: 内部イベントバスやDIフレームワークは用いず、明示的なポートの呼び出しと依存性注入を行う。
+1. **外部境界の分離**: Discord、エージェントの実行基盤（pi）、ファイルシステム、システムクロックをドメインおよびアプリケーション層から分離する。
+2. **スコープ単位の直列化と並行性**: 会話スコープ内の状態変更は直列化し、異なるスコープ間は並行動作させる。
+3. **影響範囲の局所化**: モデルへのリクエストの失敗、ツールの失敗、実行の失敗の影響範囲を分離する。ツールの失敗は実行を止めずにエージェントへ返す。
 
-## 2. システムコンテキスト
+## システムコンテキスト
 
 ```text
 Discord Gateway ─► discord ─► conversation ──────────┐
@@ -20,23 +18,20 @@ Discord Gateway ─► discord ─► conversation ─────────�
                            └──► event executor ───────┼─► AgentRuntimePort ─► pi Agent ─► ChatGPT（openai-codex）／Claude Code CLI（claude-code）
 automation sources ──────────► event executor ────────┤        │ セッションごとのツール
 Home Assistant ──► home-assistant ─► conversation ──────┤        │
+Discord VC ──► voice ─► conversation ───────────────────┤        │
 task service（作業エージェント）──────────────────────┘         ▼
       ▲  task_create / task_message / task_cancel          tool（Discord・タスク・HTTP応答・待機）
       └──────────────────────────────────────────────────── と汎用ツール（シェル・ファイル・Web・画像）
 
 ブラウザ ─► dashboard ─► 各モジュールの snapshot / 直近ログ（読み取りのみ）
 
-Lunaプロセス内: 上記各モジュール、observability、runtime
-外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Claude Code CLI（子プロセス）とAnthropic API / Home Assistant（REST・WebSocket）
+外部リソース: LUNA_HOME / マウントされたファイルシステム / stdout / ChatGPTのバックエンド / Claude Code CLI（子プロセス）とAnthropic API / Home Assistant（REST・WebSocket）/ TTSエンジン
 ```
 
-- **エージェントの実行**: Lunaのプロセス内で、セッションごとに pi の `Agent` を1つ持つ。認証とモデルのカタログを持つ pi-ai の `Models` は全セッションで共有する。エージェントループとツールの実行は常にLunaのプロセス内で行う。`claude-code` だけは、モデルとの通信を Claude Code CLI の子プロセスに任せる（§8.7）。
-- **ツール**: エージェントが呼んだ時点で、同じプロセス内で実行する。
-- **HTTP API**: Nativeでは `127.0.0.1` にバインドする。Docker Composeではコンテナ内の `0.0.0.0` にバインドし、ホストの `127.0.0.1` にのみポートを公開する。
-- **ダッシュボード**: HTTP APIとは別のHonoサーバーとして別ポートで待ち受ける。バインド先はHTTP APIと同じく環境変数で選ぶ。
-- **デスクトップ**: Lunaのプロセスの外にある任意の systemd サービス群（`deploy/desktop/`）。Lunaのコードは参照せず、エージェントがシェルから skill `luna-desktop` のスクリプトとCDPで使う。
+- エージェントループとツールの実行は常にLunaのプロセス内で行う。`claude-code` だけは、モデルとの通信を Claude Code CLI の子プロセスに任せる（[agent.md](./agent.md)）。
+- ダッシュボードは、HTTP APIとは別のHonoサーバーとして別ポートで待ち受ける。
 
-## 3. ソースコード構成
+## ソースコード構成
 
 ```text
 src/
@@ -59,13 +54,13 @@ src/
 │   ├── dashboard/       # 状態スナップショットの集約, 閲覧用ページ
 │   ├── voice/           # ボイスチャンネルの参加, 聞き取り, 読み上げ
 │   └── observability/   # 構造化ログ, 秘匿情報マスク, 直近ログの保持
-├── runtime/             # コンポジションルート, エントリポイント
-└── shared/              # 機能に依存しない汎用関数・型（日付整形、JSON値、Honoサーバーの起動、アトミック書き込み、直列化キュー、実行中の処理の追跡）
+├── runtime/             # コンポジションルート, エントリポイント, 開発者指示
+└── shared/              # 機能に依存しない汎用関数・型
 ```
 
 各モジュールは必要なレイヤーのみを保持する。モジュール間をまたぐビジネスロジックは、それを実行する上位のアプリケーション層に配置する。
 
-## 4. モジュールの責務 (Capability Ownership)
+## モジュールの責務
 
 | モジュール       | 主な責務・所有する概念                                                                       | 公開インターフェース（ポート）                                                                                 | 主なアダプター                                                                                 |
 | ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -85,12 +80,11 @@ src/
 | `observability`  | 構造化ログ出力、ログレベル制御、秘匿情報のマスキング、直近ログの保持                         | ロガーポート、直近ログの一覧                                                                                   | 標準出力（pino、JSON Lines）、メモリ上のリングバッファ                                         |
 | `runtime`        | オブジェクトグラフの構築、起動・終了ライフサイクルの配線                                     | プロセスエントリポイント（`citty` のサブコマンド `start`・`login`・`replay`）                                  | シグナルハンドラー                                                                             |
 
-## 5. 依存関係の方向
+## 依存関係の方向
 
 - ドメイン層は同一モジュール内のアプリケーション層やアダプター層をインポートしない。
 - アプリケーション層はドメイン層とポート（インターフェース）のみに依存する。
 - アダプター層はポートを実装し、外部ライブラリやI/Oを扱う。
-- モジュール間の連携は、公開されたアプリケーションポートを直接呼び出す。循環参照は避ける。
 
 ```text
 discord      ──► event / tool
@@ -107,22 +101,16 @@ all          ──► observability
 runtime      ──► 全モジュール (composition root)
 ```
 
-- 各モジュールは `LoggerPort` に依存する。会話セッション・イベント・ジョブ・タスクの識別子は `child(context)` で束ね、出力は `info`・`warn`・`error` の詳細（常に出す）と本文（`LOG_LEVEL` が `debug` 以下のときだけ標準出力に出す）で渡す。標準出力への書き出しは pino が担う。秘匿フィールドは任意の深さで大文字小文字を問わず伏せる必要があり、パス指定の pino の redact では表せないため、自前の直列化で伏せる。
+各モジュールは `LoggerPort` に依存する。会話セッション・イベント・ジョブ・タスクの識別子は `child(context)` で束ね、出力は `info`・`warn`・`error` の詳細（常に出す）と本文（`LOG_LEVEL` が `debug` 以下のときだけ標準出力に出す）で渡す。秘匿フィールドは任意の深さで大文字小文字を問わず伏せる必要があり、パス指定の pino の redact では表せないため、自前の直列化で伏せる。
 
-## 6. ドメインモデルと状態管理
-
-### 6.1 会話スコープ (ConversationScope)
+## ドメインモデル
 
 ```ts
 type ConversationScope =
 	| { kind: "guild_channel"; guildId: string; channelId: string }
 	| { kind: "guild_thread"; guildId: string; parentChannelId: string; threadId: string }
 	| { kind: "dm"; channelId: string; userId: string };
-```
 
-### 6.2 共通イベントとセッション
-
-```ts
 type LunaEvent = {
 	id: string;
 	type: string;
@@ -139,7 +127,7 @@ type ConversationSession = {
 };
 ```
 
-### 6.3 セッション状態遷移 (Session State Machine)
+## 会話セッションの状態遷移
 
 ```text
 ABSENT
@@ -159,249 +147,15 @@ COLLECTING ── dispatch ready ──► OPENING ──► RUNNING ◄── �
 
 - 会話スコープごとにアクター（Mailboxパターン）を1つ保持し、状態変更を直列に処理する。
 - 実行中に届いた投稿は、キューに積まずにすぐセッションへ steer する。pi はそれを実行中のツール呼び出しの後、次のLLMリクエストの前に入れる。
+- `isImmediate(event)` が真の入力（Assistの発話とボイスチャンネルの入力）は、debounce と入力中の待機を飛ばす。
 - `RUNNING` の中の再試行待ちと圧縮は、エージェントのセッションの `status()` から読み、ダッシュボードには `retry_wait`・`compacting` として出す。
 - `IDLE` に入る時、バックグラウンド実行が残っていればアイドルタイマーの代わりに `waitForBackground()` を待つ。通知が届けば同じセッションで `RUNNING` に戻り、通知なしにすべて止まっていればアイドルタイマーを始める。待っている間に入力が届いた場合は、トークンを進めて待ちの結果を捨てる。
 - 記憶保存（`session_end`）を始める前に `stopBackground()` を呼ぶ。
 - アクターはセッションが知っているIDの集合を持つ。受け付けた入力と初回コンテキストのイベントID、`remember` で渡されたIDを加え、セッションを閉じる時にキューに残った入力のIDだけにする。`acceptFollowUp(input, targetId)` は対象IDを知っていて終了処理に入っていない時だけ、`accept` と同じ経路で入力を扱う。アクターがなければ何もせず、セッションを開かない。
 
-## 7. 実行とツールのオーケストレーション
+## 起動と終了
 
-```text
-検証済み入力
-     │
-     ├─ セッションを開く: OpenAgentSession(origin, model?)
-     │     ├─ システムプロンプト = 種類ごとの開発者指示 + skill一覧 + LUNA.md + MEMORY.md（作業エージェントは後ろ2つを除く）
-     │     ├─ モデル = 渡されたモデル、なければ種類ごとの設定（作業エージェントは設定を持たず、タスクに保存したモデルを必ず渡す）
-     │     └─ ツール = ToolSet.bind({ ownerId, origin }) + 汎用ツール
-     │
-     ├─ run([種類付きメッセージ…])
-     │     ├─ モデルがツールを呼ぶ → その場で実行して結果を返す（同じ応答の呼び出しは並行）
-     │     ├─ 実行中の入力は steer で次のリクエストの前に入る
-     │     └─ 一時的な失敗は同じセッションの続きから再実行（アダプター内）
-     │
-     ├─ ToolSet.release(ownerId)  # タイピングと待機の解放
-     │
-     ├─ waitForBackground()  # バックグラウンド実行が残っていれば、通知が届くまで待って同じセッションで続ける
-     │
-     └─ 完了 / 失敗 / 中断を実行元へ返す
-```
-
-- 実行元（`ToolOrigin`: 会話セッション、イベント、タスク）と `ownerId` はセッションを開くときにツールへ束ねる。`task_create` や `task_report` は、エージェントの入力ではなくこの実行元で依頼元・報告元を決める。
-- `defineTool` はzodの入力スキーマで1回だけ検証し、`describeTarget` でログとダッシュボード用の対象を作る。パラメータのJSON Schemaは `z.toJSONSchema` で作る。ツール名は集合の中で一意でなければならない。
-- ツールの失敗（検証エラー・例外）は `isError` の結果としてエージェントへ返し、実行は止めない。成功と失敗は `tool.succeeded`・`tool.failed` としてログに残す。
-- 最終応答の本文はどこにも送らない。Discordへの発言はツールだけで行う。
-- `http_respond` は `request_id` をキーにステータスとJSON本文を一時保存する。ワンショット実行の最初の実行、または会話の実行が完了した時点で、待機中のHTTPリクエストを解決する。ワンショット実行がバックグラウンド実行の終了を受けて続く場合も、応答はその続きを待たない（EventExecutor の `afterFirstRun`）。会話側は実行に入れたイベントID（最初のバッチと steer したもの）を追跡し、実行の完了時に通知する。
-
-## 8. エージェントのアダプター（pi）
-
-### 8.1 セッション
-
-- `PiAgentRuntime` は `AgentRuntimePort` を実装し、`open(spec)` ごとに pi の `Agent` を作る。pi-ai の `Models`（openai-codex と claude-code のプロバイダ、資格情報ストア）は全セッションで共有する。pi-ai 1.5.2 のカタログにない `gpt-6.2-sol` と `gpt-6.2-astra` は、`createAgentModels` がそれぞれ `gpt-6.1-sol`・`gpt-6-astra` の定義を写して足す（Astra は料金だけ替える。上流と同じ定義。6.2 入りの pi-ai へ上げたら消す）。
-- 入力は独自ロールのメッセージとして記録し、`convertToLlm` で `<luna_input kind="...">` の user メッセージにする。
-- `sessionId`（openai-codex の `prompt_cache_key` と WebSocket の接続キー）はセッションごとに固定し、キャッシュを効かせる。
-- Luna のツールは pi の AgentTool に変換して渡す。汎用ツールは `spec.harnessTools` に応じてアダプターが作る（シェル、`read`/`edit`/`write`、`view_image`、`web_run`、`image_gen`）。
-- `open` はセッションIDを決めた後、`<scratchRoot>/<セッションID>` に一時ディレクトリを作り、汎用ツールに渡す（シェルの `TMPDIR`、`image_gen` とバックグラウンド実行の保存先）。パスはシステムプロンプトの末尾に書き足す。セッションIDがアダプターの中で決まるため、システムプロンプトを組み立てる `session-factory` ではなくアダプターが書き足す。
-
-### 8.2 バックグラウンド実行
-
-```text
-exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表（セッションごと）
-                                         │ 終了（通知あり）       │ stop_background / stopBackground / dispose（通知なし）
-                                         ▼                        ▼
-                         PiAgentSession.onBackgroundExit    PiAgentSession.onBackgroundStopped
-                           ├ 実行中: steer                      └ 残りも通知もなければ待ちを false で解く
-                           └ 実行外: pending に積み、待ちを true で解く ─► 次の run の入力の前に入れる
-```
-
-- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。`stopBackground()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
-- 実行中かどうかの判定はアダプターが持つ。`run` の完了から持ち主の継続までの間に届いた通知を、持ち主ではなくアダプターが `pending` に積むため、取りこぼしが起きない。
-- プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。通知の `output_tail` はファイルの末尾から読む。
-- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（§6.3）。EventExecutor は実行のたびに `waitForBackground()` を待ち、`true` なら `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForBackground()` とメッセージの到着を待つ。
-- シャットダウンでは EventExecutor の `stopBackground()` が実行中のすべてのセッションの `stopBackground()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断（`#stop`）で止める。
-
-### 8.3 失敗と再試行
-
-- pi の Agent は自動では再試行せず、既定ではタイムアウトも持たない。`streamFn` を包んで `request_timeout_ms` と `maxRetries: 0` を渡す。
-- 失敗の種類は、pi のエラー文字列ではなく、レスポンスのHTTPステータスとプロバイダの生のイベントで判定する。一時的な失敗は、エラーで終わったアシスタントメッセージを記録から外して `continue()` で再開する。待機中の steer はキューに残る。
-- 待機時間は 15秒・60秒・180秒（`TURN_RETRY_DELAYS_MS` 相当）。使用上限・認証・それ以外の失敗は再試行しない。
-
-### 8.4 圧縮と記録
-
-- 直近の assistant の `usage` が文脈長から予約分を引いた値を超えたら、`[models.compaction]` のモデルで切り口より前を要約する（pi-coding-agent の `findCutPoint` と `generateSummaryWithUsage`）。切り口と要約はアダプターが保持し、`transformContext` で毎回のリクエストを「システム → 要約 → 切り口以降」に置き換える。記録（`agent.state.messages`）は書き換えない。
-- 記録は `message_end` ごとにJSONLへ追記する。先頭の system メッセージは `message_end` で出ないため、開いた時点で書く。
-- 最終更新から保持期間を過ぎた記録は `RetentionCleaner` が定期的に削除する。同じクリーナーを、ワークスペースのゴミ箱（`WorkspaceTrash`）の日付フォルダの削除にも使う。長く開いているセッションは開いた日のファイルに追記し続けるため、日付ではなく更新時刻で判断する。
-
-### 8.5 認証と使用枠
-
-- 資格情報は自前の `CredentialStore`（ファイル、0600、一時ファイルからの rename、プロバイダごとの直列化）に保存する。トークンの更新は pi-ai がリクエストの直前に行う。
-- ChatGPTのバックエンド（`wham/usage`、`codex/alpha/search`、`codex/images/generations`）は、同じ資格情報で直接呼ぶ。
-- 使用枠は定期的に取得し、`AgentRuntimeStatus.usage` と `LUNA_HOME/state/usage.json` に反映する。
-
-### 8.6 skillの使用記録
-
-- 汎用ツールのうち `read` と `exec_command` を包み、引数に含まれる `.agents/skills/<名前>/SKILL.md` を `SkillUsageStore` に記録する。書き込みはプロセス内で直列化し、一時ファイルからの rename で置き換える。失敗はログに残してツールの実行は止めない。
-
-### 8.7 Claude Code プロバイダ
-
-```text
-PiAgentSession ─► Models.streamSimple ─► claude-code provider
-                                            │ 履歴を stream-json のフレームにして stdin へ
-                                            ▼
-                                   claude -p（子プロセス, --max-turns 1）
-                                            │ ANTHROPIC_BASE_URL=ループバックの中継
-                                            ▼
-                                   TurnRelay ─► api.anthropic.com（1ターンに1リクエストだけ通す）
-                                            │ SSE をそのまま捕まえて pi のイベントへ
-                                            ▼
-                                   AssistantMessage（ツール呼び出しは Luna が実行）
-```
-
-- `adapters/outbound/pi/claude-code/` は earendil-works/pi-claude-code（d5b5e04、MIT、`LICENSE` を同梱）の移植である。npm に公開されておらず、Git からの導入はしない方針のため取り込んだ。上流の修正を手で追えるよう、構造と関数名は上流に合わせてある。上流から外したのは Windows 対応、`PI_CLAUDE_CODE_*` の環境変数、モデルの探索、超過課金を許す設定。
-- `claudeCodeProvider({ configDir })` は、ログイン状態の確認とリクエストの子プロセスに `CLAUDE_CONFIG_DIR=<LUNA_HOME>/claude-code` を重ねる。プロセスの環境変数には入れないため、シェルのツールの子プロセスには伝わらない。
-- Claude Code にはツールを実行させない。ツールの一覧は、呼ばれても拒否だけを返す MCP サーバー（`inert-mcp.ts` の文字列を一時ディレクトリへ書き出して `process.execPath` で起動）として見せ、モデルが出したツール呼び出しは中継で捕まえた応答から取り出す。バンドル後に `import.meta.url` からファイルを探せないため、文字列で持つ。
-- 中継は Claude Code が足した user メッセージのリマインダを捨て、pi の履歴の内容で組み直す。履歴と合わなければ推測で送らずに失敗にする。
-- Claude Code が画像と文書の合計サイズの上限で古い画像を間引いた要求（`[media removed: request limit.` の注記がある要求）では、間引かれた画像を履歴から戻さず、注記に置き換わった画像は注記のまま、跡なく消えた画像は落として送る。
-- 同じセッションの直線的な続き（直前の応答にツール呼び出しがない）は、起動済みのプロセスを再利用する。保持は最大2つ・5分まで。それ以外は新しいプロセスで履歴全体を再生する。セッションを閉じると pi-ai の `cleanupSessionResources` で閉じる。
-- `keepSpareClaudeProcess(sessionId)` で登録したセッションは、毎回の要求が続きにならない前提で、次の要求用に起動済みの予備プロセスを1つ控える。要求は予備で受けて使い終えたら捨て、すぐ次の予備を起動する。予備は再利用の枠（最大2つ）に入れず、会話の温まったプロセスを追い出さない。起動の条件（システムプロンプト・ツール・環境など）の指紋が違えば予備を捨てて起動し直し、5分で入れ替える。予備の起動の失敗は報告せず、次の要求が自分で起動して失敗を返す。
-- 応答のネイティブの内容（署名付きの思考を含む）は assistant メッセージの diagnostics（`claude-code.native-assistant.v1`）に載せ、次の再生で使う。そのぶんセッションの記録が大きくなる。
-- モデルの一覧は静的で、pi-ai の anthropic のカタログから写し、料金は0にする。Claude Code の `--model` にはモデルIDをそのまま渡す。文脈長（1M）と最大出力（128K）は、Max のアカウントで Claude Code が報告する値と一致する。
-- `rate_limit_event` の `isUsingOverage` が立った応答と、超過課金を求める拒否は「Claude Code billing」で始まるエラーにする。`classifyAgentError` はこれを `usage_limit` に分類する。
-
-### 8.8 モデルの応答のストリーム
-
-- `ModelStreamPort`（`ports/outbound/model-stream-port.ts`）は、システムプロンプトとツールの定義を固定した `ModelStream` を開き、1つの user 文ごとに本文の差分とツール呼び出しを流す。ツールは実行せず、記録・圧縮・再試行もしない。音声モードの表が使う。
-- `PiModelStreams` は pi-ai の `streamSimple` を `maxRetries: 0` で呼ぶ。`claude-code` のモデルで開くと `keepSpareClaudeProcess` を登録し、閉じる時に解放する。
-
-### 8.9 再生
-
-- `luna-chat replay`（`src/runtime/replay.ts`）は、常駐プロセスとは別のプロセスで `PiAgentRuntime` を作り、場面ごと・指示の組ごとにセッションを開いて閉じる。会話の開発者指示は常駐側と同じ `SESSION_DEVELOPER_INSTRUCTIONS` を使う。
-- Lunaのツールは本物の定義を、ポートだけ記録用の偽物に差し替えて組み立てる。汎用ツールは `createReplayHarnessTools` が、読み取りとWeb検索だけ本物、それ以外を記録して成功を返すスタブにする。
-- 記録は一時ディレクトリへ書き、終了時に消す。本物の会話記録に混ぜると、ルナが次に記録を見直す時に再生を本物の会話と取り違えるため。
-
-### 8.10 ボイスチャンネル（voice モジュール）
-
-```text
-voice_join / voice_leave / voice_report ──► VoiceChannelService ──connect──► DiscordVoiceGateway ──► @discordjs/voice
-                                               │  ▲                               │ 話者ごとの受信（Opus→16kHz）・区切り
-                          onSegment / onSpeechStarted / onHumanCount / onClosed ◄─┘ 声の検知（Silero VAD）
-                                               ▼
-                                          TurnTracker ── 区切りをつなげて認識し直し、ターンを確定
-                                               │ テキストモード: 確定 → voice_utterance
-                                               │ 音声モード:
-                                               ▼
-   VoiceSession ── draft で先行生成、commit で再生 ──► VoiceResponder ──► ModelStream（表、[models.voice]）
-      │  │  └─ 再生中の声 ──► InterruptJudge ──► InterruptClassifierPort（PiInterruptClassifier → pi-ai classify）
-      │  └──► SpeechOutput ──► SpeechSynthesizerPort（AivisSpeech / speech.cpp） ──► VoiceLink.play（音量は VoiceLink.setVolume）
-      └──► 裏: voice_delegation / voice_utterance / voice_transcript ──► ConversationCoordinator.accept
-                         ▲ voice_report（会話のルナ）               onBatchSettled ──► 依頼の実行の終わり
-```
-
-- `VoiceChannelService`（application）は入っているVC（同時に1つ）、紐づけ先の会話セッション、モードを持つ。参加・退出・切り替えは `SerialQueue` で順に行い、紐づけ先は `voice_join` を呼んだ実行の `ToolOrigin` から取る。人が一度でもいたかを覚え、いた人が全員抜けたらすぐ出る。誰もいないVCに入った時だけ、人が来るのを自分のタイマーで待つ。モードの切り替えでは `VoiceLink.setMuted` で自分のミュートも切り替え、音声モードに入る時に `openResponder` で表を開いて `VoiceSession` を作り、出る時に閉じて残りの会話記録を `voice_transcript` で渡す。表示名はVCにいる間覚えておく。
-- `TurnTracker`（application）は話者ごとに区切りの音声をつなげ、区切りのたびに全体を認識し直して `onDraft` を出す。確定の待ち時間は `looksUnfinished`（domain、文末の形の判定）で選ぶ。`speechStarted` で確定待ちのタイマーを止め、次の区切りで続ける。版番号で、古い認識結果が新しい区切りを上書きしないようにする。
-- `VoiceSession`（application）は音声モードの会話の進行を持つ。返事（`Reply`）は同時に1つで、`draft` で確定前の発話を末尾に足した会話記録から作り始め、`commit` が同じ話者・同じ版なら再生を許す（`release`）。違えば作り直す。確定前の `delegate` は `held` に溜め、`release` で出す。誰も話さず返事もない時に、未読の報告があれば報告をきっかけに返事を作る。人に聞こえ得た返事（`release` 済み）だけを、止めた時点の再生位置とともに会話記録に残す。
-- `SpeechOutput`（application）は返事ごとの `SpeechReply` を作り、文を `add` した時点で `SerialQueue` で順に合成し、`release` の後に言った順で再生する。新しい返事を始めると前の返事は止まる。最初の合成と再生の時刻を計測用に持つ。
-- `InterruptJudge`（application）は再生中に声を検知した話者ごとに開き、1秒後に `VoiceLink.ongoingSpeech` の途中の音声で、区切れた時に全体で、認識と判定をする。割り込みと決まったら一度だけ `onInterruption` を呼ぶ。区切れて扱いが決まった後は、遅れて返った途中の判定で覆さない。分類と認識の失敗は割り込みとして扱う。
-- `VoiceRecord`（domain）は会話記録を通し番号付きで持ち、裏へ渡した位置（`#deliveredSeq`）以降を依頼と一緒に渡す。表へは `formatRecordLine` の行、裏へは `toRecordJson` のJSONで渡す。`SentenceSplitter`（domain）は表の差分を読み上げの区切りに切る。最初の区切りだけ読点でも切り、声に出す文字が3文字に満たない区切りは次とつなげる。
-- 依頼の実行中かどうかは、`ConversationCoordinator` の `onBatchSettled` に依頼のイベントIDが来るまでとする。コンポジションルートが `VoiceChannelService.onBatchSettled` へ配る。
-- `DiscordVoiceGateway`（adapter）は `VoiceGatewayPort` を実装する。VCごとの `DiscordVoiceLink` が接続、話者ごとの受信と復号、再生、人数の監視（`voiceStateUpdate`）を持つ。再生は Readable から1フレーム（20ms）ずつ音量を掛けて Opus 化し、先に作るフレームを2つに抑えて音量の変更をすぐ効かせる。人が今いるVCは、Gatewayの `voiceStates` のキャッシュから探す。ミュートの切り替えは Ready の接続への `rejoin` で、音声の状態だけを送り直す（接続は張り直さない）。Opusの復号器がレートとチャンネル数を変換するので、自前のリサンプルは持たない。
-- 声の検知は話者ごとの Silero VAD（`createSpeechDetector`）で行い、区切りごとに `reset` する。Discordの「話し始め」の通知は雑音でも届くため、合図には使わない。声を検知しなかった区切りは `onSegment` で渡さない。
-- `@discordjs/voice` は復号の失敗を `debug` のメッセージでしか知らせないため、接続を `debug: true` で作り、失敗のメッセージと受信できた音声から「失敗が続いている時間」を測って入り直す。入り直しは `DiscordVoiceLink` の中で行い、サービスの状態（紐づけとモード）は変えない。Discord側で切れて戻らなければ `onClosed` で知らせる。
-- `SpeechClippingTranscriber`（adapter）は `TranscriberPort` を包み、Silero VAD（`sherpa-onnx-node` の `Vad`）で声の区間だけを切り出してから中の認識器へ渡す。VAD は1つを `reset` して使い回し、切り出しは同期処理なので呼び出し同士で状態が混ざらない。
-- `SherpaTranscriber`（adapter）は `sherpa-onnx-node` の `decodeAsync` でイベントループを止めずに認識し、全話者で1つの `SerialQueue` を通してCPUの取り合いを避ける。`sherpa-onnx-node` は型定義を持たないので、使う範囲だけを `sherpa-onnx-node.d.ts` で宣言し、認識結果と VAD の区間はZodで検証する。SenseVoice の `event`（`<|Speech|>` など）が声以外なら `nonVerbal` にする。
-- `PiInterruptClassifier`（adapter）は、OpenAI と TypeSafe のプロバイダだけを入れた専用の pi-ai `Models` で `classify` を呼ぶ。会話用の `Models` に入れると、それらのチャットモデルが `/luna model` の候補に混ざるため。作る時にモデルの有無と鍵を確かめる。
-- `AivisSpeechSynthesizer`（adapter）は AudioQuery の `speedScale` と出力形式（48kHzステレオ）だけを差し替え、ほかの項目はエンジンが返したまま送り返す。
-- `SpeechCppSynthesizer`（adapter）は speech.cpp の `POST /v1/audio/speech` を1回呼ぶ。Irodori はモノラルで返すので、Discordへ送る48kHzステレオにそろえる。コンポジションルートが `tts_engine` でどちらを使うか決める。WAVの読み取りとモノラルからステレオへの変換は `wav.ts` に置き、両方で使う。
-- VCの入力を集約待ちなしで渡すため、`ConversationCoordinator` は `isImmediate(event)` が真の入力で debounce と入力中の待機を飛ばす。コンポジションルートが Assist の発話と3種類のVCの入力に真を返す。
-- 高速モードは `AgentSessionSpec.fastMode` をリクエストのたびに呼んで決め、真なら `PiAgentSession` が pi-ai の `onPayload` でリクエスト本文に `service_tier: "priority"` を足す（pi-ai の `streamSimple` は `serviceTier` を通さないため）。コンポジションルートがセッションファクトリに「VCに紐づいた会話か」を渡すので、セッションを開き直さずに参加・退出へ追従する。
-- 紐づいたスコープへの投稿を常設でなくても受け付けるため、`DiscordConversationController` は `isVoiceBound(sessionKey)` を一時セッションの有無と同じ扱いで受付判定に渡す。
-
-## 9. 話題をきっかけにする予定（intent モジュール）
-
-- `ConversationCoordinator` は実行に渡す入力を組み立てる時と steer する時に、`ConversationIntentPort.match(events)` の結果を該当メッセージの後に加える。
-- `IntentMatcher`（application）はイベントから人のDiscordメッセージだけを取り出し、`findFiringIntents`（domain）で期限・発火回数・cooldown・キーワードを判定する。`IntentFileStore`（adapter）は `intents.toml` を毎回読み、発火の状態を `LUNA_HOME/state/intents-state.json` に書く。予定の読み込みに失敗した時はログに残して発火させず、会話は止めない。
-
-## 9.1 Home Assistant（home-assistant モジュール）
-
-```text
-HA REST ◄── HomeAssistantRestClient ◄── ha_* ツール
-HA WebSocket ◄─► HomeAssistantConnection ──state_changed──► StateChangeWatcher ──accept──► ConversationCoordinator
-                     ▲ 登録情報（area 指定時）               │ home-assistant.toml（更新時刻で読み直し）
-                     └──── ha_list_entities                  ▼ cooldown（メモリ）
-ha-luna ──POST /home-assistant/conversation──► AssistService ──accept──► ConversationCoordinator（集約なし）
-        ◄──────────── speech ──────────────── AssistResponseRegistry ◄── assist_respond ツール
-```
-
-- `HomeAssistantConnection` は1本のWebSocketで認証・購読・ping・再接続を担い、`id` で応答を対応づける要求（登録情報の取得）も同じ接続で送る。再接続は待ち時間の表に従って自分でタイマーを仕掛け、`stop` で止める。接続状態はダッシュボード用に保持する。
-- `StateChangeWatcher`（application）は受けた状態変化を `findStateChangeTrigger`（domain）で判定し、`ConversationCoordinator.accept` で `home_assistant:state_changes` の会話へ渡す。`home-assistant.toml` の読み込みは `WatchConfigPort` 越しで、アダプターは更新時刻が変わった時だけ読み直す。毎回のファイル読みを避けるのは、`state_changed` がセンサーの数だけ頻繁に届くため。
-- Assistの会話は集約の待機をしない。`ConversationCoordinator` の `debounceMs` をセッションの関数とし、コンポジションルートがAssistのセッションに0を返す。
-- `AssistResponseRegistry` は `assist_respond` の時点で応答待ちのPromiseを解決する。`http_respond` と違い実行の完了を待たないのは、音声の応答待ちを縮め、返答の後も実行を続けられるようにするため。実行の完了は `onBatchSettled` で受け、未応答なら `speech: null` または失敗で解決する。
-- ルートはHTTPイベントAPIと同じHonoアプリに `registerAssistRoute` で加える。JSONの読み取りとContent-Typeの判定は `shared/hono-server` の共通関数を使う。
-
-## 9.2 Discord アダプター
-
-- **Gateway**: `messageCreate`・`messageUpdate`・`messageDelete`・`messageReactionAdd`・`messageReactionRemove`・`typingStart` を購読し、正規化されたドメインイベントへ変換する。初回コンテキストの過去ログはキャッシュせずに取得するため、`Partials.Message` と `Partials.Reaction` を有効にし、キャッシュにないメッセージの変更も受け取る。
-- **既知のメッセージへの変更**: `DiscordConversationController` は、Luna自身の投稿を `remember` で、他の人による編集・削除・リアクションを対象メッセージIDつきの `acceptFollowUp` で `ConversationCoordinator` へ渡す。どのメッセージを知っているかの判定はコーディネーターに任せる。
-- **スラッシュコマンド**: `/luna` コマンドを受け付け、セッション設定やチャンネルの許可リスト更新を処理する。
-- **Discordツール**: 読み取り（履歴、チャンネル一覧、ユーザー、絵文字）と書き込み（送信・返信・編集・削除、リアクション、タイピング）と会話委譲を1つのツールプロバイダにまとめる。作業エージェントには読み取りだけのプロバイダを渡す。
-- **会話委譲**: バックグラウンドの実行（ハートビート等）がDiscord上で対話を始めたい場合、自身で直接投稿せず、対象スコープの会話セッションへイベントを委譲して処理を委ねる。
-- **タイピング管理**: `start_typing` で始めたタイピング表示を維持し、`stop_typing` または実行の完了（`release`）で確実に解放する。
-
-HTTPアダプターは `/events` のJSONをZodで検証し、LunaEventを生成する。`one_shot` はEventExecutorへ、`conversation` は `http:<session_id>` の会話セッションへ直接渡す。HTTP会話の初回履歴は空とする。受付停止中は503を返し、受理済みワンショット実行は終了時にdrainする。
-
-## 10. ワークスペースと設定管理
-
-- 初回起動時に `LUNA_HOME` 配下の初期ディレクトリ構造とデフォルト設定ファイルを生成する。
-- 設定ファイル（`config.toml`, `cron.toml`）は `smol-toml` と Zod により厳格にパース・検証する。
-- `cron.toml` の変更はファイル監視によりリアルタイムに検知され、プロセスの再起動なしでスケジュールが更新される。ワンショットタスクは実行開始直後にファイルから自動削除される。
-
-## 11. オートメーション
-
-ハートビート、スケジュール、日次整理は、それぞれ独立したイベントソースとして動作し、共通のワンショットエグゼキュータを呼び出す。
-
-- **ハートビート**: ランダムな時間間隔で `HEARTBEAT.md` と `AGENDA.md` を読み込み、定期チェックとアジェンダの一手を進める。アジェンダはワークスペースのMarkdownとして持ち、構造の検証はしない（エージェントが読み書きする文書として扱う）。
-- **スケジュール**: cron定義または指定日時に基づき、登録されたプロンプトを実行する。各発火を `ActiveExecutionSet` で追跡し、同じジョブの発火同士も直列化しない。
-- **check**: `ScheduleController` は `AutomationCheckRunnerPort` だけに依存し、出力の空判定・切り詰め・ログ記録を担う。`ChildProcessCheckRunner` は `/bin/sh -c` を独立したプロセスグループで起動し、タイムアウト時はグループ全体へシグナルを送る。暴走した出力でメモリを使い切らないよう、標準出力は先頭、標準エラー出力は末尾をそれぞれ64000文字まで保持する。checkは発火の実行の一部として追跡されるため、`drain` は実行中のcheckと後続のエージェントの実行を待つ。
-- **日次整理**: 定期cronにより起動し、記憶の統合やファイルの整理を行った後、Gitが利用可能であればローカルコミットを作成する。
-- **記録の掃除**: `TranscriptRetentionCleaner` が起動時と一定間隔で `TranscriptPrunerPort.prune` を呼び、保持期間を過ぎたセッションの記録を削除する。`transcript_cleanup_enabled = false` のときは組み立て時にこのクリーナーを作らない。
-
-## 11.1 バックグラウンドタスク
-
-```text
-依頼元(会話/イベント) ──task_create──► TaskService ──queue──► 作業セッション(OpenAgentSession)
-        ▲                                 │  run(task_assignment) ─► task_report ツール
-        │ luna.task.reported.v1           │  steer(task_message)
-        └──── TaskDeliveryPort ◄──────────┘  abort(cancel / shutdown)
-```
-
-- `TaskService` はタスクをメモリ上の `Map` で保持し、更新のたびにタスクごとに直列化した書き込みで `TaskStorePort` へ保存する。
-- 作業セッションの開始は実行枠（`max_concurrent`）で制限する。`question` で待機したセッションはプロセス内の `parked` 表に保持し、メッセージが届いたら同じセッションで再開する。
-- 作業セッションのツール集合は、Discordの読み取り、`task_report`、`wait` で構成する（汎用ツールはアダプターが加える）。
-- 実行の完了ごとに、終了報告の有無、未配送のメッセージ、`waiting_input`、バックグラウンド実行の有無を見て続け方を決める。終了報告がなくバックグラウンド実行が残っていれば、`waitForBackground()` とメッセージの到着（`task_message` が起こす）を待つ。どちらもなければ一度だけ `task_check` を渡す。
-- 通知は `TaskDeliveryPort` を介して、会話には `ConversationCoordinator.accept`、イベント起点にはEventExecutorの新規実行として渡す。配送の受理時刻を報告に記録し、未受理の通知は起動時に再配送する。
-- 会話とイベントの入力に同梱するタスク一覧は、`ConversationTaskBoardPort` / `EventTaskBoardPort` を介して `TaskService.listFor` から取得する。conversation・eventモジュールはtaskモジュールに依存しない。
-- 取消・シャットダウンでは、作業セッションの `ownerId` で `ToolSet.release` を呼んで `wait` を打ち切り、セッションを `abort` してバックグラウンド実行を止める。シャットダウンはループ・配送・保存の完了を待つ。
-
-## 11.2 状態の可視化（ダッシュボード）
-
-```text
-ConversationCoordinator.snapshot ─┐
-EventExecutor.snapshot ───────────┤
-TaskService.snapshot ─────────────┤
-AutomationService.snapshot ───────┼─► DashboardService.snapshot ─► GET /api/snapshot ─► ページ（3秒ごとに取得）
-AgentRuntimePort.status ──────────┤
-StateChangeWatcher.status ────────┤
-RecentLogBuffer.list ─────────────┘
-```
-
-- 各モジュールはアプリケーション層に読み取り専用の `snapshot`（エージェントのアダプターは `status`）を持ち、状態の型はdomain/ports層に置く。`DashboardSourcePort` はそれらを呼ぶ関数の集まりで、コンポジションルートが配線する。状態の変更通知の仕組みは持たず、取得のたびにメモリ上の状態を読む。
-- 会話アクターはフェーズを変えるたびに開始時刻を記録する（`#enter`）。EventExecutorは実行中のイベントとフェーズを保持し、完了・失敗で外す。
-- ハートビートは次のタイマーを仕掛けた時点の予定時刻を保持する。日次整理とスケジュールの次回時刻は `ScheduledAutomationJob.nextRunAt`（cronライブラリの `nextDate`）から求める。
-- 直近の出来事は、標準出力のロガーと同じ呼び出しを受ける `RecentLogBuffer` が保持する。標準出力と違い `LOG_LEVEL` に関係なくinfo以上を本文付きで残すため、ログレベルを上げずに会話の中身を追える。秘匿フィールドのマスクは標準出力と同じ直列化を使う。
-- ページは単一のHTML文字列（`dashboard-page.ts`）で、外部ライブラリを使わない。表示する文字列はすべて `textContent` で入れ、Discordの本文をHTMLとして解釈しない。
-
-## 12. 起動とシャットダウンシーケンス
-
-### 起動 (Startup)
+### 起動
 
 1. 環境変数の検証
 2. `LUNA_HOME` および初期ワークスペースファイルの作成・検証
@@ -413,7 +167,7 @@ RecentLogBuffer.list ─────────────┘
 8. 期限切れの記録の削除をバックグラウンドで開始
 9. Gateway受信、HTTP API（Assistのルートを含む）、ダッシュボード、ハートビート、日次整理、cron監視、HAのWebSocket接続の開始
 
-### 終了 (Shutdown)
+### 終了
 
 1. SIGINT / SIGTERM を受信
 2. Gatewayからの新規メッセージ、HTTPイベントとAssistの受付、HAの状態変化による起動、新規タイマー発火を停止し、実行中のバックグラウンドタスクを中断してキューへ戻す。イベント実行のバックグラウンド実行を止め、ボイスチャンネルから出る
@@ -423,23 +177,6 @@ RecentLogBuffer.list ─────────────┘
 6. 待機中のHTTPリクエストとAssistのリクエストの完了を確認し、HTTPサーバー、ダッシュボード、タイピングリース、ファイル監視、使用枠の取得、HAのWebSocket接続、Discord接続を停止
 7. ログをフラッシュして終了
 
-## 13. テスト方針
+## ビルド
 
-コードカバレッジの数値目標は設定せず、各レイヤーの境界における入出力や状態遷移のテストを重視する。
-
-| テストレイヤー           | 検証対象                                                                                                                                                    |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ドメイン単体テスト       | セッション状態遷移、禁止遷移、イベントエンベロープ、入力メッセージへの変換、ツールの入力スキーマ                                                            |
-| アプリケーション層テスト | バッチ集約・steerの入る位置、記憶保存、タスクの続け方、ハートビート、日次整理                                                                               |
-| アダプター層テスト       | Gateway、REST、ツール、エージェントのセッション（pi の faux プロバイダ）、ChatGPTのバックエンド（fetch のモック）、プロセス制御、ファイルシステム、タイマー |
-| 異常系マトリクス         | タイムアウト、不正レスポンス、通信切断、使用上限、認証の失敗、例外発生時の挙動                                                                              |
-| 並行性テスト             | スコープごとの直列化、複数スコープ間の並行実行、シャットダウン時のドレイン処理                                                                              |
-| 結合テスト               | モックを用いた起動からシャットダウンまでの一連の統合フロー                                                                                                  |
-| ツール集合のテスト       | 本番の全ツールプロバイダのツール名が重複せず、入力スキーマからJSON Schemaを生成できること                                                                   |
-| 手動E2Eテスト            | 実Discordおよび実ChatGPTを用いた対話動作の確認                                                                                                              |
-
-## 14. ビルドとリリースパイプライン
-
-- **ローカルビルド**: `pnpm run build` により、`src/index.ts` をESMの `dist/index.mjs` へバンドルする。依存パッケージはバンドルせず、実行時に `node_modules` から読み込む。`package.json` の `bin`（`luna-chat`）はこのファイルを指す。初期テンプレートは、エントリポイントの位置を基準にパッケージ内の `templates/` から読み込む。
-- **CI品質ゲート**: GitHub Actions上でフォーマット、リント、未使用コード検出（knip）、型チェック（typecheck）、テスト、ワークフローの静的検査（jactionlint、zizmor）を自動実行し、すべてが通過することをmainブランチへのマージ条件とする。
-- **リリースワークフロー**: `.github/workflows/release.yml` に手動実行とPRマージ後の処理を集約する。準備ジョブは共通setupでpnpmと依存関係を用意する。`shun-shobon/easy-release` の `prepare` が `.github/easy-release.json` を読み、最新の安定版Gitタグからバージョンを更新し、`updateCommand` の `pnpm format` で整形した変更をPRに含める。マージ後は `draft` が準備PRとバージョンを検証し、タグとドラフトReleaseを作成する。`ready` が `true` の場合だけ、出力された `commit` をDockerのビルドに、`tag` をイメージタグに使う。DockerはLinuxのamd64・arm64を対象とし、GitHub Artifact Attestationsを付与する。ビルドジョブの成功後にDockerの `latest` を更新し、`publish` に `release-id`・`tag`・`commit` を渡して公開する。リリース処理は共通のconcurrencyグループで直列化する。
+`pnpm run build` により、`src/index.ts` をESMの `dist/index.mjs` へバンドルする。依存パッケージはバンドルせず、実行時に `node_modules` から読み込む。`package.json` の `bin`（`luna-chat`）はこのファイルを指す。初期テンプレートは、エントリポイントの位置を基準にパッケージ内の `templates/` から読み込む。
