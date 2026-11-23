@@ -6,6 +6,7 @@ import type {
 	HarnessToolName,
 	ModelSelection,
 } from "../modules/agent/ports/outbound/agent-session-port";
+import { createActivityTable } from "../modules/tool/application/activity-table";
 import type { ToolSet } from "../modules/tool/application/tool-set";
 import type { ToolOrigin } from "../modules/tool/domain/tool";
 import type { OpenAgentSession } from "../modules/tool/ports/agent-session-factory-port";
@@ -64,6 +65,7 @@ export function createSessionFactory(input: {
 		const selected = model ?? profile.model?.();
 		if (selected === undefined) throw new Error(`A ${kind} session needs a model`);
 		const ownerId = createOwnerId();
+		const activities = createActivityTable();
 		const instructions = profile.includeWorkspaceInstructions
 			? await readWorkspaceBaseInstructions(input.workspaceDir)
 			: { luna: undefined, memory: undefined };
@@ -78,9 +80,10 @@ export function createSessionFactory(input: {
 				memory: instructions.memory,
 			}),
 			model: selected,
-			tools: profile.tools.bind({ ownerId, origin }),
+			tools: profile.tools.bind({ ownerId, origin, activities }),
 			harnessTools: HARNESS_TOOLS,
 			fastMode: () => input.fastMode(origin),
+			activities,
 		});
 		return { ownerId, session };
 	};

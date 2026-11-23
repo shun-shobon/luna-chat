@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
+import { createActivityTable } from "../../tool/application/activity-table";
 import { createToolSet } from "../../tool/application/tool-set";
 import { HttpResponseRegistry } from "../application/http-response-registry";
 import { createHttpResponseToolProvider } from "./http-response-tool-provider";
@@ -78,6 +79,7 @@ function bindRespond(registry: HttpResponseRegistry): AgentTool {
 		createRecordingLogger(),
 	).bind({
 		ownerId: "owner-1",
+		activities: createActivityTable(),
 		origin: { kind: "event", eventId: REQUEST_ID, eventType: "http.request.v1" },
 	});
 	if (tool === undefined) throw new Error("http_respond tool is missing");

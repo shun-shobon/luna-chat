@@ -190,7 +190,7 @@ type MinecraftEvent = {
 
 ```text
 minecraft_goal / minecraft_observe / minecraft_name_place（minecraft の作業エージェントだけに渡す）
-        │ ToolContext（ownerId・origin・activities）
+        │ ToolExecution（ownerId・origin・activities）
         ▼
 MinecraftPlayService ── プレイ（同時に1つ）
    ├─ DecisionLoop ── 候補の列挙（domain）─► DecisionModelPort ◄─ PiDecisionModel（pi-ai の classify）
@@ -203,7 +203,7 @@ MinecraftClientPort ◄─ MineflayerClient ── MessagePort ──► worker 
                                                            └ 反射（毎tick）
 ```
 
-- `MinecraftPlayService`（application）はプレイを1つだけ持つ。最初のツール呼び出しで、`ToolContext.activities` から続いている作業（[tools.md](./tools.md)の未実装の項）を始めて接続する。作業が止められた時（セッションを閉じる、取消、シャットダウン）の後始末で入力を離して切断する。プレイ中に別の `ownerId` から呼ばれたらツールの失敗にする。
+- `MinecraftPlayService`（application）はプレイを1つだけ持つ。最初のツール呼び出しで、`ToolExecution.activities` から続いている作業（[tools.md](./tools.md)）を始めて接続する。作業が止められた時（セッションを閉じる、取消、シャットダウン）の後始末で入力を離して切断する。プレイ中に別の `ownerId` から呼ばれたらツールの失敗にする。
 - 出来事は作業のハンドルの `notify` で渡し、`replaceKey` に出来事の `type` を使う。計画役がまだ読んでいない同じ種類の出来事を、新しいもので置き換えるため。`interval` のタイマーは、ツールが呼ばれるたびと出来事を渡すたびに仕掛け直す。
 - domain には、外部に触れない規則を置く。観測の組み立て、行動の候補の列挙と255件への絞り込み、判断の答えから出来事を決める規則（確率0.8、連続回数）、反射のきっかけの判定。反射のきっかけの判定は worker thread からも使う。
 - `DecisionLoop` は候補に `a0` から順にキーを振り、説明文を `criteria` にして1つの `choice` の質問にする。目標の状態は別の `choice` の質問として同じリクエストに入れる。答えのキーが候補にない、または `stopReason` が `stop` でない答えは失敗として数える。

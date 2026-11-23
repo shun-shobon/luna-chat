@@ -5,9 +5,11 @@ import { createRecordingLogger } from "../../observability/testing/recording-log
 import type { ToolExecution, ToolOrigin } from "../domain/tool";
 import { defineTool } from "../ports/tool-provider";
 import type { ToolProvider } from "../ports/tool-provider";
+import { createActivityTable } from "./activity-table";
 import { createToolSet } from "./tool-set";
 
 const origin: ToolOrigin = { kind: "event", eventId: "event-1", eventType: "test.v1" };
+const activities = createActivityTable();
 
 describe("createToolSet", () => {
 	it("定義をAgentToolへ変換し、実行元とsignalを渡して結果をJSON文字列で返す", async () => {
@@ -16,7 +18,7 @@ describe("createToolSet", () => {
 		}));
 		const logger = createRecordingLogger();
 		const toolSet = createToolSet([provider([echoTool(execute)])], logger);
-		const [tool] = toolSet.bind({ ownerId: "owner-1", origin });
+		const [tool] = toolSet.bind({ ownerId: "owner-1", origin, activities });
 		const signal = new AbortController().signal;
 
 		expect(tool).toMatchObject({ name: "echo", description: "Echo the value." });
@@ -31,7 +33,10 @@ describe("createToolSet", () => {
 			images: [],
 			isError: false,
 		});
-		expect(execute).toHaveBeenCalledWith({ value: "hi" }, { ownerId: "owner-1", origin, signal });
+		expect(execute).toHaveBeenCalledWith(
+			{ value: "hi" },
+			{ ownerId: "owner-1", origin, activities, signal },
+		);
 		expect(logger.entries).toContainEqual({
 			level: "info",
 			event: "tool.succeeded",
@@ -56,6 +61,7 @@ describe("createToolSet", () => {
 		const [tool] = createToolSet([provider([echoTool(execute)])], logger).bind({
 			ownerId: "owner-1",
 			origin,
+			activities,
 		});
 
 		const result = await tool?.execute({ value: "", extra: true }, new AbortController().signal);
@@ -88,7 +94,7 @@ describe("createToolSet", () => {
 				]),
 			],
 			logger,
-		).bind({ ownerId: "owner-1", origin });
+		).bind({ ownerId: "owner-1", origin, activities });
 
 		await expect(tool?.execute({ value: "hi" }, new AbortController().signal)).resolves.toEqual({
 			text: message,

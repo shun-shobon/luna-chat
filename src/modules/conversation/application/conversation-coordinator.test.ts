@@ -421,7 +421,7 @@ describe("ConversationCoordinator", () => {
 			expect(harness.coordinator.endSession(session.key)).toBe(true);
 			await harness.flush();
 
-			expect(harness.sessions[0]?.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.sessions[0]?.stopActivities).toHaveBeenCalledOnce();
 			expect(harness.runs[1]?.messages[0]?.kind).toBe("session_end");
 			harness.finishRun(1);
 			await harness.flush();
@@ -847,9 +847,9 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
-	hasBackground: Mock<AgentSession["hasBackground"]>;
-	waitForBackground: Mock<AgentSession["waitForBackground"]>;
-	stopBackground: Mock<AgentSession["stopBackground"]>;
+	hasActivity: Mock<AgentSession["hasActivity"]>;
+	waitForActivity: Mock<AgentSession["waitForActivity"]>;
+	stopActivities: Mock<AgentSession["stopActivities"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
@@ -897,9 +897,9 @@ function createHarness(
 						settlers.push({ resolve, reject });
 					}),
 			),
-			hasBackground: background.hasBackground,
-			waitForBackground: background.waitForBackground,
-			stopBackground: background.stopBackground,
+			hasActivity: background.hasActivity,
+			waitForActivity: background.waitForActivity,
+			stopActivities: background.stopActivities,
 			steer: vi.fn<AgentSession["steer"]>(),
 			abort: vi.fn<AgentSession["abort"]>(async () => {
 				const runIndex = runs.findLastIndex((run) => run.sessionId === id);

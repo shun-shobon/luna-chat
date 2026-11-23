@@ -31,8 +31,8 @@ describe("application composition lifecycle", () => {
 				calls.push("dashboard.close");
 			},
 			events: {
-				stopBackground: vi.fn(async () => {
-					calls.push("events.stopBackground");
+				stopActivities: vi.fn(async () => {
+					calls.push("events.stopActivities");
 				}),
 			},
 			gateway: {
@@ -93,7 +93,7 @@ describe("application composition lifecycle", () => {
 				"http.stopIntake",
 				"homeAssistant.stopIntake",
 				"tasks.stopIntake",
-				"events.stopBackground",
+				"events.stopActivities",
 				"voice.stop",
 				"conversation.drain",
 				"automation.drain",

@@ -57,7 +57,7 @@ type ActiveRun = {
 	opened: OpenedAgentSession | undefined;
 	running: boolean;
 	stopReason: "cancelled" | "shutdown" | undefined;
-	// バックグラウンド実行の終了を待っている間に届いたメッセージで待ちを解く。
+	// 続いている作業の通知を待っている間に届いたメッセージで待ちを解く。
 	wake: (() => void) | undefined;
 };
 
@@ -307,15 +307,15 @@ export class TaskService {
 			run.opened = undefined;
 			return undefined;
 		}
-		if (opened.session.hasBackground()) {
-			const arrived = await this.#waitForBackgroundOrMessage(run, opened);
+		if (opened.session.hasActivity()) {
+			const arrived = await this.#waitForActivityOrMessage(run, opened);
 			if (isStopped(run)) return undefined;
 			const latest = this.#require(taskId);
 			if (isTerminalStatus(latest.status)) return undefined;
 			if (latest.messages.some((message) => message.deliveredAt == null)) {
 				return [this.#messagesInput(taskId)];
 			}
-			// 届いた完了通知は次の run の入力の前にセッションが入れる。
+			// 届いた通知は次の run の入力の前にセッションが入れる。
 			if (arrived) return [];
 		}
 		if (!run.nudged) {
@@ -326,11 +326,14 @@ export class TaskService {
 		return undefined;
 	}
 
-	async #waitForBackgroundOrMessage(run: ActiveRun, opened: OpenedAgentSession): Promise<boolean> {
+	async #waitForActivityOrMessage(run: ActiveRun, opened: OpenedAgentSession): Promise<boolean> {
 		const woken = Promise.withResolvers<boolean>();
 		run.wake = () => woken.resolve(false);
 		try {
-			return await Promise.race([opened.session.waitForBackground(), woken.promise]);
+			return await Promise.race([
+				opened.session.waitForActivity("any").then((wakeup) => wakeup !== "none"),
+				woken.promise,
+			]);
 		} finally {
 			run.wake = undefined;
 		}
@@ -440,7 +443,7 @@ export class TaskService {
 		void opened.session.abort().catch((error: unknown) => {
 			this.dependencies.logger.warn("task.abort_failed", { error });
 		});
-		void opened.session.stopBackground().catch((error: unknown) => {
+		void opened.session.stopActivities().catch((error: unknown) => {
 			this.dependencies.logger.warn("task.background_stop_failed", { error });
 		});
 	}

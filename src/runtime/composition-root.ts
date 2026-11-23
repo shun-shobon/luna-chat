@@ -636,7 +636,7 @@ export async function shutdownApplication(input: {
 	clientDestroy(): Promise<void>;
 	conversation: Pick<ConversationCoordinator, "drain" | "stopIntake">;
 	dashboardClose(): Promise<void>;
-	events: Pick<EventExecutor, "stopBackground">;
+	events: Pick<EventExecutor, "stopActivities">;
 	gateway: Pick<DiscordGatewayAdapter, "stop">;
 	homeAssistant: Readonly<{ stopIntake(): void; failPending(): void; stop(): void }>;
 	http: Pick<HttpEventService, "stopIntake" | "drain">;
@@ -658,7 +658,7 @@ export async function shutdownApplication(input: {
 			runCleanup(() => input.homeAssistant.stopIntake()),
 			runCleanup(() => input.tasks.stopIntake()),
 			input.automation.stopIntake(),
-			input.events.stopBackground(),
+			input.events.stopActivities(),
 			input.voiceStop(),
 		],
 		failures,

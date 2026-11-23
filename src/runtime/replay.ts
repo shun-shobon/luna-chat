@@ -19,6 +19,7 @@ import { HttpResponseRegistry } from "../modules/http/application/http-response-
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
 import { createTaskBoardToolProvider } from "../modules/task/adapters/task-tool-provider";
 import type { WorkerCatalog } from "../modules/task/domain/task";
+import { createActivityTable } from "../modules/tool/application/activity-table";
 import { createToolSet } from "../modules/tool/application/tool-set";
 import { readWorkspaceConfig } from "../modules/workspace/adapters/config-toml";
 import { resolveLunaHome } from "../modules/workspace/adapters/initialize-workspace";
@@ -99,15 +100,15 @@ export async function runReplay(input: {
 		logger: silentLogger,
 		now: () => new Date(),
 	});
-	const tools = createRecordingToolSet(record, input.workers).bind({
-		ownerId: "replay",
-		origin: REPLAY_ORIGIN,
-	});
+	const toolSet = createRecordingToolSet(record, input.workers);
 
 	const results: ReplayResult[] = [];
 	for (const scene of input.scenes) {
 		for (const variant of input.variants) {
 			calls = [];
+			// 表は開いたセッション1つにしかつなげないため、場面ごとに作り直す。
+			const activities = createActivityTable();
+			const tools = toolSet.bind({ ownerId: "replay", origin: REPLAY_ORIGIN, activities });
 			session = runtime.open({
 				kind: "conversation",
 				label: `replay:${scene.id}:${variant.name}`,
@@ -117,6 +118,7 @@ export async function runReplay(input: {
 				tools,
 				harnessTools: REPLAY_HARNESS_TOOLS,
 				fastMode: () => false,
+				activities,
 			});
 			let status: string;
 			try {

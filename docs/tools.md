@@ -92,7 +92,7 @@ type BackgroundExit = {
      │
      ├─ ToolSet.release(ownerId)  # タイピングと待機の解放
      │
-     ├─ waitForBackground()  # バックグラウンド実行が残っていれば、通知が届くまで待って同じセッションで続ける
+     ├─ waitForActivity("any")  # 続いている作業が残っていれば、通知が届くまで待って同じセッションで続ける
      │
      └─ 完了 / 失敗 / 中断を実行元へ返す
 ```
@@ -104,26 +104,22 @@ type BackgroundExit = {
 - 一時ディレクトリのパスは、システムプロンプトを組み立てる `session-factory` ではなくアダプターが書き足す。セッションIDがアダプターの中で決まるため。
 - skillの使用記録は `read` と `exec_command` を包んで取る。記録の失敗はログに残してツールの実行は止めない。
 
-### バックグラウンド実行
+### 続いている作業（バックグラウンド実行とツールの作業）
 
 ```text
-exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表（セッションごと）
-                                         │ 終了（通知あり）       │ stop_background / stopBackground / dispose（通知なし）
-                                         ▼                        ▼
-                         PiAgentSession.onBackgroundExit    PiAgentSession.onBackgroundStopped
-                           ├ 実行中: steer                      └ 残りも通知もなければ待ちを false で解く
-                           └ 実行外: pending に積み、待ちを true で解く ─► 次の run の入力の前に入れる
+exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表 ─┐
+ツール ─ ToolExecution.activities.begin() ─► セッションごとの作業の表 ────────┤
+                                                                            │ 通知 / 止まった
+                                                                            ▼
+                          PiAgentSession.onActivityNotice / onActivityStopped
+                            ├ 実行中: steer
+                            └ 実行外: pending に積み（同じ replaceKey は新しいほうだけ）、待ちを解く ─► 次の run の入力の前に入れる
 ```
 
-- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
-- `stopBackground()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。
+- `AgentSession` は `hasActivity()`・`waitForActivity(filter)`・`stopActivities()` を持つ。`waitForActivity("any")` は通知があれば `notice`（急ぎを含めば `urgent`）、通知なしにすべて止まった（または初めから何もない）なら `none` で解決する。`waitForActivity("urgent")` は急ぎの通知でだけ解け、急ぎでない通知は保留したまま待つ。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
+- `stopActivities()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。
 - 実行中かどうかの判定はアダプターが持つ。`run` の完了から持ち主の継続までの間に届いた通知を、持ち主ではなくアダプターが `pending` に積むため、取りこぼしが起きない。
-- プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。
-- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（[ARCHITECTURE.md](./ARCHITECTURE.md) の会話セッションの状態遷移）。EventExecutor は実行のたびに `waitForBackground()` を待ち、`true` なら `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForBackground()` とメッセージの到着を待つ。
-- シャットダウンでは EventExecutor の `stopBackground()` が実行中のすべてのセッションの `stopBackground()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断で止める。
-
-未実装（[minecraft.md](./minecraft.md)）: Minecraftのプレイを同じ仕組みに載せるため、バックグラウンド実行を「続いている作業」へ広げる。
-
-- `AgentSession` の `hasBackground()`・`waitForBackground()`・`stopBackground()` を、続いている作業全体の `hasActivity()`・`waitForActivity()`・`stopActivities()` に置き換える。シェルのバックグラウンド実行は、続いている作業の1つになる。
-- 通知は、入力に加えて `urgent`（急ぎか）と `replaceKey` を持つ。`run` に入れる前の通知に同じ `replaceKey` のものがあれば、古いほうを捨てる。`waitForActivity()` は、届いた通知が急ぎを含むかどうかも返す。
-- ツールはセッションより先に作られるため、tool モジュールに `ownerId` ごとの作業の表を置く。ツールは束ねた `ToolContext.activities` から作業を始め（`begin()` が `notify`・`end`・止められた時の後始末を持つハンドルを返す）、セッションファクトリは `open` の後でその表をエージェントのセッションにつなぐ。つなぐ前の通知は表に溜めておく。
+- ツールはセッションより先に作られるため、tool モジュールの作業の表（`createActivityTable`）をセッションファクトリが開くたびに作り、`ToolSet.bind` と `AgentSessionSpec.activities` の両方に渡す。セッションは開いた時に表へつなぎ、つなぐ前の通知は表が溜めておく。ツールは `begin(stop)` で作業を始め、返るハンドルの `notify`（`urgent` と `replaceKey` を付ける）と `end` を使う。`stop` はセッションが作業を止める時（`stopActivities`、閉じる時）に呼ばれ、止めた後の通知は捨てる。
+- シェルのバックグラウンド実行の通知（`background_exit`）は、急ぎでなく `replaceKey` を持たない通知として同じ経路に入る。プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。
+- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（[ARCHITECTURE.md](./ARCHITECTURE.md) の会話セッションの状態遷移）。EventExecutor は実行のたびに `waitForActivity("any")` を待ち、`none` でなければ `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForActivity("any")` とメッセージの到着を待つ。
+- シャットダウンでは EventExecutor の `stopActivities()` が実行中のすべてのセッションの `stopActivities()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断で止める。

@@ -174,7 +174,7 @@ describe("TaskService", () => {
 			await harness.waitForRuns(1);
 			harness.sessions[0]?.background.start();
 			harness.finishRun(0);
-			await vi.waitFor(() => expect(harness.sessions[0]?.waitForBackground).toHaveBeenCalledOnce());
+			await vi.waitFor(() => expect(harness.sessions[0]?.waitForActivity).toHaveBeenCalledOnce());
 			return task;
 		}
 
@@ -228,7 +228,7 @@ describe("TaskService", () => {
 			await harness.service.cancel(channelOrigin, task.id, null);
 
 			await vi.waitFor(() => expect(harness.sessions[0]?.close).toHaveBeenCalledOnce());
-			expect(harness.sessions[0]?.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.sessions[0]?.stopActivities).toHaveBeenCalledOnce();
 			expect(harness.runs).toHaveLength(1);
 			expect(harness.latest(task.id).status).toBe("cancelled");
 		});
@@ -630,9 +630,9 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
-	hasBackground: Mock<AgentSession["hasBackground"]>;
-	waitForBackground: Mock<AgentSession["waitForBackground"]>;
-	stopBackground: Mock<AgentSession["stopBackground"]>;
+	hasActivity: Mock<AgentSession["hasActivity"]>;
+	waitForActivity: Mock<AgentSession["waitForActivity"]>;
+	stopActivities: Mock<AgentSession["stopActivities"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
@@ -662,9 +662,9 @@ async function createHarness(
 		const session: FakeSession = {
 			id,
 			background,
-			hasBackground: background.hasBackground,
-			waitForBackground: background.waitForBackground,
-			stopBackground: background.stopBackground,
+			hasActivity: background.hasActivity,
+			waitForActivity: background.waitForActivity,
+			stopActivities: background.stopActivities,
 			// 実行の終わり際の割り込みを再現できるよう、async関数で包まず生のPromiseを返す。
 			run: vi.fn<AgentSession["run"]>((messages) => {
 				background.consume();

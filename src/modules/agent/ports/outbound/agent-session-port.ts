@@ -57,7 +57,35 @@ export type AgentSessionSpec = Readonly<{
 	harnessTools: readonly HarnessToolName[];
 	// リクエストごとに呼び、真なら高速モード（ChatGPTのFast、service_tier priority）で送る。使用枠の消費が増える。
 	fastMode: () => boolean;
+	// ツールが始める、セッションの外で続く作業。汎用ツールのバックグラウンド実行と同じく、通知と停止をセッションが受ける。
+	activities: SessionActivities;
 }>;
+
+// 続いている作業がセッションへ渡す通知。replaceKey が同じで、まだ run に入れていない通知は新しいほうだけを残す。
+export type ActivityNotice = Readonly<{
+	message: AgentInputMessage;
+	urgent: boolean;
+	replaceKey: string | null;
+}>;
+
+export type ActivityListener = Readonly<{
+	notify(notice: ActivityNotice): void;
+	// 通知を出さずに止まった時に呼ぶ。
+	stopped(): void;
+}>;
+
+export interface SessionActivities {
+	count(): number;
+	stopAll(): Promise<void>;
+	// セッションを開いた時に一度だけ呼ぶ。それより前の通知は、つないだ時に渡す。
+	connect(listener: ActivityListener): void;
+}
+
+// any は通知が届くまで、urgent は急ぎの通知が届くまで待つ。
+export type ActivityWaitFilter = "any" | "urgent";
+
+// none は、待っていた通知が届かないまま続いている作業がなくなった（または初めからない）ことを表す。
+export type ActivityWakeup = "none" | "notice" | "urgent";
 
 export type AgentRunFailureReason =
 	| "usage_limit"
@@ -93,13 +121,13 @@ export interface AgentSession {
 	// 実行中なら次のLLMリクエストの前に入る。アイドルなら次の run の入力の後に入る。
 	steer(message: AgentInputMessage): void;
 	abort(): Promise<void>;
-	// 動いているバックグラウンド実行か、まだ run に入れていない完了通知があるか。
-	hasBackground(): boolean;
-	// 完了通知が届けば true、通知なしにすべて止まった（または何もない）なら false で解決する。
-	// 届いた通知は次の run の入力の前に入るため、run([]) で続けられる。
-	waitForBackground(): Promise<boolean>;
-	// 残っているバックグラウンド実行を完了通知を出さずに止め、まだ run に入れていない完了通知も捨てる。
-	stopBackground(): Promise<void>;
+	// 続いている作業（汎用ツールのバックグラウンド実行と SessionActivities）か、まだ run に入れていない通知があるか。
+	hasActivity(): boolean;
+	// filter に合う通知が届いた（または既にある）時点で解決する。届いた通知は次の run の入力の前に入るため、
+	// run([]) で続けられる。urgent で待つ間に届いた急ぎでない通知は、解決させずに保留する。
+	waitForActivity(filter: ActivityWaitFilter): Promise<ActivityWakeup>;
+	// 続いている作業を通知を出さずに止め、まだ run に入れていない通知も捨てる。
+	stopActivities(): Promise<void>;
 	setModel(model: ModelSelection): void;
 	close(): Promise<void>;
 	status(): AgentSessionStatus;

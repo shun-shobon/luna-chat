@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
+import { createActivityTable } from "../../tool/application/activity-table";
 import { createToolSet } from "../../tool/application/tool-set";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { HomeAssistantState } from "../domain/state-change";
@@ -186,7 +187,7 @@ function createHarness(overrides: Partial<HomeAssistantRestPort> = {}) {
 	const tools = createToolSet(
 		[createHomeAssistantToolProvider({ rest, registry })],
 		createRecordingLogger(),
-	).bind({ ownerId: "owner-1", origin });
+	).bind({ ownerId: "owner-1", origin, activities: createActivityTable() });
 	const run = async (name: string, input: unknown) => {
 		const tool = tools.find((candidate) => candidate.name === name);
 		if (tool === undefined) throw new Error(`tool ${name} is missing`);

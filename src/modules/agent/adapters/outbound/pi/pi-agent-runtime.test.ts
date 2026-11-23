@@ -23,6 +23,7 @@ import { z } from "zod";
 import { formatLocalDate } from "../../../../../shared/local-date";
 import { createRecordingLogger } from "../../../../observability/testing/recording-logger";
 import type { RecordingLogger } from "../../../../observability/testing/recording-logger";
+import { createActivityTable } from "../../../../tool/application/activity-table";
 import type {
 	AgentSession,
 	AgentSessionSpec,
@@ -144,6 +145,7 @@ function spec(overrides: Partial<AgentSessionSpec> = {}): AgentSessionSpec {
 		tools: [],
 		harnessTools: [],
 		fastMode: () => false,
+		activities: createActivityTable(),
 		...overrides,
 	};
 }
@@ -367,30 +369,30 @@ describe("ツール", () => {
 	});
 });
 
-describe("バックグラウンド実行", () => {
+describe("続いている作業", () => {
 	const exitInput = input('{"id":"bg-1"}', "background_exit");
 
-	it("実行していない間の完了通知は待ちを true で解き、次の run の入力の前に入れる", async () => {
+	it("実行していない間の完了通知は待ちを notice で解き、次の run の入力の前に入れる", async () => {
 		const { runtime, faux, harnessContexts, backgroundCount } = await setup();
 		const requests: { context: TranscriptContext; model: string }[] = [];
 		faux.setResponses([fauxAssistantMessage("始めた"), capture(requests, "見た")]);
 		const session = runtime.open(spec());
 		await session.run([input("ビルドして")]);
 		backgroundCount.value = 1;
-		expect(session.hasBackground()).toBe(true);
+		expect(session.hasActivity()).toBe(true);
 
-		const waiting = session.waitForBackground();
+		const waiting = session.waitForActivity("any");
 		backgroundCount.value = 0;
 		harnessContexts[0]?.background.exited(exitInput);
 
-		await expect(waiting).resolves.toBe(true);
-		expect(session.hasBackground()).toBe(true);
+		await expect(waiting).resolves.toBe("notice");
+		expect(session.hasActivity()).toBe(true);
 		await session.run([]);
 		expect(texts(requests[0]?.context.messages ?? [], "user").at(-1)).toBe(
 			'<luna_input kind="background_exit">\n{"id":"bg-1"}\n</luna_input>',
 		);
-		expect(session.hasBackground()).toBe(false);
-		await expect(session.waitForBackground()).resolves.toBe(false);
+		expect(session.hasActivity()).toBe(false);
+		await expect(session.waitForActivity("any")).resolves.toBe("none");
 		await expect(session.run([])).rejects.toThrow("Agent run requires input");
 	});
 
@@ -414,34 +416,91 @@ describe("バックグラウンド実行", () => {
 		expect(texts(requests[0]?.context.messages ?? [], "user").at(-1)).toBe(
 			'<luna_input kind="background_exit">\n{"id":"bg-1"}\n</luna_input>',
 		);
-		expect(session.hasBackground()).toBe(false);
+		expect(session.hasActivity()).toBe(false);
 	});
 
-	it("stopBackground はまだ run に入れていない完了通知も捨てる", async () => {
+	it("stopActivities はまだ run に入れていない完了通知も捨てる", async () => {
 		const { runtime, harnessContexts } = await setup();
 		const session = runtime.open(spec());
 		harnessContexts[0]?.background.exited(exitInput);
-		expect(session.hasBackground()).toBe(true);
+		expect(session.hasActivity()).toBe(true);
 
-		await session.stopBackground();
+		await session.stopActivities();
 
-		expect(session.hasBackground()).toBe(false);
-		await expect(session.waitForBackground()).resolves.toBe(false);
+		expect(session.hasActivity()).toBe(false);
+		await expect(session.waitForActivity("any")).resolves.toBe("none");
 	});
 
-	it("通知なしにすべて止まるか閉じたら待ちを false で解く", async () => {
+	it("通知なしにすべて止まるか閉じたら待ちを none で解く", async () => {
 		const { runtime, backgroundCount } = await setup();
 		const stopped = runtime.open(spec());
 		backgroundCount.value = 1;
-		const waitingStop = stopped.waitForBackground();
-		await stopped.stopBackground();
-		await expect(waitingStop).resolves.toBe(false);
+		const waitingStop = stopped.waitForActivity("any");
+		await stopped.stopActivities();
+		await expect(waitingStop).resolves.toBe("none");
 
 		const closed = runtime.open(spec());
 		backgroundCount.value = 1;
-		const waitingClose = closed.waitForBackground();
+		const waitingClose = closed.waitForActivity("any");
 		await closed.close();
-		await expect(waitingClose).resolves.toBe(false);
+		await expect(waitingClose).resolves.toBe("none");
+	});
+	it("ツールの作業の通知も受け、urgent の待ちは急ぎの通知でだけ解く", async () => {
+		const { runtime, faux } = await setup();
+		const requests: { context: TranscriptContext; model: string }[] = [];
+		faux.setResponses([capture(requests, "見た")]);
+		const activities = createActivityTable();
+		const session = runtime.open(spec({ activities }));
+		const handle = activities.begin(async () => {});
+		expect(session.hasActivity()).toBe(true);
+
+		const waitingUrgent = session.waitForActivity("urgent");
+		handle.notify(input('{"n":1}', "minecraft_event"), { urgent: false, replaceKey: "interval" });
+		handle.notify(input('{"n":2}', "minecraft_event"), { urgent: false, replaceKey: "interval" });
+		let settled = false;
+		void waitingUrgent.then(() => {
+			settled = true;
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		await expect(session.waitForActivity("any")).resolves.toBe("notice");
+
+		handle.notify(input('{"n":3}', "minecraft_event"), { urgent: true, replaceKey: "death" });
+		await expect(waitingUrgent).resolves.toBe("urgent");
+		await session.run([]);
+
+		// replaceKey が同じ未入力の通知は新しいほうだけが残る。
+		expect(texts(requests[0]?.context.messages ?? [], "user").slice(-2)).toEqual([
+			'<luna_input kind="minecraft_event">\n{"n":2}\n</luna_input>',
+			'<luna_input kind="minecraft_event">\n{"n":3}\n</luna_input>',
+		]);
+	});
+
+	it("閉じる時にツールの作業を止め、止めた後の通知は捨てる", async () => {
+		const { runtime } = await setup();
+		const activities = createActivityTable();
+		const session = runtime.open(spec({ activities }));
+		const stop = vi.fn(async () => {});
+		const handle = activities.begin(stop);
+
+		await session.close();
+		handle.notify(input("{}", "minecraft_event"), { urgent: true, replaceKey: null });
+
+		expect(stop).toHaveBeenCalledOnce();
+		expect(activities.count()).toBe(0);
+		expect(session.hasActivity()).toBe(false);
+	});
+
+	it("作業が自分で終わったら、通知なしの待ちを none で解く", async () => {
+		const { runtime } = await setup();
+		const activities = createActivityTable();
+		const session = runtime.open(spec({ activities }));
+		const handle = activities.begin(async () => {});
+		const waiting = session.waitForActivity("any");
+
+		handle.end();
+
+		await expect(waiting).resolves.toBe("none");
 	});
 });
 

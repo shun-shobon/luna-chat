@@ -75,8 +75,8 @@ export class PiAgentRuntime implements AgentRuntimePort {
 			scratchDir,
 			conversation: () => opened?.llmMessages() ?? [],
 			background: {
-				exited: (message) => opened?.onBackgroundExit(message),
-				stopped: () => opened?.onBackgroundStopped(),
+				exited: (message) => opened?.onActivityNotice({ message, urgent: false, replaceKey: null }),
+				stopped: () => opened?.onActivityStopped(),
 			},
 		});
 		const tools = [...spec.tools.map(toPiAgentTool), ...harness.tools];

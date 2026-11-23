@@ -14,6 +14,9 @@ import { z } from "zod";
 
 import type { LoggerPort } from "../../../../observability/ports/logger-port";
 import type {
+	ActivityNotice,
+	ActivityWaitFilter,
+	ActivityWakeup,
 	AgentInputMessage,
 	AgentRunFailureReason,
 	AgentRunResult,
@@ -121,14 +124,17 @@ export class PiAgentSession implements AgentSession {
 	readonly #transcript: TranscriptWriter;
 
 	#abortRequested = false;
-	#backgroundWaiters: Array<(arrived: boolean) => void> = [];
+	#activityWaiters: Array<{
+		filter: ActivityWaitFilter;
+		resolve: (wakeup: ActivityWakeup) => void;
+	}> = [];
 	#closed = false;
 	#compaction: CompactionState | undefined;
 	// 要約した後も直前の assistant の usage は大きいままなので、同じ usage で二度要約しないよう覚えておく。
 	#compactionCheckedUsage: AgentMessage | undefined;
 	#modelSelection: ModelSelection;
-	// 実行していない間に届いた完了通知。次の run の入力の前に入れる。
-	#pendingBackground: AgentInputMessage[] = [];
+	// 実行していない間に届いた続いている作業の通知。次の run の入力の前に入れる。
+	#pendingNotices: ActivityNotice[] = [];
 	#phase: AgentSessionPhase = "idle";
 	#phaseSince: string;
 	#retries = 0;
@@ -168,6 +174,14 @@ export class PiAgentSession implements AgentSession {
 		this.#agent.subscribe((event) => {
 			this.#recordEvent(event);
 		});
+		input.spec.activities.connect({
+			notify: (notice) => {
+				this.onActivityNotice(notice);
+			},
+			stopped: () => {
+				this.onActivityStopped();
+			},
+		});
 
 		this.#transcript.append({
 			type: "session_open",
@@ -188,11 +202,11 @@ export class PiAgentSession implements AgentSession {
 		if (this.#running) {
 			throw new SessionBusyError(this.id);
 		}
-		const input = [...this.#pendingBackground, ...messages];
+		const input = [...this.#pendingNotices.map((notice) => notice.message), ...messages];
 		if (input.length === 0) {
 			throw new Error(`Agent run requires input: ${this.id}`);
 		}
-		this.#pendingBackground = [];
+		this.#pendingNotices = [];
 		this.#running = true;
 		const settled = Promise.withResolvers<void>();
 		this.#runSettled = settled.promise;
@@ -212,45 +226,59 @@ export class PiAgentSession implements AgentSession {
 		this.#agent.steer(createLunaInputMessage(message, this.#input.now().getTime()));
 	}
 
-	hasBackground(): boolean {
-		return this.#pendingBackground.length > 0 || this.#harness.background.count() > 0;
+	hasActivity(): boolean {
+		return this.#pendingNotices.length > 0 || this.#activityCount() > 0;
 	}
 
-	waitForBackground(): Promise<boolean> {
-		if (this.#pendingBackground.length > 0) {
-			return Promise.resolve(true);
+	waitForActivity(filter: ActivityWaitFilter): Promise<ActivityWakeup> {
+		const pending = wakeupFor(this.#pendingNotices, filter);
+		if (pending !== "none") {
+			return Promise.resolve(pending);
 		}
-		if (this.#closed || this.#harness.background.count() === 0) {
-			return Promise.resolve(false);
+		if (this.#closed || this.#activityCount() === 0) {
+			return Promise.resolve("none");
 		}
 		return new Promise((resolve) => {
-			this.#backgroundWaiters.push(resolve);
+			this.#activityWaiters.push({ filter, resolve });
 		});
 	}
 
-	async stopBackground(): Promise<void> {
-		this.#pendingBackground = [];
-		await this.#harness.background.stopAll();
-		this.onBackgroundStopped();
+	async stopActivities(): Promise<void> {
+		this.#pendingNotices = [];
+		await Promise.all([this.#harness.background.stopAll(), this.#spec.activities.stopAll()]);
+		this.onActivityStopped();
 	}
 
-	// 汎用ツールのバックグラウンド実行が終了した時に呼ばれる。
-	// 実行中かどうかは run の持ち主ではなくここで判定し、run の完了直後に届いた通知を取りこぼさない。
-	onBackgroundExit(message: AgentInputMessage): void {
+	// 続いている作業の通知を受ける。実行中かどうかは run の持ち主ではなくここで判定し、
+	// run の完了直後に届いた通知を取りこぼさない。
+	onActivityNotice(notice: ActivityNotice): void {
 		if (this.#closed) {
 			return;
 		}
 		if (this.#running) {
-			this.steer(message);
+			this.steer(notice.message);
 			return;
 		}
-		this.#pendingBackground.push(message);
-		this.#settleBackgroundWaiters(true);
+		this.#pendingNotices = [
+			...this.#pendingNotices.filter(
+				(pending) => notice.replaceKey == null || pending.replaceKey !== notice.replaceKey,
+			),
+			notice,
+		];
+		this.#activityWaiters = this.#activityWaiters.filter((waiter) => {
+			const wakeup = wakeupFor([notice], waiter.filter);
+			if (wakeup === "none") return true;
+			waiter.resolve(wakeup);
+			return false;
+		});
 	}
 
-	onBackgroundStopped(): void {
-		if (this.#pendingBackground.length === 0 && this.#harness.background.count() === 0) {
-			this.#settleBackgroundWaiters(false);
+	onActivityStopped(): void {
+		if (this.#activityCount() > 0) {
+			return;
+		}
+		for (const waiter of this.#activityWaiters.splice(0)) {
+			waiter.resolve(wakeupFor(this.#pendingNotices, waiter.filter));
 		}
 	}
 
@@ -290,11 +318,15 @@ export class PiAgentSession implements AgentSession {
 		this.#closed = true;
 		await this.abort();
 		this.#setPhase("closed");
-		this.#settleBackgroundWaiters(false);
+		this.#settleActivityWaiters();
 		cleanupSessionResources(this.id);
 		try {
 			await this.#transcript.flush();
-			await this.#harness.dispose();
+			try {
+				await this.#spec.activities.stopAll();
+			} finally {
+				await this.#harness.dispose();
+			}
 		} finally {
 			this.#input.onClosed(this.id);
 		}
@@ -371,9 +403,13 @@ export class PiAgentSession implements AgentSession {
 		}
 	}
 
-	#settleBackgroundWaiters(arrived: boolean): void {
-		for (const resolve of this.#backgroundWaiters.splice(0)) {
-			resolve(arrived);
+	#activityCount(): number {
+		return this.#harness.background.count() + this.#spec.activities.count();
+	}
+
+	#settleActivityWaiters(): void {
+		for (const waiter of this.#activityWaiters.splice(0)) {
+			waiter.resolve("none");
 		}
 	}
 
@@ -580,4 +616,10 @@ function extractFinalText(message: AgentMessage | undefined): string | null {
 		.flatMap((block) => (block.type === "text" ? [block.text] : []))
 		.join("\n");
 	return text === "" ? null : text;
+}
+
+function wakeupFor(notices: readonly ActivityNotice[], filter: ActivityWaitFilter): ActivityWakeup {
+	if (notices.some((notice) => notice.urgent)) return "urgent";
+	if (filter === "any" && notices.length > 0) return "notice";
+	return "none";
 }

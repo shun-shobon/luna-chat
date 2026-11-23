@@ -110,8 +110,15 @@ describe("createSessionFactory", () => {
 					"image_gen",
 				],
 				fastMode: expect.any(Function),
+				activities: expect.any(Object),
 			});
-			expect(harness.toolSets[kind].bind).toHaveBeenCalledWith({ ownerId: "owner-1", origin });
+			// ツールが始める作業と、セッションが受ける作業は同じ表でなければ通知が届かない。
+			const activities = harness.agent.open.mock.calls[0]?.[0].activities;
+			expect(harness.toolSets[kind].bind).toHaveBeenCalledWith({
+				ownerId: "owner-1",
+				origin,
+				activities,
+			});
 		},
 	);
 
@@ -183,9 +190,9 @@ function createHarness(workspaceDir: string) {
 		run: vi.fn(),
 		steer: vi.fn(),
 		abort: vi.fn(),
-		hasBackground: vi.fn(),
-		waitForBackground: vi.fn(),
-		stopBackground: vi.fn(),
+		hasActivity: vi.fn(),
+		waitForActivity: vi.fn(),
+		stopActivities: vi.fn(),
 		setModel: vi.fn(),
 		close: vi.fn(),
 		status: vi.fn(),
