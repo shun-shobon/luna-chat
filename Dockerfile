@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.27
-FROM node:24.21.0-trixie-slim AS build
+FROM node:24.22.3-trixie-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -20,7 +20,7 @@ RUN pnpm run build
 RUN pnpm prune --prod
 
 
-FROM node:24.21.0-trixie AS runtime
+FROM node:24.22.3-trixie AS runtime
 
 ENV NODE_ENV=production
 ENV LUNA_HOME=/home/node/.luna
