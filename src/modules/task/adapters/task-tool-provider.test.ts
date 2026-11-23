@@ -7,7 +7,7 @@ import { createToolSet } from "../../tool/application/tool-set";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { ToolProvider } from "../../tool/ports/tool-provider";
 import type { TaskService } from "../application/task-service";
-import type { Task } from "../domain/task";
+import type { Task, WorkerCatalog } from "../domain/task";
 import { createTaskBoardToolProvider, createTaskReportToolProvider } from "./task-tool-provider";
 
 const eventOrigin: ToolOrigin = {
@@ -16,14 +16,27 @@ const eventOrigin: ToolOrigin = {
 	eventType: "system.heartbeat.fired.v1",
 };
 const taskOrigin: ToolOrigin = { kind: "task", taskId: "task-1" };
+const workers = {
+	defaultName: "standard",
+	choices: [
+		{
+			name: "standard",
+			description: "Everyday research and production.",
+			model: { provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
+		},
+		{
+			name: "deep",
+			description: "Hard implementation and long reasoning.",
+			model: { provider: "claude-code", model: "claude-opus-5-5", thinking: "high" },
+		},
+	],
+} as const satisfies WorkerCatalog;
 
 describe("task tool providers", () => {
 	it("依頼側にはtask_create・task_message・task_cancelだけを、作業側にはtask_reportだけを公開する", () => {
-		expect(createTaskBoardToolProvider(createBoard()).definitions.map(({ name }) => name)).toEqual([
-			"task_create",
-			"task_message",
-			"task_cancel",
-		]);
+		expect(
+			createTaskBoardToolProvider(createBoard(), workers).definitions.map(({ name }) => name),
+		).toEqual(["task_create", "task_message", "task_cancel"]);
 		expect(createTaskReportToolProvider(createBoard()).definitions.map(({ name }) => name)).toEqual(
 			["task_report"],
 		);
@@ -31,7 +44,7 @@ describe("task tool providers", () => {
 
 	it("task_create・task_message・task_cancelへ実行元のoriginを渡す", async () => {
 		const board = createBoard();
-		const tools = bind(createTaskBoardToolProvider(board), eventOrigin);
+		const tools = bind(createTaskBoardToolProvider(board, workers), eventOrigin);
 
 		const results = [
 			await call(tools, "task_create", { title: " 調査 ", instructions: "調べる" }),
@@ -41,7 +54,7 @@ describe("task tool providers", () => {
 		];
 
 		expect(results).toEqual([
-			{ task_id: "task-1", status: "queued" },
+			{ task_id: "task-1", worker: "standard", status: "queued" },
 			{ task_id: "task-1", status: "running" },
 			{ task_id: "task-1", status: "cancelled" },
 			{ task_id: "task-1", status: "cancelled" },
@@ -49,12 +62,39 @@ describe("task tool providers", () => {
 		expect(board.create).toHaveBeenCalledWith(eventOrigin, {
 			title: "調査",
 			instructions: "調べる",
+			worker: workers.choices[0],
 		});
 		expect(board.message).toHaveBeenCalledWith(eventOrigin, "task-1", "追加");
 		expect(board.cancel.mock.calls).toEqual([
 			[eventOrigin, "task-1", null],
 			[eventOrigin, "task-1", "不要"],
 		]);
+	});
+
+	it("task_createの説明に選べるワーカーの名前と説明を並べ、既定を示す", () => {
+		const [create] = createTaskBoardToolProvider(createBoard(), workers).definitions;
+
+		expect(create?.description).toBe(
+			[
+				"Delegate long work to a background Luna worker. Returns the task id at once; the worker reports back later.",
+				"Choose the worker that fits the work; omit worker to use the default.",
+				"- standard (default): Everyday research and production.",
+				"- deep: Hard implementation and long reasoning.",
+			].join("\n"),
+		);
+	});
+
+	it("task_createで選んだワーカーをTaskServiceへ渡す", async () => {
+		const board = createBoard();
+		const tools = bind(createTaskBoardToolProvider(board, workers), eventOrigin);
+
+		await call(tools, "task_create", { title: "実装", instructions: "作る", worker: "deep" });
+
+		expect(board.create).toHaveBeenCalledWith(eventOrigin, {
+			title: "実装",
+			instructions: "作る",
+			worker: workers.choices[1],
+		});
 	});
 
 	it("task_reportのartifacts未指定を空配列として渡す", async () => {
@@ -80,6 +120,7 @@ describe("task tool providers", () => {
 	it.each([
 		["空のtitle", "task_create", { title: " ", instructions: "x" }],
 		["長すぎるtitle", "task_create", { title: "x".repeat(121), instructions: "x" }],
+		["設定にないworker", "task_create", { title: "x", instructions: "x", worker: "opus" }],
 		["未知のfield", "task_message", { task_id: "task-1", text: "x", extra: true }],
 		["空のtask_id", "task_cancel", { task_id: "" }],
 		["相対path", "task_report", { kind: "result", summary: "x", artifacts: ["a"] }],
@@ -88,7 +129,7 @@ describe("task tool providers", () => {
 	])("%sをTaskService呼び出し前に拒否する", async (_label, name, input) => {
 		const board = createBoard();
 		const tools = [
-			...bind(createTaskBoardToolProvider(board), eventOrigin),
+			...bind(createTaskBoardToolProvider(board, workers), eventOrigin),
 			...bind(createTaskReportToolProvider(board), taskOrigin),
 		];
 
@@ -104,7 +145,7 @@ describe("task tool providers", () => {
 	it("TaskServiceの拒否をisErrorのメッセージとしてモデルへ返す", async () => {
 		const board = createBoard();
 		board.message.mockRejectedValueOnce(new Error("Task task-9 is not available here"));
-		const tools = bind(createTaskBoardToolProvider(board), eventOrigin);
+		const tools = bind(createTaskBoardToolProvider(board, workers), eventOrigin);
 
 		await expect(
 			tool(tools, "task_message").execute(
@@ -116,10 +157,11 @@ describe("task tool providers", () => {
 });
 
 const queuedTask: Task = {
-	version: 1,
+	version: 2,
 	id: "task-1",
 	title: "調査",
 	instructions: "調べる",
+	worker: { name: "standard", provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
 	origin: { kind: "event", eventId: "event-1", eventType: "system.heartbeat.fired.v1" },
 	private: true,
 	status: "queued",

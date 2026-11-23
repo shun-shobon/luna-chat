@@ -190,7 +190,7 @@ Home Assistantの接続を設定した場合（§22）は、どの種類にもHo
 - `openai-codex`: ChatGPTのサブスクリプションをOAuthで使う。
 - `claude-code`: Claudeのサブスクリプション（Pro・Max）を、Claude Code CLI を通して使う。モデルは `claude-fable-5-2`・`claude-opus-5-5`・`claude-sonnet-5-5`・`claude-haiku-5-5`。
 
-- 会話・イベント実行・作業エージェントは、それぞれ `[models]`（§14.1）で指定したモデルと推論強度を使う。会話は `/luna model` でセッションごとに変更できる。音声モードの返事（§24.4）は `[models.voice]` を使う。
+- 会話・イベント実行は、それぞれ `[models]`（§14.1）で指定したモデルと推論強度を使う。会話は `/luna model` でセッションごとに変更できる。作業エージェントは、依頼元が `task_create` で `[models.worker]` の選択肢から選んだモデルと推論強度を使う（§20.2）。音声モードの返事（§24.4）は `[models.voice]` を使う。
 - モデルへの各リクエストには `request_timeout_ms` を適用する。
 - 成功した応答に提供元の障害の診断情報（WebSocketが使えずSSEで送り直した等）が付いていたら、warnログ `agent.pi.provider_diagnostic` に種類・詳細・エラーメッセージを記録する。障害を伴わない診断情報（`claude-code` の再生用の状態や使用枠の状態）は記録しない。
 - 一時的な失敗（HTTP 5xx、接続の失敗・切断、タイムアウト）は、15秒・60秒・180秒待って最大3回、同じセッションの続きから再実行する。待機中に届いた割り込み入力は、再実行の前に入る。使用枠の上限到達（HTTP 429 の `usage_limit_reached`、`claude-code` の超過課金の拒否）、認証の失敗、それ以外の失敗は再実行しない。
@@ -423,8 +423,22 @@ model = "openai-codex/gpt-6.2-sol"
 thinking = "medium"
 
 [models.worker]
-model = "openai-codex/gpt-6.2-sol"
+default = "standard"
+
+[models.worker.choices.standard]
+model = "claude-code/claude-opus-5-5"
 thinking = "medium"
+description = "Most background work: research, coding, and file or media production."
+
+[models.worker.choices.light]
+model = "claude-code/claude-sonnet-5-5"
+thinking = "medium"
+description = "Simple, well-defined work such as collecting information or routine file edits."
+
+[models.worker.choices.heavy]
+model = "claude-code/claude-fable-5-2"
+thinking = "high"
+description = "Hard work that needs deep reasoning, such as complex implementation, debugging, or design."
 
 [models.compaction]
 model = "openai-codex/gpt-6.1-terra"
@@ -453,6 +467,7 @@ tts_speed = 1.0
 ```
 
 - `[models.*]` の `model` は `provider/model` の形（例: `claude-code/claude-opus-5-5`。提供元は§8）とし、`thinking` は `off`・`minimal`・`low`・`medium`・`high`・`xhigh` のいずれかとする。起動時に、提供元のモデルのカタログにない組み合わせ（モデルが存在しない、またはモデルがその推論強度に対応しない）は不正として起動を中止する。省略した項目は上の値になる。
+- `[models.worker]` は作業エージェントの選択肢（§20.2）で、`[models.worker.choices.<名前>]` に `model`・`thinking`・`description`（1〜500文字）を書き、`default` にその中の名前を1つ書く。名前は英小文字か数字で始まり、英小文字・数字・`_`・`-` からなる32文字以内とする。依頼元のエージェントには名前と `description` だけを見せるので、`description` にはどんな作業に向くかを書く。`[models.worker]` を書く場合、`default` と1つ以上の選択肢、選択肢のすべての項目を必須とし、`default` が選択肢にない設定は不正とする。省略すると上の3つ（既定は `standard`）になる。
 - `[tasks].max_concurrent` は同時に実行するバックグラウンドタスクの上限（1以上の整数）である。
 - `[voice]` は省略でき、省略するとボイスチャンネル（§24）を使わない。書く場合、`stt_threads`・`silence_ms`・`turn_wait_ms`・`unfinished_turn_wait_ms`（いずれも1以上の整数）・`interrupt_model`・`tts_engine`・`tts_speed`（0.5〜2）は省略すると上の値になり、それ以外は `tts_engine` に応じて次のとおり必須とする。`stt_model_kind` は `nemo-ctc`（Parakeet ja など）・`nemo-transducer`（Haas-ja など）・`transducer`（Zipformer など）・`sense-voice`（SenseVoice）のいずれかで、`stt_model_dir` は sherpa-onnx の配布形式のディレクトリとする（`tokens.txt` と各部品の `.onnx` を名前から探し、`int8`・`quantized` の版を優先する）。`sense-voice` には言語の手がかりとして日本語を渡す。`tts_url` は `http` か `https` のURL とする。モデルのファイルとディレクトリは起動時に読み込み、読めなければ起動を中止する。
 - `tts_engine` は読み上げに使うTTSエンジンで、`voicevox`（VOICEVOX互換のHTTP API。AivisSpeech Engine など）か `speech-cpp`（speech.cpp の `speech serve` の OpenAI 互換API）とする。`voicevox` では `tts_speaker`（エンジンのスタイルID）を、`speech-cpp` では `tts_voice`（`speech serve --add-voice` で登録した声の名前）を必須とし、もう一方は書けない。`tts_emoji`（真偽値）は `speech-cpp` だけに書け、読み方の指示として絵文字を読むモデル（Irodori-TTS）で `true` にする。省略すると `false` になる。
@@ -547,13 +562,14 @@ GitHub Actionsの `release` ワークフローをmainブランチから手動実
 
 ### 20.2 依頼元が使うツール
 
-| ツール         | 入力                                                                | 結果                               |
-| -------------- | ------------------------------------------------------------------- | ---------------------------------- |
-| `task_create`  | `{ title: string(1〜120文字), instructions: string(1〜20000文字) }` | `{ task_id, status: "queued" }`    |
-| `task_message` | `{ task_id: string, text: string(1〜8000文字) }`                    | `{ task_id, status }`              |
-| `task_cancel`  | `{ task_id: string, reason?: string(1〜2000文字) }`                 | `{ task_id, status: "cancelled" }` |
+| ツール         | 入力                                                                                 | 結果                                    |
+| -------------- | ------------------------------------------------------------------------------------ | --------------------------------------- |
+| `task_create`  | `{ title: string(1〜120文字), instructions: string(1〜20000文字), worker?: string }` | `{ task_id, worker, status: "queued" }` |
+| `task_message` | `{ task_id: string, text: string(1〜8000文字) }`                                     | `{ task_id, status }`                   |
+| `task_cancel`  | `{ task_id: string, reason?: string(1〜2000文字) }`                                  | `{ task_id, status: "cancelled" }`      |
 
 - 文字列は前後の空白を除いた長さで検証する。制約を満たさない入力はツールの失敗となる。
+- `task_create` の `worker` は `[models.worker]`（§14.1）の選択肢の名前で、省略すると `default` になる。選択肢にない名前はツールの失敗とする。`task_create` の説明には、選択肢ごとの名前と `description`、どれが既定かを並べる。選んだモデルと推論強度はタスクに保存し、そのタスクの実行（再起動後の再開を含む）はすべてそれを使う。後から設定を変えても、作成済みのタスクのモデルは変わらない。
 - `task_message` と `task_cancel` は、依頼元から見えるタスク（§20.5）で、かつ終了していないものだけに使える。それ以外はツールの失敗とする。
 - 作業エージェントは `task_create` を使えない。
 
@@ -630,6 +646,7 @@ queued ──(実行枠が空く)──► running ──result──► complet
 type TaskSummary = {
 	id: string;
 	title: string;
+	worker: string; // 選んだ作業エージェントの名前
 	status: "queued" | "running" | "waiting_input" | "completed" | "failed" | "cancelled";
 	origin: string;
 	created_at: string;
@@ -650,7 +667,7 @@ type TaskSummary = {
 
 ### 20.7 永続化と再起動
 
-- タスクは `LUNA_HOME/tasks/<task_id>.json` に1件1ファイルで保存し、一時ファイルからの置き換えで更新する。読み込めないファイルやスキーマに合わないファイルはエラーログを記録して読み飛ばす。
+- タスクは `LUNA_HOME/tasks/<task_id>.json` に1件1ファイルで保存し、一時ファイルからの置き換えで更新する。読み込めないファイルやスキーマに合わないファイル（作業エージェントのモデルを持たない `version: 1` のファイルを含む）はエラーログを記録して読み飛ばす。
 - 起動時に `running` だったタスクは `queued` に戻して再開する（`attempts` は再開時に増える）。作業エージェントには、前回の試行が中断されたことを `attempt` と `previous_reports` で伝え、外部作用のやり直し前に確認させる。
 - シャットダウン時は実行中のタスクを `queued` に戻し、実行を中断して `wait` を打ち切る。中断した実行の終了、セッションを閉じること、状態の保存を待ってから終了する。`question` で待機中のセッションも閉じる。
 

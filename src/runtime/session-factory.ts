@@ -27,7 +27,8 @@ type SessionProfile = Readonly<{
 	developerInstructions: readonly string[];
 	// 作業エージェントは依頼文だけで動けるため、人格と記憶は必要な時に自分で読ませる。
 	includeWorkspaceInstructions: boolean;
-	model: () => ModelSelection;
+	// 作業エージェントのモデルはタスクごとに決まるため、プロファイルには持たせない。
+	model: (() => ModelSelection) | undefined;
 	tools: ToolSet;
 }>;
 
@@ -60,6 +61,8 @@ export function createSessionFactory(input: {
 	return async (origin: ToolOrigin, model?: ModelSelection) => {
 		const kind = sessionKindOf(origin);
 		const profile = input.profiles[kind];
+		const selected = model ?? profile.model?.();
+		if (selected === undefined) throw new Error(`A ${kind} session needs a model`);
 		const ownerId = createOwnerId();
 		const instructions = profile.includeWorkspaceInstructions
 			? await readWorkspaceBaseInstructions(input.workspaceDir)
@@ -74,7 +77,7 @@ export function createSessionFactory(input: {
 				luna: instructions.luna,
 				memory: instructions.memory,
 			}),
-			model: model ?? profile.model(),
+			model: selected,
 			tools: profile.tools.bind({ ownerId, origin }),
 			harnessTools: HARNESS_TOOLS,
 			fastMode: () => input.fastMode(origin),

@@ -84,7 +84,11 @@ describe("createSessionFactory", () => {
 			});
 			const harness = createHarness(workspaceDir);
 
-			const opened = await harness.open(origin);
+			// 作業エージェントのモデルはタスクごとに決まるため、プロファイルではなく開く側が渡す。
+			const opened = await harness.open(
+				origin,
+				kind === "worker" ? harness.models.worker : undefined,
+			);
 
 			expect(opened).toEqual({ ownerId: "owner-1", session: harness.session });
 			expect(harness.agent.open).toHaveBeenCalledWith({
@@ -115,9 +119,18 @@ describe("createSessionFactory", () => {
 		const harness = createHarness(await createWorkspace({}));
 		const model: ModelSelection = { provider: "anthropic", model: "claude", thinking: "high" };
 
-		await harness.open({ kind: "task", taskId: "task-1" }, model);
+		await harness.open({ kind: "event", eventId: "event-1", eventType: "test.v1" }, model);
 
 		expect(harness.agent.open.mock.calls[0]?.[0].model).toEqual(model);
+	});
+
+	it("作業エージェントはモデルを指定しなければ開かない", async () => {
+		const harness = createHarness(await createWorkspace({}));
+
+		await expect(harness.open({ kind: "task", taskId: "task-1" })).rejects.toThrow(
+			"A worker session needs a model",
+		);
+		expect(harness.agent.open).not.toHaveBeenCalled();
 	});
 
 	it("高速モードかどうかは、開いたセッションの実行元ごとにリクエストのたびに尋ねる", async () => {
@@ -158,9 +171,9 @@ describe("createSessionFactory", () => {
 			throw new Error("model is not available");
 		});
 
-		await expect(harness.open({ kind: "task", taskId: "task-1" })).rejects.toThrow(
-			"model is not available",
-		);
+		await expect(
+			harness.open({ kind: "event", eventId: "event-1", eventType: "test.v1" }),
+		).rejects.toThrow("model is not available");
 	});
 });
 
@@ -230,7 +243,7 @@ function createHarness(workspaceDir: string) {
 		return {
 			developerInstructions: [`${kind.toUpperCase()} PROTOCOL`],
 			includeWorkspaceInstructions: kind !== "worker",
-			model: () => models[kind],
+			model: kind === "worker" ? undefined : () => models[kind],
 			tools: toolSets[kind],
 		};
 	}

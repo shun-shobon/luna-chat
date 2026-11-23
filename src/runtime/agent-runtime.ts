@@ -27,8 +27,10 @@ import type {
 	ModelSelection,
 } from "../modules/agent/ports/outbound/agent-session-port";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
+import type { WorkerCatalog, WorkerChoice } from "../modules/task/domain/task";
 import { findSkillNames } from "../modules/workspace/adapters/skill-usage-store";
 import type { SkillUsageStore } from "../modules/workspace/adapters/skill-usage-store";
+import type { WorkerSetting, WorkspaceConfig } from "../modules/workspace/domain/workspace-config";
 
 export const TURN_RETRY_DELAYS_MS: readonly number[] = [15_000, 60_000, 180_000];
 const COMPACTION_RESERVE_TOKENS = 16_384;
@@ -85,6 +87,31 @@ function withGpt62Models(
 		...provider,
 		getModels: () => [...provider.getModels(), ...added],
 		getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), ...added],
+	};
+}
+
+export function workerCatalogOf(setting: WorkerSetting): WorkerCatalog {
+	const choices = Object.entries(setting.choices).map(
+		([name, { description, ...model }]): WorkerChoice => ({ name, description, model }),
+	);
+	const [first, ...rest] = choices;
+	if (first === undefined) throw new Error("models.worker.choices must not be empty");
+	return { defaultName: setting.default, choices: [first, ...rest] };
+}
+
+// 起動時の検証で、設定のどの項目が不正かをキーの名前で示す。
+export function modelSelectionsOf(
+	models: WorkspaceConfig["models"],
+): Readonly<Record<string, ModelSelection>> {
+	const { worker, ...fixed } = models;
+	return {
+		...fixed,
+		...Object.fromEntries(
+			workerCatalogOf(worker).choices.map((choice) => [
+				`worker.choices.${choice.name}`,
+				choice.model,
+			]),
+		),
 	};
 }
 

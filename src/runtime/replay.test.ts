@@ -12,10 +12,21 @@ import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatGptBackend } from "../modules/agent/adapters/outbound/pi/chatgpt-backend";
+import type { WorkerCatalog } from "../modules/task/domain/task";
 import { blindResults, parseReplayVariants, runReplay } from "./replay";
 import type { ReplayResult } from "./replay";
 
 const temporaryDirectories: string[] = [];
+const REPLAY_WORKERS = {
+	defaultName: "standard",
+	choices: [
+		{
+			name: "standard",
+			description: "x",
+			model: { provider: "faux", model: "faux-1", thinking: "off" },
+		},
+	],
+} as const satisfies WorkerCatalog;
 
 afterEach(async () => {
 	await Promise.all(
@@ -108,6 +119,7 @@ describe("runReplay", () => {
 				{ name: "current", systemPrompt: "OLD" },
 				{ name: "proposed", systemPrompt: "NEW" },
 			],
+			workers: REPLAY_WORKERS,
 		});
 
 		expect(prompts).toEqual([
@@ -154,6 +166,7 @@ describe("runReplay", () => {
 			scratchRoot: join(transcriptDir, "scratch"),
 			transcriptDir,
 			variants: [{ name: "current", systemPrompt: "OLD" }],
+			workers: REPLAY_WORKERS,
 		});
 
 		expect(result?.status).toBe("aborted");

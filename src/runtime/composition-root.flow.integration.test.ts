@@ -100,7 +100,15 @@ vi.mock("../modules/workspace/adapters/initialize-workspace", () => {
 				},
 				heartbeat: { enabled: false, maxIntervalMs: 2_000, minIntervalMs: 1_000 },
 				memory: { enabled: true, maintenanceCron: "0 4 * * *" },
-				models: { compaction: model, conversation: model, event: model, worker: model },
+				models: {
+					compaction: model,
+					conversation: model,
+					event: model,
+					worker: {
+						default: "standard",
+						choices: { standard: { ...model, description: "General background work." } },
+					},
+				},
 				tasks: { maxConcurrent: 2 },
 			},
 			configPath: `${fakes.lunaHome}/config.toml`,

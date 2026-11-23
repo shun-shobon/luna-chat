@@ -64,10 +64,16 @@ async function createDirectory(): Promise<string> {
 
 function task(id: string): Task {
 	return {
-		version: 1,
+		version: 2,
 		id,
 		title: "title",
 		instructions: "instructions",
+		worker: {
+			name: "standard",
+			provider: "openai-codex",
+			model: "gpt-6.2-sol",
+			thinking: "medium",
+		},
 		origin: { kind: "event", eventId: "event-1", eventType: "system.heartbeat.fired.v1" },
 		private: true,
 		status: "queued",

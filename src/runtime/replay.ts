@@ -18,12 +18,18 @@ import { createHttpResponseToolProvider } from "../modules/http/adapters/http-re
 import { HttpResponseRegistry } from "../modules/http/application/http-response-registry";
 import type { LoggerPort } from "../modules/observability/ports/logger-port";
 import { createTaskBoardToolProvider } from "../modules/task/adapters/task-tool-provider";
+import type { WorkerCatalog } from "../modules/task/domain/task";
 import { createToolSet } from "../modules/tool/application/tool-set";
 import { readWorkspaceConfig } from "../modules/workspace/adapters/config-toml";
 import { resolveLunaHome } from "../modules/workspace/adapters/initialize-workspace";
 import { readWorkspaceSkillsPrompt } from "../modules/workspace/adapters/workspace-skills";
 import { readWorkspaceBaseInstructions } from "../modules/workspace/application/workspace-instructions";
-import { createAgentModels, createChatGptBackend, createReplayHarnessTools } from "./agent-runtime";
+import {
+	createAgentModels,
+	createChatGptBackend,
+	createReplayHarnessTools,
+	workerCatalogOf,
+} from "./agent-runtime";
 import { buildSystemPrompt } from "./session-factory";
 import { SESSION_DEVELOPER_INSTRUCTIONS } from "./session-instructions";
 
@@ -71,6 +77,7 @@ export async function runReplay(input: {
 	scratchRoot: string;
 	transcriptDir: string;
 	variants: readonly ReplayVariant[];
+	workers: WorkerCatalog;
 	onResult?: (result: ReplayResult) => void;
 }): Promise<ReplayResult[]> {
 	let calls: ReplayCall[] = [];
@@ -92,7 +99,7 @@ export async function runReplay(input: {
 		logger: silentLogger,
 		now: () => new Date(),
 	});
-	const tools = createRecordingToolSet(record).bind({
+	const tools = createRecordingToolSet(record, input.workers).bind({
 		ownerId: "replay",
 		origin: REPLAY_ORIGIN,
 	});
@@ -216,6 +223,7 @@ export async function runReplayCommand(
 			scratchRoot: join(workDir, "scratch"),
 			transcriptDir: join(workDir, "sessions"),
 			variants,
+			workers: workerCatalogOf(config.models.worker),
 			onResult: (result) => {
 				process.stdout.write(
 					`${result.scene} ${result.variant} ${result.status} calls=${String(result.calls.length)}\n`,
@@ -234,7 +242,10 @@ export async function runReplayCommand(
 	}
 }
 
-function createRecordingToolSet(record: (tool: string, argumentsValue: unknown) => void) {
+function createRecordingToolSet(
+	record: (tool: string, argumentsValue: unknown) => void,
+	workers: WorkerCatalog,
+) {
 	const recorded = <T>(tool: string, argumentsValue: unknown, value: T): Promise<T> => {
 		record(tool, argumentsValue);
 		return Promise.resolve(value);
@@ -273,29 +284,33 @@ function createRecordingToolSet(record: (tool: string, argumentsValue: unknown) 
 					record("assist_respond", { requestId, speech, continueConversation });
 				},
 			}),
-			createTaskBoardToolProvider({
-				create: async (_origin, taskInput) =>
-					await recorded("task_create", taskInput, {
-						version: 1,
-						id: "replay",
-						title: taskInput.title,
-						instructions: taskInput.instructions,
-						origin: REPLAY_ORIGIN,
-						private: false,
-						status: "queued",
-						attempts: 0,
-						createdAt: new Date().toISOString(),
-						updatedAt: new Date().toISOString(),
-						reports: [],
-						messages: [],
-						outcome: null,
-					}),
-				message: async (_origin, taskId, text) =>
-					await recorded("task_message", { taskId, text }, "running"),
-				cancel: async (_origin, taskId, reason) =>
-					await recorded("task_cancel", { taskId, reason }, "cancelled"),
-				report: async (_origin, reportInput) => await unavailable("task_report", reportInput),
-			}),
+			createTaskBoardToolProvider(
+				{
+					create: async (_origin, taskInput) =>
+						await recorded("task_create", taskInput, {
+							version: 2,
+							id: "replay",
+							title: taskInput.title,
+							instructions: taskInput.instructions,
+							worker: { name: taskInput.worker.name, ...taskInput.worker.model },
+							origin: REPLAY_ORIGIN,
+							private: false,
+							status: "queued",
+							attempts: 0,
+							createdAt: new Date().toISOString(),
+							updatedAt: new Date().toISOString(),
+							reports: [],
+							messages: [],
+							outcome: null,
+						}),
+					message: async (_origin, taskId, text) =>
+						await recorded("task_message", { taskId, text }, "running"),
+					cancel: async (_origin, taskId, reason) =>
+						await recorded("task_cancel", { taskId, reason }, "cancelled"),
+					report: async (_origin, reportInput) => await unavailable("task_report", reportInput),
+				},
+				workers,
+			),
 		],
 		silentLogger,
 	);

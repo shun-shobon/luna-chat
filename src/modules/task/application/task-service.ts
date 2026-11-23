@@ -17,6 +17,7 @@ import {
 	summarizeTask,
 	TASK_EVENT_SOURCE,
 	TASK_REPORTED_EVENT_TYPE,
+	workerModelOf,
 } from "../domain/task";
 import type {
 	Task,
@@ -27,6 +28,7 @@ import type {
 	TaskReportKind,
 	TaskStatus,
 	TaskViewer,
+	WorkerChoice,
 } from "../domain/task";
 import type { TaskDeliveryPort } from "../ports/task-delivery-port";
 import type { TaskStorePort } from "../ports/task-store-port";
@@ -110,16 +112,17 @@ export class TaskService {
 
 	async create(
 		origin: ToolOrigin,
-		input: Readonly<{ title: string; instructions: string }>,
+		input: Readonly<{ title: string; instructions: string; worker: WorkerChoice }>,
 	): Promise<Task> {
 		if (!this.#accepting) throw new TaskError("Task intake is stopped");
 		if (origin.kind === "task") throw new TaskError("A background task cannot create a task");
 		const now = this.#timestamp();
 		const task: Task = {
-			version: 1,
+			version: 2,
 			id: this.dependencies.createId(),
 			title: input.title,
 			instructions: input.instructions,
+			worker: { name: input.worker.name, ...input.worker.model },
 			origin,
 			private: origin.kind === "event" ? true : this.dependencies.isPrivateSession(origin.session),
 			status: "queued",
@@ -260,7 +263,9 @@ export class TaskService {
 				this.#fail(taskId, `Task was interrupted ${String(MAX_ATTEMPTS)} times.`);
 				return;
 			}
-			const opened = run.opened ?? (await this.dependencies.openSession({ kind: "task", taskId }));
+			const opened =
+				run.opened ??
+				(await this.dependencies.openSession({ kind: "task", taskId }, workerModelOf(task)));
 			run.opened = opened;
 			if (isStopped(run)) return;
 			let messages: readonly AgentInputMessage[] | undefined = [

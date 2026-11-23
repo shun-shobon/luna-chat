@@ -76,7 +76,7 @@ request_timeout_ms = 60000
 model = "anthropic/claude-opus-5/2026"
 thinking = "high"
 
-[models.worker]
+[models.event]
 thinking = "xhigh"
 `),
 		).toEqual({
@@ -85,7 +85,42 @@ thinking = "xhigh"
 			models: {
 				...DEFAULT_WORKSPACE_CONFIG.models,
 				conversation: { provider: "anthropic", model: "claude-opus-5/2026", thinking: "high" },
-				worker: { ...DEFAULT_WORKSPACE_CONFIG.models.worker, thinking: "xhigh" },
+				event: { ...DEFAULT_WORKSPACE_CONFIG.models.event, thinking: "xhigh" },
+			},
+		});
+	});
+
+	it("models.workerは名前付きの選択肢と既定の名前を読む", () => {
+		expect(
+			parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
+[models.worker]
+default = "standard"
+
+[models.worker.choices.standard]
+model = "openai-codex/gpt-6.2-sol"
+thinking = "medium"
+description = "ふだんの調査・制作"
+
+[models.worker.choices.deep]
+model = "claude-code/claude-opus-5-5"
+thinking = "high"
+description = "難しい実装や長い推論"
+`).models.worker,
+		).toEqual({
+			default: "standard",
+			choices: {
+				standard: {
+					provider: "openai-codex",
+					model: "gpt-6.2-sol",
+					thinking: "medium",
+					description: "ふだんの調査・制作",
+				},
+				deep: {
+					provider: "claude-code",
+					model: "claude-opus-5-5",
+					thinking: "high",
+					description: "難しい実装や長い推論",
+				},
 			},
 		});
 	});
@@ -197,6 +232,27 @@ tts_voice = "luna"
 		["unknown thinking level", '[models.event]\nthinking = "max"'],
 		["unknown model role", '[models.summary]\nmodel = "openai-codex/gpt-6.1-sol"'],
 		["unknown model key", '[models.event]\neffort = "high"'],
+		[
+			"worker default outside the choices",
+			'[models.worker]\ndefault = "deep"\n[models.worker.choices.standard]\nmodel = "openai-codex/gpt-6.2-sol"\nthinking = "medium"\ndescription = "x"',
+		],
+		["worker without choices", '[models.worker]\ndefault = "standard"\n[models.worker.choices]'],
+		[
+			"worker choice without description",
+			'[models.worker]\ndefault = "standard"\n[models.worker.choices.standard]\nmodel = "openai-codex/gpt-6.2-sol"\nthinking = "medium"',
+		],
+		[
+			"worker choice without model",
+			'[models.worker]\ndefault = "standard"\n[models.worker.choices.standard]\nthinking = "medium"\ndescription = "x"',
+		],
+		[
+			"worker name that is not an identifier",
+			'[models.worker]\ndefault = "Deep Worker"\n[models.worker.choices."Deep Worker"]\nmodel = "openai-codex/gpt-6.2-sol"\nthinking = "medium"\ndescription = "x"',
+		],
+		[
+			"single worker model",
+			'[models.worker]\nmodel = "openai-codex/gpt-6.2-sol"\nthinking = "high"',
+		],
 		["negative history limit", "[discord]\ninitial_history_limit = -1"],
 		["zero duration", "[discord]\ndebounce_ms = 0"],
 		["zero task concurrency", "[tasks]\nmax_concurrent = 0"],

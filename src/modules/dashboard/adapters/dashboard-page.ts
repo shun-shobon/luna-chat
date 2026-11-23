@@ -465,7 +465,7 @@ details > summary::-webkit-details-marker { display: none; }
 		var status = TASK_STATUS[t.status] || [t.status, "s-idle"];
 		var latest = t.reports.length > 0 ? t.reports[t.reports.length - 1] : null;
 		var pending = t.messages.filter(function (m) { return m.deliveredAt == null; }).length;
-		var facts = [fact("依頼元", originLabel(t.origin)), fact("試行", String(t.attempts)), h("span", null, "更新 ", h("b", null, since(t.updatedAt, "前")))];
+		var facts = [fact("依頼元", originLabel(t.origin)), fact("ワーカー", t.worker.name), fact("試行", String(t.attempts)), h("span", null, "更新 ", h("b", null, since(t.updatedAt, "前")))];
 		if (pending > 0) facts.push(fact("未配送の追加指示", pending + "件"));
 		if (t.private) facts.push(h("span", { text: "非公開" }));
 		var summary = h("summary", null,

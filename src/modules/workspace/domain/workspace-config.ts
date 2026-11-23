@@ -2,6 +2,14 @@ type ThinkingSetting = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type ModelSetting = Readonly<{ provider: string; model: string; thinking: ThinkingSetting }>;
 
+// 依頼元のエージェントが名前で選ぶ作業エージェントのモデル。説明は選ぶ手がかりとしてモデルに見せる。
+type WorkerChoiceSetting = Readonly<ModelSetting & { description: string }>;
+
+export type WorkerSetting = Readonly<{
+	default: string;
+	choices: Readonly<Record<string, WorkerChoiceSetting>>;
+}>;
+
 export type WorkspaceConfig = {
 	agent: {
 		requestTimeoutMs: number;
@@ -32,7 +40,7 @@ export type WorkspaceConfig = {
 		event: ModelSetting;
 		// 音声モードで声の返事を担う速いモデル（表）。
 		voice: ModelSetting;
-		worker: ModelSetting;
+		worker: WorkerSetting;
 	};
 	tasks: {
 		maxConcurrent: number;
@@ -93,7 +101,31 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
 		conversation: DEFAULT_MODEL,
 		event: DEFAULT_MODEL,
 		voice: { provider: "claude-code", model: "claude-haiku-5-5", thinking: "off" },
-		worker: DEFAULT_MODEL,
+		worker: {
+			default: "standard",
+			choices: {
+				standard: {
+					provider: "claude-code",
+					model: "claude-opus-5-5",
+					thinking: "medium",
+					description: "Most background work: research, coding, and file or media production.",
+				},
+				light: {
+					provider: "claude-code",
+					model: "claude-sonnet-5-5",
+					thinking: "medium",
+					description:
+						"Simple, well-defined work such as collecting information or routine file edits.",
+				},
+				heavy: {
+					provider: "claude-code",
+					model: "claude-fable-5-2",
+					thinking: "high",
+					description:
+						"Hard work that needs deep reasoning, such as complex implementation, debugging, or design.",
+				},
+			},
+		},
 	},
 	tasks: {
 		maxConcurrent: 2,

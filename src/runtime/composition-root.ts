@@ -131,8 +131,10 @@ import type { TtsSetting, VoiceSetting } from "../modules/workspace/domain/works
 import {
 	createChatGptBackend,
 	createAgentModels,
+	modelSelectionsOf,
 	createPiAgentRuntime,
 	validateModelSelections,
+	workerCatalogOf,
 } from "./agent-runtime";
 import { readRuntimeEnvironment } from "./runtime-environment";
 import { buildSystemPrompt, createSessionFactory } from "./session-factory";
@@ -236,7 +238,7 @@ export async function startLunaApplication(
 			createDiscordToolProvider({ actions: actionAdapter, delegation, read: readAdapter }),
 			createHttpResponseToolProvider(httpResponses),
 			createAssistToolProvider(assistResponses),
-			createTaskBoardToolProvider(taskBoard),
+			createTaskBoardToolProvider(taskBoard, workerCatalogOf(workspace.config.models.worker)),
 			waitTools,
 			...(homeAssistant === undefined ? [] : [homeAssistant.tools]),
 			...(voice === undefined ? [] : [createVoiceToolProvider(voice)]),
@@ -266,7 +268,7 @@ export async function startLunaApplication(
 		requestTimeoutMs: workspace.config.agent.requestTimeoutMs,
 		skillUsage: new SkillUsageStore(resolve(workspace.lunaHomeDir, "state", "skill-usage.json")),
 	});
-	validateModelSelections(agent, workspace.config.models);
+	validateModelSelections(agent, modelSelectionsOf(workspace.config.models));
 	const usage = new UsagePoller({
 		fetch: async (signal) => await fetchUsage(backend, signal),
 		filePath: resolve(workspace.lunaHomeDir, "state", "usage.json"),
@@ -313,7 +315,7 @@ export async function startLunaApplication(
 					HOME_ASSISTANT_TOOL_INSTRUCTIONS,
 				]),
 				includeWorkspaceInstructions: false,
-				model: () => workspace.config.models.worker,
+				model: undefined,
 				tools: workerTools,
 			},
 		},
