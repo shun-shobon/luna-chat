@@ -229,6 +229,37 @@ describe("MinecraftPlayService", () => {
 		await harness.stop();
 	});
 
+	it("同じ反射が前の終わりから30秒以内に繰り返したら知らせず、間が空くか別の反射なら知らせる", async () => {
+		const harness = createHarness();
+		await harness.service.observe(harness.execution);
+		const fled = { trigger: "low_health_threat", detail: "ran from zombie" } as const;
+
+		harness.listener().reflexed(fled);
+		await vi.waitFor(() => expect(harness.eventTypes()).toEqual(["reflex"]));
+		harness.advanceClock(20_000);
+		harness.listener().reflexed(fled);
+		harness.advanceClock(20_000);
+		harness.listener().reflexed(fled);
+		harness.listener().reflexed({ trigger: "drowning", detail: "swam up and caught breath" });
+		await vi.waitFor(() => expect(harness.eventTypes()).toEqual(["reflex", "reflex"]));
+		harness.advanceClock(31_000);
+		harness.listener().reflexed({ trigger: "drowning", detail: "swam up and caught breath" });
+
+		await vi.waitFor(() => expect(harness.eventTypes()).toEqual(["reflex", "reflex", "reflex"]));
+		expect(
+			harness.notices.map(
+				(notice) =>
+					z.looseObject({ detail: z.string() }).parse(JSON.parse(notice.message.text)).detail,
+			),
+		).toEqual([
+			"low_health_threat: ran from zombie",
+			"drowning: swam up and caught breath",
+			"drowning: swam up and caught breath",
+		]);
+		expect(harness.service.snapshot().recentEvents).toHaveLength(3);
+		await harness.stop();
+	});
+
 	it("切断されたら disconnected を知らせ、待ってから接続し直して前の目標で続ける", async () => {
 		const harness = createHarness();
 		harness.decide.mockResolvedValue(decision(0, "in_progress"));
@@ -294,6 +325,7 @@ function createHarness() {
 	const notices: ActivityNotice[] = [];
 	const timers: Array<{ callback: () => void; milliseconds: number; cancelled: boolean }> = [];
 	const state: { snapshot: WorldSnapshot } = { snapshot: snapshotWith() };
+	const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
 
 	const observe = vi.fn<MinecraftConnection["observe"]>(async () => state.snapshot);
 	const execute = vi.fn<MinecraftConnection["execute"]>(async (action): Promise<ActionOutcome> => {
@@ -337,7 +369,7 @@ function createHarness() {
 			},
 		},
 		logger: createRecordingLogger(),
-		now: () => new Date("2026-11-23T10:00:00.000Z"),
+		now: () => new Date(clock.now),
 		schedule: (callback, milliseconds) => {
 			const timer = { callback, milliseconds, cancelled: false };
 			timers.push(timer);
@@ -384,6 +416,9 @@ function createHarness() {
 		},
 		set snapshot(value: WorldSnapshot) {
 			state.snapshot = value;
+		},
+		advanceClock: (milliseconds: number): void => {
+			clock.now += milliseconds;
 		},
 		eventTypes: (): string[] =>
 			notices.map((notice) => EventTypeSchema.parse(JSON.parse(notice.message.text)).type),

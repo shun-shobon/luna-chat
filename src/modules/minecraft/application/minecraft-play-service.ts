@@ -37,6 +37,9 @@ const REFLEX_POLL_MS = 250;
 // 判断や行動の思わぬ失敗が続いても、ループを詰めて回さないための間隔。
 const FAILURE_BACKOFF_MS = 1_000;
 const RECONNECT_DELAYS_MS: readonly number[] = [5_000, 10_000, 30_000, 60_000];
+// 同じ反射が前の終わりからこの間に再び終わったら、続いている1つの反射として計画役を起こさない。
+// 体力が低いまま敵が見え隠れすると、逃げる反射が数秒おきに繰り返して計画役を起こし続けた。
+const REFLEX_MERGE_MS = 30_000;
 
 type Cancel = () => void;
 
@@ -71,6 +74,7 @@ type Play = {
 	recentActions: ActionRecord[];
 	recentEvents: MinecraftEvent[];
 	lastReflex: ReflexRecord | null;
+	lastReflexEndedMs: number | null;
 	lastDecisionMs: number | null;
 	lastSnapshot: WorldSnapshot | undefined;
 	cancelInterval: Cancel | undefined;
@@ -202,6 +206,7 @@ export class MinecraftPlayService {
 			recentActions: [],
 			recentEvents: [],
 			lastReflex: null,
+			lastReflexEndedMs: null,
 			lastDecisionMs: null,
 			lastSnapshot: undefined,
 			cancelInterval: undefined,
@@ -244,7 +249,14 @@ export class MinecraftPlayService {
 	#listenerFor(play: Play): ConnectionListener {
 		return {
 			reflexed: (event) => {
+				const now = this.dependencies.now().getTime();
+				const continuing =
+					play.lastReflex?.trigger === event.trigger &&
+					play.lastReflexEndedMs != null &&
+					now - play.lastReflexEndedMs <= REFLEX_MERGE_MS;
 				play.lastReflex = { trigger: event.trigger, at: this.#timestamp() };
+				play.lastReflexEndedMs = now;
+				if (continuing) return;
 				void this.#emitWithObservation(play, "reflex", `${event.trigger}: ${event.detail}`);
 			},
 			died: (event) => {
