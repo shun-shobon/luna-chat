@@ -6,7 +6,7 @@ import pathfinderModule from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { z } from "zod";
 
-import { ACTION_TIMEOUT_MS, WAIT_MS } from "../domain/action";
+import { actionTimeoutMs, WAIT_MS } from "../domain/action";
 import type { MinecraftAction } from "../domain/action";
 import {
 	CRAFT_CANDIDATES,
@@ -34,7 +34,12 @@ import {
 	SIGHT_DISTANCE,
 } from "../domain/world";
 import type { EntityKind, Vec3 as Position, WorldSnapshot } from "../domain/world";
-import type { ActionOutcome, ObserveRequest } from "../ports/minecraft-connection-port";
+import type {
+	ActionOutcome,
+	CustomActionsReport,
+	ObserveRequest,
+} from "../ports/minecraft-connection-port";
+import { CustomActionRegistry } from "./custom-actions";
 
 const { goals, Movements, pathfinder } = pathfinderModule;
 
@@ -114,6 +119,7 @@ class ActionInterrupted extends Error {
 export class MineflayerPlayer {
 	readonly #bot: Bot;
 	readonly #events: PlayerEvents;
+	readonly #customActions: CustomActionRegistry;
 	#action: AbortController | undefined;
 	#closing = false;
 	#lastDeathMessage: { text: string; at: number } | undefined;
@@ -121,13 +127,14 @@ export class MineflayerPlayer {
 	#reflexAbort: AbortController | undefined;
 	#threatTick = 0;
 
-	private constructor(bot: Bot, events: PlayerEvents) {
+	private constructor(bot: Bot, events: PlayerEvents, customActions: CustomActionRegistry) {
 		this.#bot = bot;
 		this.#events = events;
+		this.#customActions = customActions;
 	}
 
 	static async connect(
-		settings: Readonly<{ host: string; port: number; username: string }>,
+		settings: Readonly<{ host: string; port: number; username: string; actionsDir: string }>,
 		events: PlayerEvents,
 	): Promise<MineflayerPlayer> {
 		const bot = createBot({
@@ -166,7 +173,7 @@ export class MineflayerPlayer {
 			bot.off("kicked", fail);
 			bot.off("end", fail);
 		}
-		const player = new MineflayerPlayer(bot, events);
+		const player = new MineflayerPlayer(bot, events, new CustomActionRegistry(settings.actionsDir));
 		player.#install();
 		return player;
 	}
@@ -275,6 +282,10 @@ export class MineflayerPlayer {
 			if (this.#action === local) this.#action = undefined;
 			release();
 		}
+	}
+
+	async customActions(): Promise<CustomActionsReport> {
+		return await this.#customActions.list(this.#customContext());
 	}
 
 	unknownItems(names: readonly string[]): readonly string[] {
@@ -479,6 +490,22 @@ export class MineflayerPlayer {
 		}
 	}
 
+	// ルナが書いた行動のコードに渡すもの（SPEC §25.10）。
+	#customContext() {
+		return {
+			bot: this.#bot,
+			goals,
+			Vec3,
+			goto: async (goal: InstanceType<typeof goals.Goal>, signal: AbortSignal) => {
+				await this.#goto(goal, signal);
+			},
+			canSee: (position: Position): boolean => {
+				const block = this.#bot.blockAt(new Vec3(position.x, position.y, position.z));
+				return block != null && this.#canSee(block);
+			},
+		};
+	}
+
 	async #run(action: MinecraftAction, signal: AbortSignal): Promise<ActionOutcome> {
 		const bot = this.#bot;
 		const done = (detail: string): ActionOutcome => ({ result: "succeeded", detail, chest: null });
@@ -629,7 +656,7 @@ export class MineflayerPlayer {
 				await bot.sleep(this.#blockAt(action.bed));
 				return done("went to bed");
 			case "attack": {
-				const deadline = Date.now() + ACTION_TIMEOUT_MS.attack;
+				const deadline = Date.now() + actionTimeoutMs(action);
 				while (!signal.aborted && Date.now() < deadline) {
 					const target = bot.entities[action.entityId];
 					if (target === undefined || !target.isValid) return done("the target is gone");
@@ -657,6 +684,29 @@ export class MineflayerPlayer {
 			case "wait":
 				await sleep(WAIT_MS);
 				return done("waited");
+			case "custom": {
+				// ルナのコードが signal を見ずに続けても、中断と上限時間で返せるよう、止まるのを待たない。
+				const aborted = Promise.withResolvers<never>();
+				const onAbort = (): void => {
+					aborted.reject(new ActionInterrupted("aborted"));
+				};
+				signal.addEventListener("abort", onAbort, { once: true });
+				if (signal.aborted) onAbort();
+				const running = this.#customActions.run(
+					action.name,
+					action.args,
+					this.#customContext(),
+					signal,
+				);
+				// 中断で先に返した後にルナのコードが例外で終わると、拾い手のない reject でワーカーが落ちるため。
+				running.catch(() => {});
+				try {
+					const detail = await Promise.race([running, aborted.promise]);
+					return done(detail ?? `${action.name} finished`);
+				} finally {
+					signal.removeEventListener("abort", onAbort);
+				}
+			}
 			default: {
 				const unknownAction: never = action;
 				throw new Error(`Unknown Minecraft action: ${JSON.stringify(unknownAction)}`);

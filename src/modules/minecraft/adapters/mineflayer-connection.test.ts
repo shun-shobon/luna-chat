@@ -7,7 +7,12 @@ import { createMineflayerConnector } from "./mineflayer-connection";
 import type { WorkerLike } from "./mineflayer-connection";
 import type { WorkerRequest } from "./mineflayer-protocol";
 
-const SETTINGS = { host: "127.0.0.1", port: 25_565, username: "Luna" };
+const SETTINGS = {
+	host: "127.0.0.1",
+	port: 25_565,
+	username: "Luna",
+	actionsDir: "/luna/workspace/minecraft/actions",
+};
 
 class FakeWorker implements WorkerLike {
 	readonly posted: WorkerRequest[] = [];
@@ -101,6 +106,22 @@ describe("createMineflayerConnector", () => {
 		await expect(connection.observe({ targetItems: [], verify: [] })).rejects.toBeInstanceOf(
 			z.ZodError,
 		);
+	});
+
+	it("ルナが足した行動の状態を頼み、返事をスキーマで確かめて返す", async () => {
+		const report = {
+			loaded: ["build_wall"],
+			candidates: [
+				{ name: "build_wall", description: "Build a wall", args: { length: 3 }, timeoutMs: 60_000 },
+			],
+			errors: [{ name: "broken", error: "SyntaxError" }],
+		};
+		const { connection, worker } = await connected((request) =>
+			request.type === "customActions" ? report : null,
+		);
+
+		await expect(connection.customActions()).resolves.toEqual(report);
+		expect(worker.posted.at(-1)).toEqual({ type: "customActions", id: 1 });
 	});
 
 	it("行動を中断したら abort を送り、ワーカーの interrupted の返事を待って返す", async () => {

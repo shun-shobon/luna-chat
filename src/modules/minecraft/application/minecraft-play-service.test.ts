@@ -12,6 +12,7 @@ import type { Decision } from "../ports/decision-model-port";
 import type {
 	ActionOutcome,
 	ConnectionListener,
+	CustomActionsReport,
 	MinecraftConnection,
 } from "../ports/minecraft-connection-port";
 import { snapshotWith } from "../testing/world-fixtures";
@@ -92,6 +93,37 @@ describe("MinecraftPlayService", () => {
 			taskId: "task-1",
 			connection: "connected",
 			goalStatus: { status: "in_progress", probability: 0.9 },
+		});
+		await harness.stop();
+	});
+
+	it("ルナが足した行動を候補に入れて実行し、観測のツールでその状態を返す", async () => {
+		const harness = createHarness();
+		harness.setCustomActions({
+			loaded: ["build_wall", "broken"],
+			candidates: [
+				{ name: "build_wall", description: "Build a wall", args: { length: 3 }, timeoutMs: 60_000 },
+			],
+			errors: [{ name: "broken", error: "candidates failed: boom" }],
+		});
+		harness.decide.mockImplementation(async (input) =>
+			decision(input.candidates.indexOf("Build a wall"), "in_progress"),
+		);
+
+		await harness.setGoal();
+		await vi.waitFor(() => expect(harness.executed.length).toBeGreaterThan(0));
+		const observation = await harness.service.observe(harness.execution);
+
+		expect(harness.executed[0]).toEqual({
+			type: "custom",
+			name: "build_wall",
+			args: { length: 3 },
+			timeoutMs: 60_000,
+		});
+		expect(observation["custom_actions"]).toEqual({
+			loaded: ["build_wall", "broken"],
+			candidates: ["Build a wall"],
+			errors: [{ name: "broken", error: "candidates failed: boom" }],
 		});
 		await harness.stop();
 	});
@@ -324,7 +356,10 @@ function createHarness() {
 	const saved: WorldMemory[] = [];
 	const notices: ActivityNotice[] = [];
 	const timers: Array<{ callback: () => void; milliseconds: number; cancelled: boolean }> = [];
-	const state: { snapshot: WorldSnapshot } = { snapshot: snapshotWith() };
+	const state: { snapshot: WorldSnapshot; custom: CustomActionsReport } = {
+		snapshot: snapshotWith(),
+		custom: { loaded: [], candidates: [], errors: [] },
+	};
 	const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
 
 	const observe = vi.fn<MinecraftConnection["observe"]>(async () => state.snapshot);
@@ -336,10 +371,11 @@ function createHarness() {
 		return { result: "succeeded", detail: "done", chest: null };
 	});
 	const unknownItems = vi.fn<MinecraftConnection["unknownItems"]>(async () => []);
+	const customActions = vi.fn<MinecraftConnection["customActions"]>(async () => state.custom);
 	const close = vi.fn<MinecraftConnection["close"]>(async () => {});
 	const connect = vi.fn(async (listener: ConnectionListener): Promise<MinecraftConnection> => {
 		listeners.push(listener);
-		return { observe, execute, unknownItems, close };
+		return { observe, execute, unknownItems, customActions, close };
 	});
 	const decide = vi.fn<
 		(input: { state: object; candidates: readonly string[] }) => Promise<Decision>
@@ -416,6 +452,9 @@ function createHarness() {
 		},
 		set snapshot(value: WorldSnapshot) {
 			state.snapshot = value;
+		},
+		setCustomActions: (value: CustomActionsReport): void => {
+			state.custom = value;
 		},
 		advanceClock: (milliseconds: number): void => {
 			clock.now += milliseconds;

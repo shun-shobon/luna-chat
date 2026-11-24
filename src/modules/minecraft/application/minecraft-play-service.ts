@@ -2,7 +2,7 @@ import type { JsonObject } from "../../../shared/json";
 import { SerialQueue } from "../../../shared/serial-queue";
 import type { LoggerPort } from "../../observability/ports/logger-port";
 import type { ActivityHandle, ToolExecution } from "../../tool/domain/tool";
-import { ACTION_TIMEOUT_MS, describeAction, listCandidates } from "../domain/action";
+import { actionTimeoutMs, describeAction, listCandidates } from "../domain/action";
 import type { MinecraftAction } from "../domain/action";
 import { createMinecraftEvent, MINECRAFT_EVENT_KIND, minecraftEventJson } from "../domain/event";
 import type { MinecraftEvent, MinecraftEventType } from "../domain/event";
@@ -119,12 +119,19 @@ export class MinecraftPlayService {
 
 	async observe(execution: ToolExecution): Promise<JsonObject> {
 		const play = await this.#ensure(execution);
-		const snapshot = await this.#observe(play, requireConnection(play));
+		const connection = requireConnection(play);
+		const snapshot = await this.#observe(play, connection);
+		const custom = await connection.customActions();
 		this.#armInterval(play);
 		return {
 			...this.#observationOf(play, snapshot),
 			goal_status: goalStatusJson(play.goalAnswer),
 			recent_events: play.recentEvents.map(minecraftEventJson),
+			custom_actions: {
+				loaded: [...custom.loaded],
+				candidates: custom.candidates.map((candidate) => candidate.description),
+				errors: custom.errors.map((entry) => ({ name: entry.name, error: entry.error })),
+			},
 		};
 	}
 
@@ -341,7 +348,13 @@ export class MinecraftPlayService {
 			this.#complete(play, goal);
 			return;
 		}
-		const candidates = listCandidates({ snapshot: before, memory: play.memory, goal });
+		const custom = await connection.customActions();
+		const candidates = listCandidates({
+			snapshot: before,
+			memory: play.memory,
+			goal,
+			custom: custom.candidates,
+		});
 		const started = this.dependencies.now().getTime();
 		let decision;
 		try {
@@ -396,7 +409,7 @@ export class MinecraftPlayService {
 		action: MinecraftAction,
 	): Promise<void> {
 		const started = this.dependencies.now().getTime();
-		const timeout = AbortSignal.timeout(ACTION_TIMEOUT_MS[action.type]);
+		const timeout = AbortSignal.timeout(actionTimeoutMs(action));
 		const outcome = await connection.execute(action, AbortSignal.any([play.abort.signal, timeout]));
 		const timedOut = timeout.aborted && !isEnded(play);
 		const result = timedOut ? "failed" : outcome.result;

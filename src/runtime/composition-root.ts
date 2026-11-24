@@ -253,6 +253,7 @@ export async function startLunaApplication(
 			: await createMinecraft({
 					setting: minecraftSetting,
 					lunaHomeDir: workspace.lunaHomeDir,
+					workspaceDir: workspace.workspaceDir,
 					logger,
 				});
 	const generalWorkers = workerCatalogOf(workspace.config.models.worker);
@@ -813,7 +814,12 @@ const VOICE_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 async function createMinecraft(
-	input: Readonly<{ setting: MinecraftSetting; lunaHomeDir: string; logger: LoggerPort }>,
+	input: Readonly<{
+		setting: MinecraftSetting;
+		lunaHomeDir: string;
+		workspaceDir: string;
+		logger: LoggerPort;
+	}>,
 ): Promise<MinecraftPlayService> {
 	const { setting } = input;
 	const decisions = await PiDecisionModel.create({
@@ -823,7 +829,12 @@ async function createMinecraft(
 	});
 	return new MinecraftPlayService({
 		connect: createMineflayerConnector(
-			{ host: setting.host, port: setting.port, username: setting.username },
+			{
+				host: setting.host,
+				port: setting.port,
+				username: setting.username,
+				actionsDir: resolve(input.workspaceDir, "minecraft", "actions"),
+			},
 			spawnMineflayerWorker,
 		),
 		decisions,

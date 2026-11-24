@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { GOAL, memoryWith, NOW, snapshotWith } from "../testing/world-fixtures";
-import { ACTION_TIMEOUT_MS, listCandidates, MAX_CANDIDATES, WAIT_MS } from "./action";
+import {
+	actionTimeoutMs,
+	CUSTOM_CANDIDATES_PER_ACTION,
+	describeAction,
+	listCandidates,
+	MAX_CANDIDATES,
+	WAIT_MS,
+} from "./action";
 
 describe("listCandidates", () => {
 	it("見えていて掘れるブロックだけを、種類ごとに近い順に3件まで候補にする", () => {
@@ -12,6 +19,7 @@ describe("listCandidates", () => {
 			harvestable: true,
 		}));
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				visibleBlocks: [
 					...logs.toSorted((left, right) => left.distance - right.distance),
@@ -38,6 +46,7 @@ describe("listCandidates", () => {
 
 	it("目標の waypoint と、遠くの覚えている場所への移動、4方向の探索、待つを必ず含める", () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith(),
 			memory: memoryWith({
 				places: [
@@ -87,8 +96,14 @@ describe("listCandidates", () => {
 		});
 		const goal = { ...GOAL, targets: { oak_planks: 4 } };
 
-		const far = listCandidates({ snapshot, memory: memoryWith(), goal });
+		const far = listCandidates({
+			custom: [],
+			snapshot,
+			memory: memoryWith(),
+			goal,
+		});
 		const near = listCandidates({
+			custom: [],
 			snapshot,
 			memory: memoryWith({
 				places: [
@@ -122,11 +137,13 @@ describe("listCandidates", () => {
 			seenAt: NOW,
 		};
 		const day = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({ foods: ["bread"] }),
 			memory: memoryWith({ places: [bed] }),
 			goal: GOAL,
 		});
 		const night = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				foods: ["bread"],
 				self: { food: 12 },
@@ -144,6 +161,7 @@ describe("listCandidates", () => {
 
 	it("見えている敵には攻撃と逃げる候補、動物には攻撃だけ、落ちたアイテムには拾う候補を出す", () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				visibleEntities: [
 					{
@@ -188,11 +206,12 @@ describe("listCandidates", () => {
 	});
 
 	it("wait は上限より先に終わる", () => {
-		expect(WAIT_MS).toBeLessThan(ACTION_TIMEOUT_MS.wait);
+		expect(WAIT_MS).toBeLessThan(actionTimeoutMs({ type: "wait" }));
 	});
 
 	it("水中の生き物には攻撃の候補を出さず、逃げる候補は残す", () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				visibleEntities: [
 					{
@@ -239,6 +258,7 @@ describe("listCandidates", () => {
 	it("チェストがそばにあれば、持ち物の預け入れと、最後に見た中身の取り出しを出す", () => {
 		const chest = { x: 1, y: 64, z: 0 };
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({ inventory: { cobblestone: 12 } }),
 			memory: memoryWith({
 				places: [
@@ -259,6 +279,7 @@ describe("listCandidates", () => {
 
 	it("周りでできる掘る・置く操作を、置けるブロックごとに候補にする", () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				buildingBlocks: ["dirt", "cobblestone", "oak_planks", "stone"],
 				surroundings: {
@@ -295,6 +316,7 @@ describe("listCandidates", () => {
 
 	it("できない掘る・置く操作は候補に出さない", () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({ buildingBlocks: ["dirt"] }),
 			memory: memoryWith(),
 			goal: GOAL,
@@ -309,6 +331,7 @@ describe("listCandidates", () => {
 
 	it(`候補を ${String(MAX_CANDIDATES)} 件までに収める`, () => {
 		const candidates = listCandidates({
+			custom: [],
 			snapshot: snapshotWith({
 				craftable: Array.from({ length: 400 }, (_value, index) => ({
 					item: `item_${String(index)}`,
@@ -320,5 +343,38 @@ describe("listCandidates", () => {
 		});
 
 		expect(candidates).toHaveLength(MAX_CANDIDATES);
+	});
+
+	it("ルナが足した行動の候補を組み込みの後ろに並べ、行動ごとに上限まで出す", () => {
+		const custom = Array.from({ length: CUSTOM_CANDIDATES_PER_ACTION + 2 }, (_value, index) => ({
+			name: "build_wall",
+			description: `Build wall ${String(index)}`,
+			args: { index },
+			timeoutMs: 120_000,
+		}));
+		const candidates = listCandidates({
+			custom: [
+				...custom,
+				{ name: "open_door", description: "Open the door", args: null, timeoutMs: 5_000 },
+			],
+			snapshot: snapshotWith(),
+			memory: memoryWith(),
+			goal: GOAL,
+		});
+
+		const types = candidates.map((candidate) => candidate.action.type);
+		expect(types.indexOf("custom")).toBe(types.indexOf("wait") + 1);
+		const built = candidates.filter(
+			(candidate) => candidate.action.type === "custom" && candidate.action.name === "build_wall",
+		);
+		expect(built).toHaveLength(CUSTOM_CANDIDATES_PER_ACTION);
+		expect(candidates.at(-1)).toEqual({
+			action: { type: "custom", name: "open_door", args: null, timeoutMs: 5_000 },
+			description: "Open the door",
+		});
+		const first = built[0];
+		if (first === undefined) throw new Error("no custom candidate");
+		expect(actionTimeoutMs(first.action)).toBe(120_000);
+		expect(describeAction(first.action)).toBe('build_wall {"index":0}');
 	});
 });

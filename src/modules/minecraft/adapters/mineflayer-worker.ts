@@ -56,6 +56,8 @@ async function handle(request: Exclude<WorkerRequest, { type: "abort" }>): Promi
 		}
 		case "unknownItems":
 			return requirePlayer().unknownItems(request.names);
+		case "customActions":
+			return await requirePlayer().customActions();
 		case "close":
 			await player?.close();
 			player = undefined;

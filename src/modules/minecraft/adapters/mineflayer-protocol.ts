@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { jsonValueSchema } from "../../../shared/json";
 import { minecraftActionSchema } from "../domain/action";
 import { reflexTriggerSchema } from "../domain/reflex";
 import { vec3Schema, worldSnapshotSchema } from "../domain/world";
@@ -15,6 +16,7 @@ export const workerRequestSchema = z.discriminatedUnion("type", [
 		host: z.string(),
 		port: z.number().int(),
 		username: z.string(),
+		actionsDir: z.string(),
 	}),
 	z.strictObject({
 		type: z.literal("observe"),
@@ -34,6 +36,7 @@ export const workerRequestSchema = z.discriminatedUnion("type", [
 		id: z.number().int(),
 		names: z.array(z.string()),
 	}),
+	z.strictObject({ type: z.literal("customActions"), id: z.number().int() }),
 	z.strictObject({ type: z.literal("close"), id: z.number().int() }),
 ]);
 export type WorkerRequest = z.infer<typeof workerRequestSchema>;
@@ -76,5 +79,17 @@ export const responseValueSchemas = {
 	observe: worldSnapshotSchema,
 	execute: actionOutcomeSchema,
 	unknownItems: z.array(z.string()),
+	customActions: z.strictObject({
+		loaded: z.array(z.string()),
+		candidates: z.array(
+			z.strictObject({
+				name: z.string(),
+				description: z.string(),
+				args: jsonValueSchema.nullable(),
+				timeoutMs: z.number().int(),
+			}),
+		),
+		errors: z.array(z.strictObject({ name: z.string(), error: z.string() })),
+	}),
 	close: z.null(),
 } as const;

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { jsonValueSchema } from "../../../shared/json";
+import type { JsonValue } from "../../../shared/json";
 import type { MinecraftGoal } from "./goal";
 import {
 	DIRECTION_STEP,
@@ -58,11 +60,20 @@ export const minecraftActionSchema = z.discriminatedUnion("type", [
 	z.strictObject({ type: z.literal("attack"), entityId: z.number().int() }),
 	z.strictObject({ type: z.literal("retreat"), from: vec3Schema }),
 	z.strictObject({ type: z.literal("wait") }),
+	// ルナがワークスペースに書いた行動（SPEC §25.10）。上限時間は行動のファイルが決める。
+	z.strictObject({
+		type: z.literal("custom"),
+		name: z.string(),
+		args: jsonValueSchema.nullable(),
+		timeoutMs: z.number().int(),
+	}),
 ]);
 export type MinecraftAction = Readonly<z.infer<typeof minecraftActionSchema>>;
-export type MinecraftActionType = MinecraftAction["type"];
+type MinecraftActionType = MinecraftAction["type"];
 
-export const ACTION_TIMEOUT_MS: Readonly<Record<MinecraftActionType, number>> = {
+type BuiltinActionType = Exclude<MinecraftActionType, "custom">;
+
+const ACTION_TIMEOUT_MS: Readonly<Record<BuiltinActionType, number>> = {
 	move_to: 60_000,
 	explore: 60_000,
 	mine: 30_000,
@@ -84,6 +95,12 @@ export const ACTION_TIMEOUT_MS: Readonly<Record<MinecraftActionType, number>> = 
 	wait: 5_000,
 };
 
+export const BUILTIN_ACTION_TYPES: ReadonlySet<string> = new Set(Object.keys(ACTION_TIMEOUT_MS));
+
+export function actionTimeoutMs(action: MinecraftAction): number {
+	return action.type === "custom" ? action.timeoutMs : ACTION_TIMEOUT_MS[action.type];
+}
+
 // wait で止まる長さ。上限と同じにすると、毎回上限が先に来て失敗と数えていた。
 export const WAIT_MS = 2_000;
 
@@ -96,20 +113,30 @@ const ENTITY_LIMIT = 8;
 const ATTACK_LIMIT = 6;
 const RETREAT_LIMIT = 3;
 const ITEM_LIMIT = 10;
+export const CUSTOM_CANDIDATES_PER_ACTION = 16;
 // 置く候補にするブロックの種類の数。種類ごとに、頭上・足元・4方向の置き場所が並ぶ。
 const BUILDING_KINDS = 3;
 
 export type ActionCandidate = Readonly<{ action: MinecraftAction; description: string }>;
 
+// ルナが足した行動が返した候補。
+export type CustomCandidate = Readonly<{
+	name: string;
+	description: string;
+	args: JsonValue | null;
+	timeoutMs: number;
+}>;
+
 type CandidateInput = Readonly<{
 	snapshot: WorldSnapshot;
 	memory: WorldMemory;
 	goal: MinecraftGoal;
+	custom: readonly CustomCandidate[];
 }>;
 
 // 今できる行動を、決定モデルへ見せる説明つきで列挙する。種類ごとに近い順に数を絞り、合計を上限に収める。
 export function listCandidates(input: CandidateInput): readonly ActionCandidate[] {
-	const { snapshot, memory, goal } = input;
+	const { snapshot, memory, goal, custom } = input;
 	const position = snapshot.self.position;
 	const dimension = snapshot.self.dimension;
 	const near = (target: Vec3): boolean => distanceBetween(target, position) <= REACH_DISTANCE;
@@ -294,6 +321,22 @@ export function listCandidates(input: CandidateInput): readonly ActionCandidate[
 	}
 	push({ type: "wait" }, `Wait for ${String(WAIT_MS / 1_000)} seconds`);
 
+	const perAction = new Map<string, number>();
+	for (const candidate of custom) {
+		const count = perAction.get(candidate.name) ?? 0;
+		if (count >= CUSTOM_CANDIDATES_PER_ACTION) continue;
+		perAction.set(candidate.name, count + 1);
+		push(
+			{
+				type: "custom",
+				name: candidate.name,
+				args: candidate.args,
+				timeoutMs: candidate.timeoutMs,
+			},
+			candidate.description,
+		);
+	}
+
 	return candidates.slice(0, MAX_CANDIDATES);
 }
 
@@ -343,6 +386,8 @@ export function describeAction(action: MinecraftAction): string {
 			return `retreat from ${formatPosition(action.from)}`;
 		case "wait":
 			return "wait";
+		case "custom":
+			return action.args == null ? action.name : `${action.name} ${JSON.stringify(action.args)}`;
 		default: {
 			const unknownAction: never = action;
 			throw new Error(`Unknown Minecraft action: ${JSON.stringify(unknownAction)}`);
