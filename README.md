@@ -30,9 +30,9 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - **HTTP API**：ローカルのHTTPでイベントを受け、単発の実行や会話として処理します。
 - **Home Assistant**：家の機器の状態を読み、操作します。見ておきたい機器の変化（玄関が開いた、洗濯機が終わったなど）をLuna自身が `home-assistant.toml` に書き、変化があると起きて動きます。HAのAssistの会話エージェントとしても選べ、音声で話しかけられます。
 - **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
-- **ボイスチャンネル**：Discordのボイスチャンネルにルナが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがルナとして喋り、調べ物や操作はいつものルナに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[voice.md](./docs/voice.md)）。
+- **ボイスチャンネル**：Discordのボイスチャンネルにエージェントが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがエージェントとして喋り、調べ物や操作はいつものエージェントに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[voice.md](./docs/voice.md)）。
 - **Minecraft**：ルナがMinecraft Java Editionのサーバーにプレイヤーとして入って遊びます。作業エージェントが目標を立て、速い決定モデル（OpenAIのDecisions API か TypeSafe の Jev）が見えているものから1手ずつ行動を選び、命の危険にはコードが即座に反応します。足りない行動（扉、畑、建築など）は、ルナがワークスペースにコードで書いて足せます。使うには `config.toml` に `[minecraft]` と `[models.minecraft]` を書き、決定モデルの鍵を設定します（[minecraft.md](./docs/minecraft.md)）。
-- **デスクトップ**：ルナ専用のデスクトップとChromeを常駐させます。ルナがログインの要るサイトやアプリを画面で操作し、人はその画面をブラウザから見て手伝えます（Linuxのホストのみ）。
+- **デスクトップ**：エージェント専用のデスクトップとChromeを常駐させます。エージェントがログインの要るサイトやアプリを画面で操作し、人はその画面をブラウザから見て手伝えます（Linuxのホストのみ）。
 
 ## 動作要件
 
@@ -85,7 +85,7 @@ Lunaを動かすユーザーで `claude` をPATHに置き、`LUNA_HOME/claude-co
 CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
 ```
 
-この設定ディレクトリはLunaがモデルとして使うときだけのものです。ルナがシェルから `claude` を使うときは、通常どおり `~/.claude` を使います。
+この設定ディレクトリはLunaがモデルとして使うときだけのものです。エージェントがシェルから `claude` を使うときは、通常どおり `~/.claude` を使います。
 
 ## 設定
 
@@ -120,7 +120,7 @@ CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
 ├── sessions/              # エージェントのセッションの記録（日付ごと）
 ├── state/                 # 使用枠など、実行中に書き出す状態（usage.json）
 └── workspace/
-    ├── LUNA.md            # エージェントの人格や会話方針
+    ├── LUNA.md            # エージェントの名前・人格・話し方（既定は「ルナ」）
     ├── MEMORY.md          # 長期記憶
     ├── memory/            # 日次記憶とトピック記憶
     │   └── topics/know-how.md  # * 調べ方・作業のコツ
@@ -137,7 +137,7 @@ CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
     └── home-assistant.toml  # 状態変化で起動するHome Assistantのエンティティ（任意。初回には生成しない）
 ```
 
-週次の見直しは、毎週日曜15:00に直近7日の会話から人の反応を拾い、`LUNA.md`・`MEMORY.md` の変更案を `luna-chat replay` で現行と比べ、よくなった時だけルナ自身が反映します。変更前のファイルと比較の結果は `workspace/output/self-review/<日付>/` に残ります。止めたい時は `cron.toml` の `self-review-weekly` を `enabled = false` にしてください。
+週次の見直しは、毎週日曜15:00に直近7日の会話から人の反応を拾い、`LUNA.md`・`MEMORY.md` の変更案を `luna-chat replay` で現行と比べ、よくなった時だけエージェント自身が反映します。変更前のファイルと比較の結果は `workspace/output/self-review/<日付>/` に残ります。止めたい時は `cron.toml` の `self-review-weekly` を `enabled = false` にしてください。
 
 ### `config.toml`
 
@@ -253,7 +253,7 @@ Ubuntu 24.04 のホスト（native、実行ユーザー `luna`、ログインシ
 deploy/desktop/install.sh
 ```
 
-Google Chrome、neko、AT-SPI、上のバーと下のドック（tint2）などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、ルナの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとルナが使えます。構成は [deploy/desktop/README.md](./deploy/desktop/README.md) を参照してください。
+Google Chrome、neko、AT-SPI、上のバーと下のドック（tint2）などを入れ、`luna-desktop.target` を有効にして起動し、ワークスペースに skill `luna-desktop` を置きます。`http://<ホスト>:8080/` を開き、`/etc/luna-desktop/neko.env` のパスワードでログインすると、エージェントの画面を見て操作できます。WebRTC に `59000/udp` を使います。ログインが必要なサイトは、この画面から一度ログインしておくとエージェントが使えます。構成は [deploy/desktop/README.md](./deploy/desktop/README.md) を参照してください。
 
 ### 指示の比較（再生）
 
