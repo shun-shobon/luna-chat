@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createActivityTable } from "../../tool/application/activity-table";
 import type { ToolExecution } from "../../tool/domain/tool";
 import type { ToolDefinition } from "../../tool/ports/tool-provider";
 import { createVoiceToolProvider } from "./voice-tool-provider";
@@ -11,6 +12,7 @@ const execution: ToolExecution = {
 		kind: "conversation",
 		session: { key: "discord:guild_channel:1:10", source: "discord/main", context: {} },
 	},
+	activities: createActivityTable(),
 	signal: new AbortController().signal,
 };
 const VC = { guildId: "1", channelId: "500", name: "雑談VC" };

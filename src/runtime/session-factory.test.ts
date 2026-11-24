@@ -70,7 +70,7 @@ describe("createSessionFactory", () => {
 		],
 		[
 			"タスク",
-			{ kind: "task", taskId: "task-1" },
+			{ kind: "task", taskId: "task-1", worker: "standard" },
 			"worker",
 			"task:task-1",
 			"WORKER PROTOCOL\n\nSKILLS",
@@ -110,8 +110,15 @@ describe("createSessionFactory", () => {
 					"image_gen",
 				],
 				fastMode: expect.any(Function),
+				activities: expect.any(Object),
 			});
-			expect(harness.toolSets[kind].bind).toHaveBeenCalledWith({ ownerId: "owner-1", origin });
+			// ツールが始める作業と、セッションが受ける作業は同じ表でなければ通知が届かない。
+			const activities = harness.agent.open.mock.calls[0]?.[0].activities;
+			expect(harness.toolSets[kind].bind).toHaveBeenCalledWith({
+				ownerId: "owner-1",
+				origin,
+				activities,
+			});
 		},
 	);
 
@@ -127,9 +134,9 @@ describe("createSessionFactory", () => {
 	it("作業エージェントはモデルを指定しなければ開かない", async () => {
 		const harness = createHarness(await createWorkspace({}));
 
-		await expect(harness.open({ kind: "task", taskId: "task-1" })).rejects.toThrow(
-			"A worker session needs a model",
-		);
+		await expect(
+			harness.open({ kind: "task", taskId: "task-1", worker: "standard" }),
+		).rejects.toThrow("A worker session needs a model");
 		expect(harness.agent.open).not.toHaveBeenCalled();
 	});
 
@@ -183,9 +190,9 @@ function createHarness(workspaceDir: string) {
 		run: vi.fn(),
 		steer: vi.fn(),
 		abort: vi.fn(),
-		hasBackground: vi.fn(),
-		waitForBackground: vi.fn(),
-		stopBackground: vi.fn(),
+		hasActivity: vi.fn(),
+		waitForActivity: vi.fn(),
+		stopActivities: vi.fn(),
 		setModel: vi.fn(),
 		close: vi.fn(),
 		status: vi.fn(),
@@ -220,7 +227,7 @@ function createHarness(workspaceDir: string) {
 		profiles: {
 			conversation: profile("conversation"),
 			event: profile("event"),
-			worker: profile("worker"),
+			worker: () => profile("worker"),
 		},
 		readSkillsPrompt,
 		workspaceDir,

@@ -16,6 +16,7 @@ describe("DashboardService", () => {
 			conversations: () => [],
 			events: () => [],
 			homeAssistant: () => HOME_ASSISTANT_STATUS,
+			minecraft: () => MINECRAFT_STATUS,
 			tasks: () => ({ maxConcurrent: 2, running: 0, tasks: [] }),
 			workspace: () => ({
 				disk: { totalBytes: 100, freeBytes: 40 },
@@ -40,6 +41,7 @@ describe("DashboardService", () => {
 			events: [],
 			generatedAt: "2026-10-20T01:00:00.000Z",
 			homeAssistant: HOME_ASSISTANT_STATUS,
+			minecraft: MINECRAFT_STATUS,
 			startedAt: "2026-10-20T00:00:00.000Z",
 			tasks: { maxConcurrent: 2, running: 0, tasks: [] },
 			workspace: {
@@ -49,6 +51,17 @@ describe("DashboardService", () => {
 		});
 	});
 });
+
+const MINECRAFT_STATUS = {
+	taskId: "task-1",
+	connection: "connected",
+	world: "trial-1",
+	goal: { objective: "Collect 4 oak logs", targets: { oak_log: 4 }, waypoint: null },
+	goalStatus: { status: "in_progress", probability: 0.9 },
+	recentActions: [],
+	recentEvents: [],
+	lastDecisionMs: 120,
+} as const;
 
 const HOME_ASSISTANT_STATUS = {
 	connection: {

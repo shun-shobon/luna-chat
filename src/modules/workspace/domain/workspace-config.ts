@@ -46,7 +46,23 @@ export type WorkspaceConfig = {
 		maxConcurrent: number;
 	};
 	voice?: VoiceSetting;
+	minecraft?: MinecraftSetting;
 };
+
+// task_create の worker に Minecraft の作業エージェントとして並ぶ名前。
+export const MINECRAFT_WORKER_NAME = "minecraft";
+
+// TOML では [minecraft] と [models.minecraft] に分かれるが、片方だけでは使えないため1つにまとめて持つ。
+export type MinecraftSetting = Readonly<{
+	host: string;
+	port: number;
+	username: string;
+	world: string;
+	decisionModel: Readonly<{ provider: string; model: string }>;
+	decisionTimeoutMs: number;
+	plannerIntervalMs: number;
+	planner: WorkerChoiceSetting;
+}>;
 
 export type VoiceSetting = {
 	sttModelKind: "nemo-ctc" | "nemo-transducer" | "transducer" | "sense-voice";

@@ -223,7 +223,7 @@ describe("EventExecutor", () => {
 			await vi.waitFor(() =>
 				expect(afterFirstRun).toHaveBeenCalledExactlyOnceWith({ status: "completed" }),
 			);
-			expect(harness.session.waitForBackground).toHaveBeenCalledOnce();
+			expect(harness.session.waitForActivity).toHaveBeenCalledOnce();
 			expect(resolved).toBe(false);
 			expect(harness.calls).toEqual([]);
 
@@ -244,7 +244,7 @@ describe("EventExecutor", () => {
 			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(1));
 			harness.session.background.start();
 			harness.session.finish({ status: "completed", finalText: null });
-			await vi.waitFor(() => expect(harness.session.waitForBackground).toHaveBeenCalledOnce());
+			await vi.waitFor(() => expect(harness.session.waitForActivity).toHaveBeenCalledOnce());
 			harness.session.background.settle(true);
 			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(2));
 			harness.session.finish({ status: "aborted" });
@@ -268,18 +268,18 @@ describe("EventExecutor", () => {
 			expect(afterFirstRun).toHaveBeenCalledExactlyOnceWith({ error: failure, status: "failed" });
 		});
 
-		it("stopBackground後は待ちをやめ、以後の続きの実行もせずに閉じる", async () => {
+		it("stopActivities後は待ちをやめ、以後の続きの実行もせずに閉じる", async () => {
 			const harness = createHarness();
 			const execution = harness.executor.execute(event);
 			await vi.waitFor(() => expect(harness.session.runs).toHaveLength(1));
 			harness.session.background.start();
 			harness.session.finish({ status: "completed", finalText: null });
-			await vi.waitFor(() => expect(harness.session.waitForBackground).toHaveBeenCalledOnce());
+			await vi.waitFor(() => expect(harness.session.waitForActivity).toHaveBeenCalledOnce());
 
-			await harness.executor.stopBackground();
+			await harness.executor.stopActivities();
 
 			await expect(execution).resolves.toEqual({ status: "completed" });
-			expect(harness.session.stopBackground).toHaveBeenCalledOnce();
+			expect(harness.session.stopActivities).toHaveBeenCalledOnce();
 			expect(harness.session.runs).toHaveLength(1);
 
 			const next = harness.executor.execute(event);
@@ -287,7 +287,7 @@ describe("EventExecutor", () => {
 			harness.session.background.start();
 			harness.session.finish({ status: "completed", finalText: null });
 			await expect(next).resolves.toEqual({ status: "completed" });
-			expect(harness.session.waitForBackground).toHaveBeenCalledOnce();
+			expect(harness.session.waitForActivity).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -331,9 +331,9 @@ type FakeSession = {
 	run: Mock<AgentSession["run"]>;
 	steer: Mock<AgentSession["steer"]>;
 	abort: Mock<AgentSession["abort"]>;
-	hasBackground: Mock<AgentSession["hasBackground"]>;
-	waitForBackground: Mock<AgentSession["waitForBackground"]>;
-	stopBackground: Mock<AgentSession["stopBackground"]>;
+	hasActivity: Mock<AgentSession["hasActivity"]>;
+	waitForActivity: Mock<AgentSession["waitForActivity"]>;
+	stopActivities: Mock<AgentSession["stopActivities"]>;
 	setModel: Mock<AgentSession["setModel"]>;
 	close: Mock<AgentSession["close"]>;
 	status: Mock<AgentSession["status"]>;
@@ -345,9 +345,9 @@ function createFakeSession(calls: string[]): FakeSession {
 	const background = createFakeBackground();
 	const fake: FakeSession = {
 		background,
-		hasBackground: background.hasBackground,
-		waitForBackground: background.waitForBackground,
-		stopBackground: background.stopBackground,
+		hasActivity: background.hasActivity,
+		waitForActivity: background.waitForActivity,
+		stopActivities: background.stopActivities,
 		phase: "idle",
 		runs: [],
 		finish(result: AgentRunResult): void {

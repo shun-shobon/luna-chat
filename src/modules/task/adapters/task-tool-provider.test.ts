@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "../../../shared/json";
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
+import { createActivityTable } from "../../tool/application/activity-table";
 import { createToolSet } from "../../tool/application/tool-set";
 import type { ToolOrigin } from "../../tool/domain/tool";
 import type { ToolProvider } from "../../tool/ports/tool-provider";
@@ -15,18 +16,20 @@ const eventOrigin: ToolOrigin = {
 	eventId: "event-1",
 	eventType: "system.heartbeat.fired.v1",
 };
-const taskOrigin: ToolOrigin = { kind: "task", taskId: "task-1" };
+const taskOrigin: ToolOrigin = { kind: "task", taskId: "task-1", worker: "standard" };
 const workers = {
 	defaultName: "standard",
 	choices: [
 		{
 			name: "standard",
 			description: "Everyday research and production.",
+			exclusive: false,
 			model: { provider: "openai-codex", model: "gpt-6.2-sol", thinking: "medium" },
 		},
 		{
 			name: "deep",
 			description: "Hard implementation and long reasoning.",
+			exclusive: false,
 			model: { provider: "claude-code", model: "claude-opus-5-5", thinking: "high" },
 		},
 	],
@@ -183,7 +186,11 @@ function createBoard() {
 }
 
 function bind(provider: ToolProvider, origin: ToolOrigin): readonly AgentTool[] {
-	return createToolSet([provider], createRecordingLogger()).bind({ ownerId: "owner-1", origin });
+	return createToolSet([provider], createRecordingLogger()).bind({
+		ownerId: "owner-1",
+		origin,
+		activities: createActivityTable(),
+	});
 }
 
 function tool(tools: readonly AgentTool[], name: string): AgentTool {

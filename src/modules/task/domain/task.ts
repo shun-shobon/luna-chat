@@ -85,7 +85,17 @@ export type TaskMessage = Task["messages"][number];
 export type WorkerModel = Readonly<Omit<Task["worker"], "name">>;
 
 // 依頼元が task_create で選べる作業エージェント。description は選ぶ手がかりとして依頼元のモデルに見せる。
-export type WorkerChoice = Readonly<{ name: string; description: string; model: WorkerModel }>;
+// exclusive の選択肢は共有の実行枠を使わず、終了していないタスクを同時に1件までにする。
+export type WorkerChoice = Readonly<{
+	name: string;
+	description: string;
+	model: WorkerModel;
+	exclusive: boolean;
+}>;
+
+export function findWorkerChoice(catalog: WorkerCatalog, name: string): WorkerChoice | undefined {
+	return catalog.choices.find((choice) => choice.name === name);
+}
 
 export type WorkerCatalog = Readonly<{
 	defaultName: string;

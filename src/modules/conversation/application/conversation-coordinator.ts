@@ -563,25 +563,25 @@ class ConversationActor {
 			this.#closeSession();
 			return;
 		}
-		this.#opened.session.stopBackground().catch((error: unknown) => {
+		this.#opened.session.stopActivities().catch((error: unknown) => {
 			this.#logError(error, "background/stop");
 		});
 		const date = formatLocalDate(this.dependencies.now());
 		this.#startRun([{ kind: "session_end", text: JSON.stringify({ date }) }], "session_memory");
 	}
 
-	// バックグラウンド実行が残っている間はアイドル時間を数えず、完了通知を待って同じセッションで続ける。
+	// 続いている作業（バックグラウンド実行）が残っている間はアイドル時間を数えず、通知を待って同じセッションで続ける。
 	#armIdle(): void {
 		const session = this.#opened?.session;
-		if (session === undefined || !session.hasBackground()) {
+		if (session === undefined || !session.hasActivity()) {
 			this.#resetIdleTimer();
 			return;
 		}
 		const token = ++this.#idleToken;
 		this.#idleTimer?.cancel();
 		this.#idleTimer = undefined;
-		void session.waitForBackground().then((arrived) => {
-			this.#post({ kind: "background", token, arrived });
+		void session.waitForActivity("any").then((wakeup) => {
+			this.#post({ kind: "background", token, arrived: wakeup !== "none" });
 		});
 	}
 

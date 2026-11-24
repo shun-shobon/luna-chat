@@ -18,6 +18,20 @@ enabled = true
 maintenance_cron = "0 4 * * *"
 `;
 
+const MINECRAFT_CONFIG_SOURCE = `
+[models.minecraft]
+model = "claude-code/claude-sonnet-5-5"
+thinking = "low"
+description = "Play Minecraft."
+
+[minecraft]
+host = "127.0.0.1"
+port = 25565
+username = "Luna"
+world = "trial-1"
+decision_model = "typesafe/jev"
+`;
+
 afterEach(async () => {
 	await Promise.all(
 		temporaryDirectories.splice(0).map(async (path) => {
@@ -156,6 +170,27 @@ tts_speaker = 684965824
 		});
 	});
 
+	it("minecraftは models.minecraft と組で読み、省略できる項目にデフォルト値を補う", () => {
+		expect(parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}${MINECRAFT_CONFIG_SOURCE}`)).toEqual({
+			...DEFAULT_WORKSPACE_CONFIG,
+			minecraft: {
+				host: "127.0.0.1",
+				port: 25_565,
+				username: "Luna",
+				world: "trial-1",
+				decisionModel: { provider: "typesafe", model: "jev" },
+				decisionTimeoutMs: 3000,
+				plannerIntervalMs: 60_000,
+				planner: {
+					provider: "claude-code",
+					model: "claude-sonnet-5-5",
+					thinking: "low",
+					description: "Play Minecraft.",
+				},
+			},
+		});
+	});
+
 	it("speech-cpp では tts_emoji を省略すると絵文字を使わない", () => {
 		const config = parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}
 [voice]
@@ -222,6 +257,28 @@ tts_voice = "luna"
 			"tts speed out of range",
 			'[voice]\nstt_model_kind = "nemo-ctc"\nstt_model_dir = "/m"\nvad_model = "/v"\ntts_url = "http://127.0.0.1:10101/"\ntts_speaker = 1\ntts_speed = 3',
 		],
+		[
+			"minecraft without models.minecraft",
+			MINECRAFT_CONFIG_SOURCE.replace(/\[models\.minecraft\][^[]*/u, ""),
+		],
+		[
+			"models.minecraft without minecraft",
+			MINECRAFT_CONFIG_SOURCE.slice(0, MINECRAFT_CONFIG_SOURCE.indexOf("[minecraft]")),
+		],
+		[
+			"minecraft without decision model",
+			MINECRAFT_CONFIG_SOURCE.replace('decision_model = "typesafe/jev"\n', ""),
+		],
+		["minecraft username with spaces", MINECRAFT_CONFIG_SOURCE.replace('"Luna"', '"Luna Moon"')],
+		["minecraft port out of range", MINECRAFT_CONFIG_SOURCE.replace("25565", "70000")],
+		[
+			"models.minecraft without description",
+			MINECRAFT_CONFIG_SOURCE.replace('description = "Play Minecraft."\n', ""),
+		],
+		[
+			"worker choice named minecraft",
+			'[models.worker]\ndefault = "minecraft"\n[models.worker.choices.minecraft]\nmodel = "openai-codex/gpt-6.2-sol"\nthinking = "medium"\ndescription = "x"',
+		],
 		["unknown nested key", "[discord]\nunexpected = true"],
 		["non-snowflake channel id", '[discord]\nallowed_channel_ids = ["channel"]'],
 		["heartbeat interval inversion", "[heartbeat]\nmin_interval_ms = 2000\nmax_interval_ms = 1000"],
@@ -283,6 +340,12 @@ tts_voice = "luna"
 		expect(source).toContain('model = "openai-codex/gpt-6.1-terra"');
 		expect(source).toContain('maintenance_cron = "0 4 * * *"');
 		expect(parseWorkspaceConfig(source)).toEqual(DEFAULT_WORKSPACE_CONFIG);
+	});
+
+	it("minecraftを含む設定も TOML に直列化して往復できる", () => {
+		const config = parseWorkspaceConfig(`${MEMORY_CONFIG_SOURCE}${MINECRAFT_CONFIG_SOURCE}`);
+
+		expect(parseWorkspaceConfig(serializeWorkspaceConfig(config))).toEqual(config);
 	});
 
 	it("voiceを含む設定も TOML に直列化して往復できる", () => {

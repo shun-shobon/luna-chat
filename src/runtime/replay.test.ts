@@ -23,6 +23,7 @@ const REPLAY_WORKERS = {
 		{
 			name: "standard",
 			description: "x",
+			exclusive: false,
 			model: { provider: "faux", model: "faux-1", thinking: "off" },
 		},
 	],

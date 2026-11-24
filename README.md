@@ -31,6 +31,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - **Home Assistant**：家の機器の状態を読み、操作します。見ておきたい機器の変化（玄関が開いた、洗濯機が終わったなど）をLuna自身が `home-assistant.toml` に書き、変化があると起きて動きます。HAのAssistの会話エージェントとしても選べ、音声で話しかけられます。
 - **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
 - **ボイスチャンネル**：Discordのボイスチャンネルにルナが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがルナとして喋り、調べ物や操作はいつものルナに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[voice.md](./docs/voice.md)）。
+- **Minecraft**：ルナがMinecraft Java Editionのサーバーにプレイヤーとして入って遊びます。作業エージェントが目標を立て、速い決定モデル（OpenAIのDecisions API か TypeSafe の Jev）が見えているものから1手ずつ行動を選び、命の危険にはコードが即座に反応します。足りない行動（扉、畑、建築など）は、ルナがワークスペースにコードで書いて足せます。使うには `config.toml` に `[minecraft]` と `[models.minecraft]` を書き、決定モデルの鍵を設定します（[minecraft.md](./docs/minecraft.md)）。
 - **デスクトップ**：ルナ専用のデスクトップとChromeを常駐させます。ルナがログインの要るサイトやアプリを画面で操作し、人はその画面をブラウザから見て手伝えます（Linuxのホストのみ）。
 
 ## 動作要件
@@ -90,20 +91,20 @@ CLAUDE_CONFIG_DIR="$LUNA_HOME/claude-code" claude auth login
 
 ### 環境変数
 
-| 変数名                 | 必須   | デフォルト値 | 説明                                                                                                                                               |
-| ---------------------- | ------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。                                                                                 |
-| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                                                                                           |
-| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                                                                                      |
-| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。                                                                        |
-| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。                                                                                   |
-| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。                                                                                   |
-| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。                                                                             |
-| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。                                                                           |
-| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://homeassistant.local:8123`）。トークンと組で指定。                                                                  |
-| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。シェルやcheckの子プロセスにも渡ります。                                                                      |
-| `OPENAI_API_KEY`       | いいえ | なし         | 声のモードの割り込み判定（Decisions API）に使う鍵。`[voice]` を使うなら必須（既定の判定モデルの場合）。シェルやcheckの子プロセスには渡されません。 |
-| `TYPESAFE_API_KEY`     | いいえ | なし         | 割り込み判定に TypeSafe の Jev を選んだ時の鍵。シェルやcheckの子プロセスには渡されません。                                                         |
+| 変数名                 | 必須   | デフォルト値 | 説明                                                                                                                                                               |
+| ---------------------- | ------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DISCORD_BOT_TOKEN`    | はい   | なし         | Discord Botのトークン。シェルやcheckの子プロセスには渡されません。                                                                                                 |
+| `LUNA_HOME`            | いいえ | `~/.luna`    | データ保存先の絶対パス。                                                                                                                                           |
+| `LOG_LEVEL`            | いいえ | `info`       | ログレベル（`trace` / `debug` / `info` / `warn` / `error`）。                                                                                                      |
+| `LUNA_HTTP_HOST`       | いいえ | `127.0.0.1`  | HTTP APIの待ち受けアドレス。Docker Composeではコンテナ内で`0.0.0.0`を使用。                                                                                        |
+| `LUNA_HTTP_PORT`       | いいえ | `3000`       | HTTP APIのポート。Docker Composeではホスト側の公開ポートに使用。                                                                                                   |
+| `LUNA_DASHBOARD_HOST`  | いいえ | `127.0.0.1`  | ダッシュボードの待ち受けアドレス。LANへ公開する場合は`0.0.0.0`。                                                                                                   |
+| `LUNA_DASHBOARD_PORT`  | いいえ | `3001`       | ダッシュボードのポート。Docker Composeではホスト側の公開ポートに使用。                                                                                             |
+| `TZ`                   | いいえ | システム依存 | スケジュール等に用いるタイムゾーン。Docker環境のデフォルトはAsia/Tokyo。                                                                                           |
+| `HOME_ASSISTANT_URL`   | いいえ | なし         | Home AssistantのURL（例 `http://homeassistant.local:8123`）。トークンと組で指定。                                                                                  |
+| `HOME_ASSISTANT_TOKEN` | いいえ | なし         | Home Assistantの長期アクセストークン。シェルやcheckの子プロセスにも渡ります。                                                                                      |
+| `OPENAI_API_KEY`       | いいえ | なし         | 声のモードの割り込み判定とMinecraftの1手の判断（Decisions API）に使う鍵。どちらかで `openai/*` のモデルを選ぶなら必須。シェルやcheckの子プロセスには渡されません。 |
+| `TYPESAFE_API_KEY`     | いいえ | なし         | 割り込み判定かMinecraftの1手の判断に TypeSafe の Jev を選んだ時の鍵。シェルやcheckの子プロセスには渡されません。                                                   |
 
 `LOG_LEVEL` を `debug` または `trace` にすると、メッセージ本文やプロンプト、ツール引数などが標準出力に出ます。既知のトークン等はマスクしますが、平文に含まれる機密情報を完全に取り除けるとは限りません。
 

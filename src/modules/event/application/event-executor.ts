@@ -55,11 +55,11 @@ export class EventExecutor implements EventExecutionPort {
 		});
 	}
 
-	// シャットダウンで、バックグラウンド実行の終了を待たずに閉じられるようにする。
-	public async stopBackground(): Promise<void> {
+	// シャットダウンで、続いている作業の終了を待たずに閉じられるようにする。
+	public async stopActivities(): Promise<void> {
 		this.#stoppingBackground = true;
 		await Promise.all(
-			[...this.#running].map(async (running) => await running.opened?.session.stopBackground()),
+			[...this.#running].map(async (running) => await running.opened?.session.stopActivities()),
 		);
 	}
 
@@ -105,7 +105,10 @@ export class EventExecutor implements EventExecutionPort {
 			const completed = await run;
 			if (completed.status !== "completed") throw new Error(describeRunFailure(completed));
 			settleFirstRun({ status: "completed" });
-			while (!this.#stoppingBackground && (await opened.session.waitForBackground())) {
+			while (
+				!this.#stoppingBackground &&
+				(await opened.session.waitForActivity("any")) !== "none"
+			) {
 				const continued = await opened.session.run([this.#taskBoardMessage()]);
 				if (continued.status !== "completed") throw new Error(describeRunFailure(continued));
 			}

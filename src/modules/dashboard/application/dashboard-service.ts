@@ -8,6 +8,7 @@ export type DashboardSnapshot = Readonly<{
 	events: ReturnType<DashboardSourcePort["events"]>;
 	generatedAt: string;
 	homeAssistant: ReturnType<DashboardSourcePort["homeAssistant"]>;
+	minecraft: ReturnType<DashboardSourcePort["minecraft"]>;
 	startedAt: string;
 	tasks: ReturnType<DashboardSourcePort["tasks"]>;
 	workspace: ReturnType<DashboardSourcePort["workspace"]>;
@@ -32,6 +33,7 @@ export class DashboardService {
 			events: sources.events(),
 			generatedAt: now().toISOString(),
 			homeAssistant: sources.homeAssistant(),
+			minecraft: sources.minecraft(),
 			startedAt: startedAt.toISOString(),
 			tasks: sources.tasks(),
 			workspace: sources.workspace(),

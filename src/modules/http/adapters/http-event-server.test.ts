@@ -4,6 +4,7 @@ import type { HonoServerHandle } from "../../../shared/hono-server";
 import type { AcceptedConversationEvent } from "../../conversation/domain/conversation-session";
 import type { LunaEvent } from "../../event/domain/luna-event";
 import type { EventExecutionPort } from "../../event/ports/event-execution-port";
+import { createActivityTable } from "../../tool/application/activity-table";
 import { HttpEventService } from "../application/http-event-service";
 import { HttpResponseRegistry } from "../application/http-response-registry";
 import { startHttpEventServer } from "./http-event-server";
@@ -71,6 +72,7 @@ describe("HTTP event server", () => {
 		const execution = {
 			ownerId: "owner-1",
 			origin: { kind: "event", eventId: "event-1", eventType: "test.v1" },
+			activities: createActivityTable(),
 			signal: new AbortController().signal,
 		} as const;
 		const input = { request_id: requestId, status: 201, body_json: '{"answer":"world"}' };

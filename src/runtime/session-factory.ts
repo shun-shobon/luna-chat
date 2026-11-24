@@ -6,6 +6,7 @@ import type {
 	HarnessToolName,
 	ModelSelection,
 } from "../modules/agent/ports/outbound/agent-session-port";
+import { createActivityTable } from "../modules/tool/application/activity-table";
 import type { ToolSet } from "../modules/tool/application/tool-set";
 import type { ToolOrigin } from "../modules/tool/domain/tool";
 import type { OpenAgentSession } from "../modules/tool/ports/agent-session-factory-port";
@@ -23,7 +24,7 @@ const HARNESS_TOOLS: readonly HarnessToolName[] = [
 	"image_gen",
 ];
 
-type SessionProfile = Readonly<{
+export type SessionProfile = Readonly<{
 	developerInstructions: readonly string[];
 	// 作業エージェントは依頼文だけで動けるため、人格と記憶は必要な時に自分で読ませる。
 	includeWorkspaceInstructions: boolean;
@@ -53,17 +54,23 @@ export function createSessionFactory(input: {
 	createOwnerId?: (() => string) | undefined;
 	// 実行元ごとに、今のリクエストを高速モードで送るかを決める。VCに紐づいた会話を速く返すため。
 	fastMode: (origin: ToolOrigin) => boolean;
-	profiles: Readonly<Record<AgentSessionKind, SessionProfile>>;
+	// 作業エージェントは、選択肢の名前（task_create の worker）ごとにツールと指示を選ぶ。
+	profiles: Readonly<{
+		conversation: SessionProfile;
+		event: SessionProfile;
+		worker: (workerName: string) => SessionProfile;
+	}>;
 	readSkillsPrompt: () => string;
 	workspaceDir: string;
 }): OpenAgentSession {
 	const createOwnerId = input.createOwnerId ?? randomUUID;
 	return async (origin: ToolOrigin, model?: ModelSelection) => {
 		const kind = sessionKindOf(origin);
-		const profile = input.profiles[kind];
+		const profile = profileOf(input.profiles, origin);
 		const selected = model ?? profile.model?.();
 		if (selected === undefined) throw new Error(`A ${kind} session needs a model`);
 		const ownerId = createOwnerId();
+		const activities = createActivityTable();
 		const instructions = profile.includeWorkspaceInstructions
 			? await readWorkspaceBaseInstructions(input.workspaceDir)
 			: { luna: undefined, memory: undefined };
@@ -78,12 +85,21 @@ export function createSessionFactory(input: {
 				memory: instructions.memory,
 			}),
 			model: selected,
-			tools: profile.tools.bind({ ownerId, origin }),
+			tools: profile.tools.bind({ ownerId, origin, activities }),
 			harnessTools: HARNESS_TOOLS,
 			fastMode: () => input.fastMode(origin),
+			activities,
 		});
 		return { ownerId, session };
 	};
+}
+
+function profileOf(
+	profiles: Parameters<typeof createSessionFactory>[0]["profiles"],
+	origin: ToolOrigin,
+): SessionProfile {
+	if (origin.kind === "task") return profiles.worker(origin.worker);
+	return profiles[origin.kind];
 }
 
 function sessionKindOf(origin: ToolOrigin): AgentSessionKind {

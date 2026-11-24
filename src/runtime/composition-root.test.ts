@@ -30,9 +30,12 @@ describe("application composition lifecycle", () => {
 			dashboardClose: async () => {
 				calls.push("dashboard.close");
 			},
+			minecraftStop: async () => {
+				calls.push("minecraft.stop");
+			},
 			events: {
-				stopBackground: vi.fn(async () => {
-					calls.push("events.stopBackground");
+				stopActivities: vi.fn(async () => {
+					calls.push("events.stopActivities");
 				}),
 			},
 			gateway: {
@@ -93,7 +96,7 @@ describe("application composition lifecycle", () => {
 				"http.stopIntake",
 				"homeAssistant.stopIntake",
 				"tasks.stopIntake",
-				"events.stopBackground",
+				"events.stopActivities",
 				"voice.stop",
 				"conversation.drain",
 				"automation.drain",
@@ -104,6 +107,7 @@ describe("application composition lifecycle", () => {
 				"homeAssistant.stop",
 				"http.close",
 				"dashboard.close",
+				"minecraft.stop",
 				"typing.release",
 				"usage.stop",
 				"client.destroy",

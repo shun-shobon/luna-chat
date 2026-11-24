@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
+import { createActivityTable } from "../../tool/application/activity-table";
 import { createToolSet } from "../../tool/application/tool-set";
 import { createAssistToolProvider } from "./assist-tool-provider";
 
@@ -62,7 +63,11 @@ function createHarness(
 	const [tool] = createToolSet(
 		[createAssistToolProvider({ respond })],
 		createRecordingLogger(),
-	).bind({ ownerId: "owner-1", origin: { kind: "event", eventId: "e", eventType: "t" } });
+	).bind({
+		ownerId: "owner-1",
+		origin: { kind: "event", eventId: "e", eventType: "t" },
+		activities: createActivityTable(),
+	});
 	return {
 		respond,
 		run: async (input: unknown) => {

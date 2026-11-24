@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentTool } from "../../agent/ports/outbound/agent-session-port";
 import { createRecordingLogger } from "../../observability/testing/recording-logger";
+import { createActivityTable } from "../application/activity-table";
 import { createToolSet } from "../application/tool-set";
 import { createWaitToolProvider } from "./wait-tool-provider";
 
@@ -106,7 +107,9 @@ describe("wait tool", () => {
 });
 
 function bindWait(toolSet: ReturnType<typeof createToolSet>, ownerId: string): AgentTool {
-	const tool = toolSet.bind({ ownerId, origin }).find((candidate) => candidate.name === "wait");
+	const tool = toolSet
+		.bind({ ownerId, origin, activities: createActivityTable() })
+		.find((candidate) => candidate.name === "wait");
 	if (tool === undefined) throw new Error("wait tool is missing");
 	return tool;
 }

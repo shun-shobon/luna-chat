@@ -24,6 +24,9 @@
 | `ha_list_entities` / `ha_get_state` / `ha_list_services` / `ha_call_service`                                                               | Home Assistantの状態の取得と操作（[home-assistant.md](./home-assistant.md)）。HAの接続を設定した場合のみ                | ◯              | ◯                |
 | `assist_respond`                                                                                                                           | Assistへの返答                                                                                                          | ◯              | ×                |
 | `voice_join` / `voice_leave` / `voice_report`                                                                                              | ボイスチャンネルへの参加・退出、音声モードの依頼の結果の報告（[voice.md](./voice.md)）。`[voice]` を設定した場合のみ    | ◯              | ×                |
+| `minecraft_goal` / `minecraft_observe` / `minecraft_name_place`                                                                            | Minecraftの目標の設定、観測、場所の命名（[minecraft.md](./minecraft.md)）。Minecraftの種類の作業エージェントのみ        | ×              | △                |
+
+- △は、Minecraftの種類の作業エージェントにだけ渡すことを表す。
 
 ツールの引数に `.agents/skills/<名前>/SKILL.md` のパスが含まれる `read` と `exec_command` の呼び出しを、そのskillの使用として `LUNA_HOME/state/skill-usage.json`（skill名ごとの最終使用時刻と回数）に記録する。日次整理が使われていないskillを見つけるのに使う。
 
@@ -89,7 +92,7 @@ type BackgroundExit = {
      │
      ├─ ToolSet.release(ownerId)  # タイピングと待機の解放
      │
-     ├─ waitForBackground()  # バックグラウンド実行が残っていれば、通知が届くまで待って同じセッションで続ける
+     ├─ waitForActivity("any")  # 続いている作業が残っていれば、通知が届くまで待って同じセッションで続ける
      │
      └─ 完了 / 失敗 / 中断を実行元へ返す
 ```
@@ -101,20 +104,22 @@ type BackgroundExit = {
 - 一時ディレクトリのパスは、システムプロンプトを組み立てる `session-factory` ではなくアダプターが書き足す。セッションIDがアダプターの中で決まるため。
 - skillの使用記録は `read` と `exec_command` を包んで取る。記録の失敗はログに残してツールの実行は止めない。
 
-### バックグラウンド実行
+### 続いている作業（バックグラウンド実行とツールの作業）
 
 ```text
-exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表（セッションごと）
-                                         │ 終了（通知あり）       │ stop_background / stopBackground / dispose（通知なし）
-                                         ▼                        ▼
-                         PiAgentSession.onBackgroundExit    PiAgentSession.onBackgroundStopped
-                           ├ 実行中: steer                      └ 残りも通知もなければ待ちを false で解く
-                           └ 実行外: pending に積み、待ちを true で解く ─► 次の run の入力の前に入れる
+exec_command(run_in_background) ─► シェルツールのバックグラウンド実行の表 ─┐
+ツール ─ ToolExecution.activities.begin() ─► セッションごとの作業の表 ────────┤
+                                                                            │ 通知 / 止まった
+                                                                            ▼
+                          PiAgentSession.onActivityNotice / onActivityStopped
+                            ├ 実行中: steer
+                            └ 実行外: pending に積み（同じ replaceKey は新しいほうだけ）、待ちを解く ─► 次の run の入力の前に入れる
 ```
 
-- `AgentSession` は `hasBackground()`・`waitForBackground()`・`stopBackground()` を持つ。`waitForBackground()` は、届いた通知があれば `true`、通知なしにすべて止まった（または初めから何もない）なら `false` で解決する。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
-- `stopBackground()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。
+- `AgentSession` は `hasActivity()`・`waitForActivity(filter)`・`stopActivities()` を持つ。`waitForActivity("any")` は通知があれば `notice`（急ぎを含めば `urgent`）、通知なしにすべて止まった（または初めから何もない）なら `none` で解決する。`waitForActivity("urgent")` は急ぎの通知でだけ解け、急ぎでない通知は保留したまま待つ。届いた通知は次の `run` の入力の前に入るため、持ち主は `run([])` で続けられる。
+- `stopActivities()` は、まだ `run` に入れていない通知も捨てる。記憶保存やシャットダウンの直前に届いた通知を、`session_end` の実行に混ぜないため。
 - 実行中かどうかの判定はアダプターが持つ。`run` の完了から持ち主の継続までの間に届いた通知を、持ち主ではなくアダプターが `pending` に積むため、取りこぼしが起きない。
-- プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。
-- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（[ARCHITECTURE.md](./ARCHITECTURE.md) の会話セッションの状態遷移）。EventExecutor は実行のたびに `waitForBackground()` を待ち、`true` なら `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForBackground()` とメッセージの到着を待つ。
-- シャットダウンでは EventExecutor の `stopBackground()` が実行中のすべてのセッションの `stopBackground()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断で止める。
+- ツールはセッションより先に作られるため、tool モジュールの作業の表（`createActivityTable`）をセッションファクトリが開くたびに作り、`ToolSet.bind` と `AgentSessionSpec.activities` の両方に渡す。セッションは開いた時に表へつなぎ、つなぐ前の通知は表が溜めておく。ツールは `begin(stop)` で作業を始め、返るハンドルの `notify`（`urgent` と `replaceKey` を付ける）と `end` を使う。`stop` はセッションが作業を止める時（`stopActivities`、閉じる時）に呼ばれ、止めた後の通知は捨てる。
+- シェルのバックグラウンド実行の通知（`background_exit`）は、急ぎでなく `replaceKey` を持たない通知として同じ経路に入る。プロセスの出力は Node のパイプを通さずログファイルへ直接書かせる。長時間動くプロセスの出力をメモリに溜めないため。
+- 持ち主ごとの続け方: 会話アクターは `IDLE` で待つ（[ARCHITECTURE.md](./ARCHITECTURE.md) の会話セッションの状態遷移）。EventExecutor は実行のたびに `waitForActivity("any")` を待ち、`none` でなければ `run([task_board])` を続ける。TaskService は終了報告がなければ、`waitForActivity("any")` とメッセージの到着を待つ。
+- シャットダウンでは EventExecutor の `stopActivities()` が実行中のすべてのセッションの `stopActivities()` を呼び、以後の待ちをしない。会話は記憶保存の前、タスクは中断で止める。

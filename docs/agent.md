@@ -9,7 +9,7 @@
 - `openai-codex`: ChatGPTのサブスクリプションをOAuthで使う。
 - `claude-code`: Claudeのサブスクリプション（Pro・Max）を、Claude Code CLI を通して使う。モデルは `claude-fable-5-2`・`claude-opus-5-5`・`claude-sonnet-5-5`・`claude-haiku-5-5`。
 
-会話・イベント実行は、それぞれ `[models]` で指定したモデルと推論強度を使う。会話は `/luna model` でセッションごとに変更できる。作業エージェントは依頼元が `task_create` で選んだもの（[tasks.md](./tasks.md)）、音声モードの返事は `[models.voice]` を使う。
+会話・イベント実行は、それぞれ `[models]` で指定したモデルと推論強度を使う。会話は `/luna model` でセッションごとに変更できる。作業エージェントは依頼元が `task_create` で選んだもの（[tasks.md](./tasks.md)）、Minecraftの種類の作業エージェントは `[models.minecraft]`（[minecraft.md](./minecraft.md)）、音声モードの返事は `[models.voice]` を使う。
 
 ## システムプロンプト
 
