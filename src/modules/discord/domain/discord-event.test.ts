@@ -18,7 +18,7 @@ const message: DiscordMessage = {
 	kind: "default",
 	guild: { id: "300", name: "Luna Lab" },
 	channel: { id: "200", name: "general" },
-	author: { id: "100", kind: "human", username: "shun", displayName: "Shun" },
+	author: { id: "100", kind: "human", username: "alice", displayName: "Alice" },
 	content: "hello",
 	attachments: [],
 	stickers: [],

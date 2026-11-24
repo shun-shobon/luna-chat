@@ -63,7 +63,7 @@ describe("DiscordConversationController", () => {
 		const controller = createController(conversation);
 		const edited = event("201", false);
 		const reactionScope = edited.scope;
-		const user = { id: "100", username: "shun", displayName: "Shun" };
+		const user = { id: "100", username: "alice", displayName: "Alice" };
 		const emoji = { kind: "unicode", value: "🌙" } as const;
 
 		controller.onMessageEdit({
@@ -272,7 +272,7 @@ function event(channelId: string, mention: boolean, authorId = "100"): DiscordGa
 			kind: "default",
 			guild: { id: "300", name: "Luna Lab" },
 			channel: { id: channelId, name: "general" },
-			author: { id: authorId, kind: "human", username: "shun", displayName: "Shun" },
+			author: { id: authorId, kind: "human", username: "alice", displayName: "Alice" },
 			content: "hello",
 			attachments: [],
 			stickers: [],
