@@ -25,7 +25,7 @@ export function createVoiceToolProvider(
 			defineTool({
 				name: "voice_join",
 				description:
-					"Join a Discord voice channel and bind it to this conversation, so that what people say there arrives here as voice_utterance inputs. Give user_id to join the voice channel that person is in now (use this when someone asks you to come), or channel_id for a specific voice channel. mode text: reply in writing as usual, and Luna stays muted. mode voice: a fast voice model speaks for Luna and hands you voice_delegation inputs for work it cannot do. Calling it for the channel Luna is already in only rebinds it here and switches the mode; another channel moves Luna there.",
+					"Join a Discord voice channel and bind it to this conversation, so that what people say there arrives here as voice_utterance inputs. Give user_id to join the voice channel that person is in now (use this when someone asks you to come), or channel_id for a specific voice channel. mode text: reply in writing as usual, and you stay muted. mode voice: a fast voice model speaks for you and hands you voice_delegation inputs for work it cannot do. Calling it for the channel you are already in only rebinds it here and switches the mode; another channel moves you there.",
 				inputSchema: joinInputSchema,
 				parseInput: (input) => ({ target: toJoinTarget(input), mode: input.mode }),
 				execute: async (input, execution) => {
@@ -40,7 +40,7 @@ export function createVoiceToolProvider(
 			}),
 			defineTool({
 				name: "voice_leave",
-				description: "Leave the voice channel Luna is in.",
+				description: "Leave the voice channel you are in.",
 				inputSchema: leaveInputSchema,
 				parseInput: () => ({}),
 				execute: async () => {

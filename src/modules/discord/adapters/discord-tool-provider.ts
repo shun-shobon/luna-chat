@@ -95,7 +95,7 @@ function readDefinitions(read: DiscordReadPort): readonly ToolDefinition[] {
 		}),
 		defineTool({
 			name: "list_channels",
-			description: "List the Discord channels, threads, and DMs Luna can reach.",
+			description: "List the Discord channels, threads, and DMs you can reach.",
 			inputSchema: emptyInputSchema,
 			parseInput: (input) => input,
 			execute: async () => await read.listChannels(),
@@ -155,7 +155,7 @@ function writeDefinitions(actions: DiscordActionPort): readonly ToolDefinition[]
 		defineTool({
 			name: "edit_message",
 			description:
-				"Replace the content of a Discord message Luna posted. content is at most 2000 characters; attachments stay as they are.",
+				"Replace the content of a Discord message you posted. content is at most 2000 characters; attachments stay as they are.",
 			inputSchema: editMessageInputSchema,
 			parseInput: (input): DiscordAction => ({ kind: "edit_message", ...input }),
 			execute,
@@ -163,7 +163,7 @@ function writeDefinitions(actions: DiscordActionPort): readonly ToolDefinition[]
 		}),
 		defineTool({
 			name: "delete_message",
-			description: "Delete a Discord message Luna posted.",
+			description: "Delete a Discord message you posted.",
 			inputSchema: deleteMessageInputSchema,
 			parseInput: (input): DiscordAction => ({ kind: "delete_message", ...input }),
 			execute,
@@ -179,7 +179,7 @@ function writeDefinitions(actions: DiscordActionPort): readonly ToolDefinition[]
 		}),
 		defineTool({
 			name: "remove_reaction",
-			description: "Remove Luna's reaction from a Discord message.",
+			description: "Remove your reaction from a Discord message.",
 			inputSchema: reactionInputSchema,
 			parseInput: (input): DiscordAction => ({ kind: "remove_reaction", ...input }),
 			execute,

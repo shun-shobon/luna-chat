@@ -75,7 +75,7 @@ describe("DiscordActionAdapter", () => {
 		const adapter = createAdapter(createClient(channel));
 
 		await expect(adapter.execute(action, "turn-1")).rejects.toThrow(
-			"Discord message is not Luna's own: 300",
+			"Discord message is not the bot's own: 300",
 		);
 		expect(channel.message.edit).not.toHaveBeenCalled();
 		expect(channel.message.delete).not.toHaveBeenCalled();

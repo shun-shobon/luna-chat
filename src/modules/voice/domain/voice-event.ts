@@ -39,7 +39,7 @@ export function createVoiceUtteranceEvent(
 	};
 }
 
-// 音声モードの表が、調べ物や操作を会話のルナ（裏）に頼む。
+// 音声モードの表が、調べ物や操作を会話のエージェント（裏）に頼む。
 export function createVoiceDelegatedEvent(
 	input: EventBase & Readonly<{ request: string; transcript: readonly VoiceRecordEntry[] }>,
 ): LunaEvent {

@@ -23,7 +23,7 @@ type VoiceSessionDependencies = Readonly<{
 	ongoingSpeech(userId: string): Float32Array | undefined;
 	speakerName(userId: string): Promise<string>;
 	back: Readonly<{
-		// 裏（会話のルナ）に頼む。transcript は裏へまだ渡していない会話記録。
+		// 裏（会話のエージェント）に頼む。transcript は裏へまだ渡していない会話記録。
 		// 会話が受け付けたら true。受け付けなかった会話記録は次の依頼か閉じる時に渡し直す。
 		delegate(request: string, transcript: readonly VoiceRecordEntry[]): boolean;
 		// 裏が依頼を進めている間だけ発話を届ける。届けたら true。
@@ -144,7 +144,7 @@ export class VoiceSession {
 		this.#maybeTellReport();
 	}
 
-	// 読み上げを止めて閉じ、裏へまだ渡していない会話記録を返す。人の声もルナの声もなければ空。
+	// 読み上げを止めて閉じ、裏へまだ渡していない会話記録を返す。人の声もエージェントの声もなければ空。
 	async close(): Promise<readonly VoiceRecordEntry[]> {
 		if (this.#closed) return [];
 		this.#closed = true;

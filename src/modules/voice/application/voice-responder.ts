@@ -13,7 +13,7 @@ export const DELEGATE_TOOL: Readonly<{
 }> = {
 	name: "delegate",
 	description:
-		"Ask your backstage self, the whole Luna with tools, to look something up or do something. It works in the background and its report appears later in the voice record.",
+		"Ask your backstage self, the whole of you with tools, to look something up or do something. It works in the background and its report appears later in the voice record.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -75,7 +75,7 @@ function buildPrompt(record: readonly VoiceRecordEntry[], trigger: ResponderTrig
 	const lines = record.map(formatRecordLine).join("\n");
 	const now =
 		trigger.kind === "turn"
-			? `${trigger.speaker} just finished speaking. Write what Luna says now, or nothing.`
-			: "A new backstage report arrived and nobody is talking. Write what Luna tells people now, or nothing.";
+			? `${trigger.speaker} just finished speaking. Write what you say now, or nothing.`
+			: "A new backstage report arrived and nobody is talking. Write what you tell people now, or nothing.";
 	return `<voice_record>\n${lines}\n</voice_record>\n\n${now}`;
 }

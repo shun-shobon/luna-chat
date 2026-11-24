@@ -385,7 +385,7 @@ details > summary::-webkit-details-marker { display: none; }
 		if (working > 0) parts.push("タスク" + working + "件を作業中");
 		if (waiting > 0) parts.push("タスク" + waiting + "件で返答待ち");
 		if (queued > 0) parts.push("タスク" + queued + "件が順番待ち");
-		var text = parts.length > 0 ? "いまのルナ: " + parts.join("、") + "。" : "いまのルナ: 静かに待機しています。";
+		var text = parts.length > 0 ? "いま: " + parts.join("、") + "。" : "いま: 静かに待機しています。";
 		var children = [text];
 		if (s.automation.heartbeat.nextFireAt) children.push(h("span", { class: "sublabel" }, "　次のハートビートは ", until(s.automation.heartbeat.nextFireAt)));
 		replace("headline", children);

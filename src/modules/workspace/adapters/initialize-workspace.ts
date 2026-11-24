@@ -19,7 +19,7 @@ const REQUIRED_WORKSPACE_FILES = [
 	".agents/skills/heartbeat/SKILL.md",
 ] as const;
 
-// ルナが整理で移動・改名・アーカイブし得るため、作り直すのは新しいワークスペースの時だけにする。
+// エージェントが整理で移動・改名・アーカイブし得るため、作り直すのは新しいワークスペースの時だけにする。
 const STARTER_WORKSPACE_FILES = [
 	"memory/topics/know-how.md",
 	"users/README.md",

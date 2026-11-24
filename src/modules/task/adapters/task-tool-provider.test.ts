@@ -79,7 +79,7 @@ describe("task tool providers", () => {
 
 		expect(create?.description).toBe(
 			[
-				"Delegate long work to a background Luna worker. Returns the task id at once; the worker reports back later.",
+				"Delegate long work to a background worker. Returns the task id at once; the worker reports back later.",
 				"Choose the worker that fits the work; omit worker to use the default.",
 				"- standard (default): Everyday research and production.",
 				"- deep: Hard implementation and long reasoning.",

@@ -178,7 +178,7 @@ describe("VoiceSession", () => {
 
 			expect(call(front, 1).recordLines()).toEqual([
 				"[12:00:00] シュン: ルナ、こんにちは",
-				"[12:00:00] Luna: こんにちは。",
+				"[12:00:00] You: こんにちは。",
 				"[12:00:00] シュン: 元気だよ",
 			]);
 			expect(events()).toContain("voice.turn.latency");
@@ -210,7 +210,7 @@ describe("VoiceSession", () => {
 			await speak("42", "ありがとう");
 			expect(call(front, 2).recordLines()).toEqual([
 				"[12:00:00] シュン: ルナ明日の天気は",
-				"[12:00:00] Luna: 晴れだよ。",
+				"[12:00:00] You: 晴れだよ。",
 				"[12:00:00] シュン: ありがとう",
 			]);
 		});
@@ -388,7 +388,7 @@ describe("VoiceSession", () => {
 			);
 			expect(call(front, 1).recordLines()).toEqual([
 				"[12:00:00] シュン: ルナ、昔話をお願い",
-				"[12:00:00] Luna: 一文目。 [cut off while saying: 二文目。] [did not get to say: 三文目。]",
+				"[12:00:00] You: 一文目。 [cut off while saying: 二文目。] [did not get to say: 三文目。]",
 				"[12:00:00] ユウ: ちょっと待った",
 			]);
 
@@ -399,8 +399,8 @@ describe("VoiceSession", () => {
 		});
 
 		it.each([
-			["backchannel", "ユウ (while Luna was speaking, a backchannel): うんうん"],
-			["not_to_luna", "ユウ (while Luna was speaking, not to Luna): うんうん"],
+			["backchannel", "ユウ (while you were speaking, a backchannel): うんうん"],
+			["not_to_luna", "ユウ (while you were speaking, not to you): うんうん"],
 		] as const)("%s なら止めずに音量を戻し、会話記録にだけ残す", async (verdict, line) => {
 			const context = setup();
 			const { session, front, playback, classifier, voices, speak, finishPlaying } = context;
@@ -423,7 +423,7 @@ describe("VoiceSession", () => {
 			expect(call(front, 1).recordLines()).toEqual([
 				"[12:00:00] シュン: ルナ、昔話をお願い",
 				`[12:00:00] ${line}`,
-				"[12:00:00] Luna: 一文目。二文目。三文目。",
+				"[12:00:00] You: 一文目。二文目。三文目。",
 				"[12:00:00] シュン: 続きは？",
 			]);
 		});
@@ -549,7 +549,7 @@ describe("VoiceSession", () => {
 			expect(playback.volumes.at(-1)).toBe(1);
 		});
 
-		it("人の声もルナの声もなければ、会話記録を返さない", async () => {
+		it("人の声もエージェントの声もなければ、会話記録を返さない", async () => {
 			const { session, front } = setup();
 			session.report("明日の東京は晴れ");
 			await flush();

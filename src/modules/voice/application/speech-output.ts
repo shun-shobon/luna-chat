@@ -31,7 +31,7 @@ type SpeechOutputDependencies = Readonly<{
 	now(): number;
 }>;
 
-// ルナの声の出口。同時に話す返事は1つだけで、新しい返事を始めると前の返事は止まる。
+// エージェントの声の出口。同時に話す返事は1つだけで、新しい返事を始めると前の返事は止まる。
 export class SpeechOutput {
 	readonly #synthesis = new SerialQueue();
 	#active: SpeechReply | undefined;

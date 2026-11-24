@@ -66,7 +66,7 @@ type VoiceChannelServiceDependencies = Readonly<{
 
 export type VoiceJoinTarget = Readonly<{ channelId: string }> | Readonly<{ userId: string }>;
 
-// ルナが入っているVC（同時に1つ）と、その紐づけ先・モード、音声モードの会話の進行を受け持つ。
+// エージェントが入っているVC（同時に1つ）と、その紐づけ先・モード、音声モードの会話の進行を受け持つ。
 export class VoiceChannelService {
 	readonly #operations = new SerialQueue();
 	#joined: Joined | undefined;
@@ -115,7 +115,7 @@ export class VoiceChannelService {
 		const joined = this.#joined;
 		if (joined?.voice === undefined) {
 			throw new VoiceToolError(
-				"voice_report works only while Luna is in a voice channel in voice mode.",
+				"voice_report works only while you are in a voice channel in voice mode.",
 			);
 		}
 		if (origin.kind !== "conversation" || origin.session.key !== joined.session.key) {
