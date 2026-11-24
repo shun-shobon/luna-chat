@@ -59,8 +59,8 @@ describe("formatRecordLine", () => {
 
 	it.each([
 		[null, "[09:05:03] たろう: こんにちは"],
-		["backchannel", "[09:05:03] たろう (while Luna was speaking, a backchannel): こんにちは"],
-		["not_to_luna", "[09:05:03] たろう (while Luna was speaking, not to Luna): こんにちは"],
+		["backchannel", "[09:05:03] たろう (while you were speaking, a backchannel): こんにちは"],
+		["not_to_luna", "[09:05:03] たろう (while you were speaking, not to you): こんにちは"],
 	] as const)("聞いた発話は話者と、読み上げ中の声なら扱い（%s）を添える", (aside, line) => {
 		expect(
 			formatRecordLine({
@@ -84,19 +84,19 @@ describe("formatRecordLine", () => {
 				dropped: ["次に。", "最後に。"],
 			}),
 		).toBe(
-			"[09:05:03] Luna: はい。そうです。 [cut off while saying: それで] [did not get to say: 次に。最後に。]",
+			"[09:05:03] You: はい。そうです。 [cut off while saying: それで] [did not get to say: 次に。最後に。]",
 		);
 	});
 
 	it("1文も再生し終えていない返事は、空の部分を詰めて書く", () => {
 		expect(formatRecordLine({ kind: "said", at, played: [], cut: null, dropped: ["はい。"] })).toBe(
-			"[09:05:03] Luna: [did not get to say: はい。]",
+			"[09:05:03] You: [did not get to say: はい。]",
 		);
 	});
 
 	it("裏への依頼と裏の報告をそれぞれの言い方で書く", () => {
 		expect(formatRecordLine({ kind: "delegated", at, request: "天気を調べて" })).toBe(
-			"[09:05:03] Luna asked her backstage self: 天気を調べて",
+			"[09:05:03] You asked your backstage self: 天気を調べて",
 		);
 		expect(formatRecordLine({ kind: "report", at, text: "晴れです" })).toBe(
 			"[09:05:03] Backstage report: 晴れです",

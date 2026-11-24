@@ -60,7 +60,7 @@ export const minecraftActionSchema = z.discriminatedUnion("type", [
 	z.strictObject({ type: z.literal("attack"), entityId: z.number().int() }),
 	z.strictObject({ type: z.literal("retreat"), from: vec3Schema }),
 	z.strictObject({ type: z.literal("wait") }),
-	// ルナがワークスペースに書いた行動（docs/minecraft.md の「ルナが足す行動」）。上限時間は行動のファイルが決める。
+	// エージェントがワークスペースに書いた行動（docs/minecraft.md の「エージェントが足す行動」）。上限時間は行動のファイルが決める。
 	z.strictObject({
 		type: z.literal("custom"),
 		name: z.string(),
@@ -119,7 +119,7 @@ const BUILDING_KINDS = 3;
 
 export type ActionCandidate = Readonly<{ action: MinecraftAction; description: string }>;
 
-// ルナが足した行動が返した候補。
+// エージェントが足した行動が返した候補。
 export type CustomCandidate = Readonly<{
 	name: string;
 	description: string;

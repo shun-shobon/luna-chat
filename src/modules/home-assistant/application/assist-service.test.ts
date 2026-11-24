@@ -90,7 +90,7 @@ function request(overrides: Partial<AssistRequest>): AssistRequest {
 		satellite_id: "assist_satellite.voice_pe",
 		device_name: "Voice PE",
 		area_name: "リビング",
-		user_name: "しゅん",
+		user_name: "はる",
 		...overrides,
 	};
 }

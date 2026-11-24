@@ -15,7 +15,7 @@
 | [voice.md](./voice.md)                   | ボイスチャンネル                                                                |
 | [minecraft.md](./minecraft.md)           | Minecraftのプレイ                                                               |
 
-デスクトップ（ルナ専用の画面）はLunaとは別に配備するもので、[deploy/desktop/README.md](../deploy/desktop/README.md) にある。
+デスクトップ（エージェント専用の画面）はLunaとは別に配備するもので、[deploy/desktop/README.md](../deploy/desktop/README.md) にある。
 
 ## 製品の責務と対象範囲
 
@@ -42,7 +42,7 @@ Lunaは、DiscordとローカルHTTP API、Home Assistantを入力とする単�
 
 ダッシュボードは閲覧専用で認証を行わない。会話本文、ツールの入力、タスクの指示と報告を表示するため、到達できる者はそれらを読める。既定では `127.0.0.1` にバインドし、`LUNA_DASHBOARD_HOST=0.0.0.0` を指定した場合は到達可能なネットワーク内の全員が閲覧できる。
 
-デスクトップを入れた場合、neko のパスワードを知る者は、ルナのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
+デスクトップを入れた場合、neko のパスワードを知る者は、エージェントのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
 
 Minecraft（[minecraft.md](./minecraft.md)）では、設定したサーバーにオフラインモードで接続する。サーバーが送るワールドの内容（ブロック・エンティティ・アイテムの名前と位置、死亡のメッセージ）は観測としてエージェントに渡る。ゲーム内のチャットと看板の文字は渡さない。
 
@@ -116,14 +116,14 @@ Minecraft（[minecraft.md](./minecraft.md)）では、設定したサーバー�
 
 ワークスペースは `LUNA_HOME/workspace` に配置される。起動のたびに、以下のファイルのうち存在しないものをテンプレート（`templates/`）から生成する（既存ファイルは上書きしない）。
 
-- `LUNA.md`: エージェントの人格および対話方針。
+- `LUNA.md`: エージェントの名前・人格・話し方。テンプレートの既定は「ルナ」で、利用者もエージェントもこのファイルを書き換えて変えられる。
 - `MEMORY.md`: 長期記憶の起点ファイル。作業エージェント以外のシステムプロンプトに入る。
 - `HEARTBEAT.md`: ハートビート時に確認するチェックリスト。
-- `AGENDA.md`: ルナが続けたいこと・引き受けた約束・気になっていることの一覧。
+- `AGENDA.md`: エージェントが続けたいこと・引き受けた約束・気になっていることの一覧。
 - `cron.toml`: スケジュール実行の設定。週次の見直し `self-review-weekly` を持つ。
 - `.agents/skills/cron/`・`.agents/skills/heartbeat/`: スケジュールとハートビートの運用手順のskill。
 
-ワークスペースのディレクトリが存在しない初回起動時だけ、次のファイルも生成する。ルナが整理で移動・改名・アーカイブし得るため、以降の起動では作り直さない。
+ワークスペースのディレクトリが存在しない初回起動時だけ、次のファイルも生成する。エージェントが整理で移動・改名・アーカイブし得るため、以降の起動では作り直さない。
 
 - `memory/topics/know-how.md`、`users/README.md`
 - `.agents/skills/self-review/`: 週次の見直し。直近の会話から `LUNA.md`・`MEMORY.md` の変更案を作り、[再生](./agent.md#再生) で現行と比べてから反映する。
@@ -200,7 +200,7 @@ thinking = "off"
 [models.minecraft]
 model = "claude-code/claude-sonnet-5-5"
 thinking = "low"
-description = "Playing Minecraft as Luna: set goals for the in-game controller and replan on game events."
+description = "Playing Minecraft: set goals for the in-game controller and replan on game events."
 
 [tasks]
 max_concurrent = 2

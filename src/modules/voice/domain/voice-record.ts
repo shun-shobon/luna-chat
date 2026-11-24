@@ -59,9 +59,9 @@ export function formatRecordLine(entry: VoiceRecordEntry): string {
 	if (entry.kind === "heard") {
 		const note =
 			entry.aside === "backchannel"
-				? " (while Luna was speaking, a backchannel)"
+				? " (while you were speaking, a backchannel)"
 				: entry.aside === "not_to_luna"
-					? " (while Luna was speaking, not to Luna)"
+					? " (while you were speaking, not to you)"
 					: "";
 		return `[${time}] ${entry.speaker}${note}: ${entry.text}`;
 	}
@@ -69,10 +69,10 @@ export function formatRecordLine(entry: VoiceRecordEntry): string {
 		const parts = [entry.played.join("")];
 		if (entry.cut != null) parts.push(`[cut off while saying: ${entry.cut}]`);
 		if (entry.dropped.length > 0) parts.push(`[did not get to say: ${entry.dropped.join("")}]`);
-		return `[${time}] Luna: ${parts.filter((part) => part !== "").join(" ")}`;
+		return `[${time}] You: ${parts.filter((part) => part !== "").join(" ")}`;
 	}
 	if (entry.kind === "delegated")
-		return `[${time}] Luna asked her backstage self: ${entry.request}`;
+		return `[${time}] You asked your backstage self: ${entry.request}`;
 	return `[${time}] Backstage report: ${entry.text}`;
 }
 

@@ -6,7 +6,7 @@ import type { LoggerPort } from "../../observability/ports/logger-port";
 import { findFiringIntents } from "../domain/standing-intent";
 import type { IntentStorePort } from "../ports/intent-store-port";
 
-// 人の発言だけを照合する。ルナ自身やbotの投稿で発火すると、自分の発言で予定を消費してしまう。
+// 人の発言だけを照合する。エージェント自身やbotの投稿で発火すると、自分の発言で予定を消費してしまう。
 const humanMessageSchema = z.looseObject({
 	data: z.looseObject({
 		message: z.looseObject({

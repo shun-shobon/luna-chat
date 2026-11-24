@@ -70,7 +70,7 @@ function setup(
 			},
 			findUserChannel: async (userId) => {
 				if (userId === "42") return VC;
-				throw new Error(`User ${userId} is not in a voice channel Luna can see.`);
+				throw new Error(`User ${userId} is not in a voice channel the bot can see.`);
 			},
 			connect: async (_channel, handlers, connectOptions) => {
 				const link: FakeLink = {
@@ -95,7 +95,7 @@ function setup(
 			},
 			speakerName: async (_channel, userId) => {
 				if (userId === "unknown") throw new Error("Unknown Member");
-				return "シュン";
+				return "ハル";
 			},
 		},
 		transcriber: voices.transcriber,
@@ -187,7 +187,7 @@ describe("VoiceChannelService", () => {
 							guild_id: "1",
 							channel_id: "500",
 							user_id: "42",
-							speaker: "シュン",
+							speaker: "ハル",
 							text: "ねえルナ",
 							mode: "text",
 						},
@@ -403,7 +403,7 @@ describe("VoiceChannelService", () => {
 			await service.join({ target: { channelId: "500" }, mode: "voice" }, from(TEXT_SESSION));
 
 			await speak("ねえルナ");
-			expect(frontCall(0).recordLines()).toEqual([expect.stringMatching(/ シュン: ねえルナ$/u)]);
+			expect(frontCall(0).recordLines()).toEqual([expect.stringMatching(/ ハル: ねえルナ$/u)]);
 			frontCall(0).say("やっほー。");
 			frontCall(0).end();
 			await flush();
@@ -440,7 +440,7 @@ describe("VoiceChannelService", () => {
 									at: NOW,
 									type: "heard",
 									user_id: "42",
-									speaker: "シュン",
+									speaker: "ハル",
 									text: "明日の天気わかる？",
 								},
 							],
@@ -480,7 +480,7 @@ describe("VoiceChannelService", () => {
 				guild_id: "1",
 				channel_id: "500",
 				user_id: "42",
-				speaker: "シュン",
+				speaker: "ハル",
 				text: "傘がいるかも知りたい",
 				mode: "voice",
 			});
@@ -548,11 +548,11 @@ describe("VoiceChannelService", () => {
 		it("voice_report は音声モードで紐づいた会話から呼んだ時だけ受け付ける", async () => {
 			const { service, front } = setup();
 			expect(() => service.report("晴れ", from(TEXT_SESSION))).toThrow(
-				"voice_report works only while Luna is in a voice channel in voice mode.",
+				"voice_report works only while you are in a voice channel in voice mode.",
 			);
 			await service.join({ target: { channelId: "500" }, mode: "text" }, from(TEXT_SESSION));
 			expect(() => service.report("晴れ", from(TEXT_SESSION))).toThrow(
-				"voice_report works only while Luna is in a voice channel in voice mode.",
+				"voice_report works only while you are in a voice channel in voice mode.",
 			);
 			await service.join({ target: { channelId: "500" }, mode: "voice" }, from(TEXT_SESSION));
 			expect(() => service.report("晴れ", from(OTHER_SESSION))).toThrow(
@@ -597,7 +597,7 @@ describe("VoiceChannelService", () => {
 							guild_id: "1",
 							channel_id: "500",
 							transcript: [
-								{ at: NOW, type: "heard", user_id: "42", speaker: "シュン", text: "ねえルナ" },
+								{ at: NOW, type: "heard", user_id: "42", speaker: "ハル", text: "ねえルナ" },
 								{ at: NOW, type: "said", played: ["やっほー。"], cut: null, dropped: [] },
 							],
 						},

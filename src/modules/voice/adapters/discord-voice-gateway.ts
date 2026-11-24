@@ -57,7 +57,7 @@ export class DiscordVoiceGateway implements VoiceGatewayPort {
 			me == null ||
 			!channel.permissionsFor(me).has(PermissionFlagsBits.Speak)
 		) {
-			throw new Error(`Luna cannot connect to or speak in voice channel ${channelId}.`);
+			throw new Error(`The bot cannot connect to or speak in voice channel ${channelId}.`);
 		}
 		return { guildId: channel.guild.id, channelId: channel.id, name: channel.name };
 	}
@@ -67,7 +67,7 @@ export class DiscordVoiceGateway implements VoiceGatewayPort {
 			const channelId = guild.voiceStates.cache.get(userId)?.channelId;
 			if (channelId != null) return await this.resolveChannel(channelId);
 		}
-		throw new Error(`User ${userId} is not in a voice channel Luna can see.`);
+		throw new Error(`User ${userId} is not in a voice channel the bot can see.`);
 	}
 
 	async connect(

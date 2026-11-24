@@ -16,7 +16,7 @@ export type ActionOutcome = Readonly<{
 	chest: Readonly<{ position: Vec3; items: Readonly<Record<string, number>> }> | null;
 }>;
 
-// ルナが足した行動の状態（docs/minecraft.md の「ルナが足す行動」）。
+// エージェントが足した行動の状態（docs/minecraft.md の「エージェントが足す行動」）。
 export type CustomActionsReport = Readonly<{
 	loaded: readonly string[];
 	candidates: readonly CustomCandidate[];
@@ -45,7 +45,7 @@ export interface MinecraftConnection {
 	execute(action: MinecraftAction, signal: AbortSignal): Promise<ActionOutcome>;
 	// サーバーの版のアイテムにない名前を返す。
 	unknownItems(names: readonly string[]): Promise<readonly string[]>;
-	// ルナが足した行動を読み直し、今の候補を返す。
+	// エージェントが足した行動を読み直し、今の候補を返す。
 	customActions(): Promise<CustomActionsReport>;
 	close(): Promise<void>;
 }

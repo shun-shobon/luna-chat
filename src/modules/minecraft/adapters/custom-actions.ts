@@ -10,7 +10,7 @@ import { BUILTIN_ACTION_TYPES } from "../domain/action";
 import type { CustomCandidate } from "../domain/action";
 import type { CustomActionsReport } from "../ports/minecraft-connection-port";
 
-// ルナがワークスペースに書いた行動（docs/minecraft.md の「ルナが足す行動」）を読み、候補の列挙と実行を受け持つ。ワーカースレッドで動く。
+// エージェントがワークスペースに書いた行動（docs/minecraft.md の「エージェントが足す行動」）を読み、候補の列挙と実行を受け持つ。ワーカースレッドで動く。
 
 const NAME_PATTERN = /^[a-z0-9_]{1,40}$/u;
 const EXTENSION = ".mjs";
@@ -109,7 +109,7 @@ export class CustomActionRegistry {
 		try {
 			entries = await readdir(this.directory, { withFileTypes: true });
 		} catch (error: unknown) {
-			// ルナがまだ行動を書いていなければ、ディレクトリはない。
+			// エージェントがまだ行動を書いていなければ、ディレクトリはない。
 			if (isMissing(error)) return new Map();
 			throw error;
 		}

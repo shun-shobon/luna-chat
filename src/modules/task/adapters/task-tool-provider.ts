@@ -29,7 +29,7 @@ function describeTaskCreate(workers: WorkerCatalog): string {
 			`- ${choice.name}${choice.name === workers.defaultName ? " (default)" : ""}: ${choice.description}`,
 	);
 	return [
-		"Delegate long work to a background Luna worker. Returns the task id at once; the worker reports back later.",
+		"Delegate long work to a background worker. Returns the task id at once; the worker reports back later.",
 		"Choose the worker that fits the work; omit worker to use the default.",
 		...choices,
 	].join("\n");

@@ -41,7 +41,7 @@ describe("DiscordReadAdapter", () => {
 		]);
 		await expect(adapter.getUserDetail({ userId: "400", guildId: "200" })).resolves.toMatchObject({
 			id: "400",
-			guildMember: { guildId: "200", displayName: "Shun" },
+			guildMember: { guildId: "200", displayName: "Alice" },
 		});
 		await expect(adapter.listGuildEmojis("200")).resolves.toEqual([EMOJI]);
 		await expect(adapter.getGuildEmoji({ guildId: "200", emojiId: "500" })).resolves.toEqual(EMOJI);
@@ -80,15 +80,15 @@ function createClient(overrides: Partial<DiscordReadClient> = {}): DiscordReadCl
 		]),
 		fetchUser: vi.fn(async () => ({
 			id: "400",
-			username: "shun",
-			globalName: "Shun",
+			username: "alice",
+			globalName: "Alice",
 			bot: false,
 			system: false,
 			avatarUrl: "https://cdn.discordapp.com/avatar.png",
 			bannerUrl: null,
 			guildMember: {
 				guildId: "200",
-				displayName: "Shun",
+				displayName: "Alice",
 				nickname: null,
 				joinedAt: "2026-01-01T00:00:00.000Z",
 				avatarUrl: "https://cdn.discordapp.com/avatar.png",
@@ -116,12 +116,12 @@ function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
 		},
 		author: {
 			id: "400",
-			username: "shun",
-			globalName: "Shun",
+			username: "alice",
+			globalName: "Alice",
 			bot: false,
 			system: false,
 		},
-		member: { displayName: "Shun" },
+		member: { displayName: "Alice" },
 		webhookId: null,
 		content: "hello",
 		attachments: new Map(),

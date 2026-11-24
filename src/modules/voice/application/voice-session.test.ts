@@ -17,7 +17,7 @@ import { VoiceResponder } from "./voice-responder";
 import { VoiceSession } from "./voice-session";
 
 const SPEAKERS = new Map([
-	["42", "シュン"],
+	["42", "ハル"],
 	["7", "ユウ"],
 ]);
 const AT = new Date(2026, 10, 19, 12, 0, 0);
@@ -129,7 +129,7 @@ const heard = (userId: string, text: string): VoiceRecordEntry => ({
 	aside: null,
 });
 
-// シュンの1ターンに「一文目。二文目。三文目。」と返し始め、二文目を再生している所まで進める。三文目は続きが届くまで表から出てこない。
+// ハルの1ターンに「一文目。二文目。三文目。」と返し始め、二文目を再生している所まで進める。三文目は続きが届くまで表から出てこない。
 async function speakingSecondSentence(context: ReturnType<typeof setup>) {
 	await context.speak("42", "ルナ、昔話をお願い");
 	call(context.front, 0).say("一文目。二文目。三文目。");
@@ -150,8 +150,8 @@ describe("VoiceSession", () => {
 			await speak("42", "ルナ、こんにちは");
 
 			const first = call(front, 0);
-			expect(first.recordLines()).toEqual(["[12:00:00] シュン: ルナ、こんにちは"]);
-			expect(first.prompt).toMatch(/シュン just finished speaking\. .*$/u);
+			expect(first.recordLines()).toEqual(["[12:00:00] ハル: ルナ、こんにちは"]);
+			expect(first.prompt).toMatch(/ハル just finished speaking\. .*$/u);
 			first.say("こんにちは。元気");
 			first.say("？");
 			first.end();
@@ -177,9 +177,9 @@ describe("VoiceSession", () => {
 			await speak("42", "元気だよ");
 
 			expect(call(front, 1).recordLines()).toEqual([
-				"[12:00:00] シュン: ルナ、こんにちは",
-				"[12:00:00] Luna: こんにちは。",
-				"[12:00:00] シュン: 元気だよ",
+				"[12:00:00] ハル: ルナ、こんにちは",
+				"[12:00:00] You: こんにちは。",
+				"[12:00:00] ハル: 元気だよ",
 			]);
 			expect(events()).toContain("voice.turn.latency");
 		});
@@ -199,7 +199,7 @@ describe("VoiceSession", () => {
 
 			expect(discarded.signal.aborted).toBe(true);
 			const remade = call(front, 1);
-			expect(remade.recordLines()).toEqual(["[12:00:00] シュン: ルナ明日の天気は"]);
+			expect(remade.recordLines()).toEqual(["[12:00:00] ハル: ルナ明日の天気は"]);
 			remade.say("晴れだよ。");
 			remade.end();
 			await commitTurn();
@@ -209,9 +209,9 @@ describe("VoiceSession", () => {
 
 			await speak("42", "ありがとう");
 			expect(call(front, 2).recordLines()).toEqual([
-				"[12:00:00] シュン: ルナ明日の天気は",
-				"[12:00:00] Luna: 晴れだよ。",
-				"[12:00:00] シュン: ありがとう",
+				"[12:00:00] ハル: ルナ明日の天気は",
+				"[12:00:00] You: 晴れだよ。",
+				"[12:00:00] ハル: ありがとう",
 			]);
 		});
 
@@ -353,7 +353,7 @@ describe("VoiceSession", () => {
 			await commitTurn();
 
 			expect(hear).toHaveBeenLastCalledWith(
-				expect.objectContaining({ userId: "42", speaker: "シュン", text: "寝室もお願い" }),
+				expect.objectContaining({ userId: "42", speaker: "ハル", text: "寝室もお願い" }),
 			);
 			await expect(session.close()).resolves.toEqual([]);
 		});
@@ -387,8 +387,8 @@ describe("VoiceSession", () => {
 				}),
 			);
 			expect(call(front, 1).recordLines()).toEqual([
-				"[12:00:00] シュン: ルナ、昔話をお願い",
-				"[12:00:00] Luna: 一文目。 [cut off while saying: 二文目。] [did not get to say: 三文目。]",
+				"[12:00:00] ハル: ルナ、昔話をお願い",
+				"[12:00:00] You: 一文目。 [cut off while saying: 二文目。] [did not get to say: 三文目。]",
 				"[12:00:00] ユウ: ちょっと待った",
 			]);
 
@@ -399,8 +399,8 @@ describe("VoiceSession", () => {
 		});
 
 		it.each([
-			["backchannel", "ユウ (while Luna was speaking, a backchannel): うんうん"],
-			["not_to_luna", "ユウ (while Luna was speaking, not to Luna): うんうん"],
+			["backchannel", "ユウ (while you were speaking, a backchannel): うんうん"],
+			["not_to_luna", "ユウ (while you were speaking, not to you): うんうん"],
 		] as const)("%s なら止めずに音量を戻し、会話記録にだけ残す", async (verdict, line) => {
 			const context = setup();
 			const { session, front, playback, classifier, voices, speak, finishPlaying } = context;
@@ -421,10 +421,10 @@ describe("VoiceSession", () => {
 
 			await speak("42", "続きは？");
 			expect(call(front, 1).recordLines()).toEqual([
-				"[12:00:00] シュン: ルナ、昔話をお願い",
+				"[12:00:00] ハル: ルナ、昔話をお願い",
 				`[12:00:00] ${line}`,
-				"[12:00:00] Luna: 一文目。二文目。三文目。",
-				"[12:00:00] シュン: 続きは？",
+				"[12:00:00] You: 一文目。二文目。三文目。",
+				"[12:00:00] ハル: 続きは？",
 			]);
 		});
 
@@ -549,7 +549,7 @@ describe("VoiceSession", () => {
 			expect(playback.volumes.at(-1)).toBe(1);
 		});
 
-		it("人の声もルナの声もなければ、会話記録を返さない", async () => {
+		it("人の声もエージェントの声もなければ、会話記録を返さない", async () => {
 			const { session, front } = setup();
 			session.report("明日の東京は晴れ");
 			await flush();

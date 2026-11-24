@@ -8,7 +8,7 @@ const message = {
 	kind: "reply",
 	guild: { id: "200", name: "Luna Lab" },
 	channel: { id: "300", name: "general" },
-	author: { id: "400", kind: "human", username: "shun", displayName: "Shun" },
+	author: { id: "400", kind: "human", username: "alice", displayName: "Alice" },
 	content: "hello",
 	attachments: [
 		{

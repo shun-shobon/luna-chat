@@ -319,7 +319,7 @@ function createReadPort() {
 		listChannels: vi.fn<DiscordReadPort["listChannels"]>(async () => []),
 		getUserDetail: vi.fn<DiscordReadPort["getUserDetail"]>(async ({ userId }) => ({
 			id: userId,
-			username: "shun",
+			username: "alice",
 			globalName: null,
 			bot: false,
 			system: false,

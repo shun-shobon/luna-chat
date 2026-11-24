@@ -1,8 +1,8 @@
 # デスクトップ
 
-ルナ専用のデスクトップを任意で入れられる。人は neko（WebRTCの画面共有）で同じ画面を見て、マウスとキーボードで操作に加われる。Lunaのプロセスとは独立した systemd のサービス群で、Linux（Ubuntu 24.04）のホストに `install.sh` を root で実行して入れる。Lunaのコードはデスクトップを参照せず、ルナはワークスペースのskill `luna-desktop` を通じてだけ使う。
+エージェント専用のデスクトップを任意で入れられる。人は neko（WebRTCの画面共有）で同じ画面を見て、マウスとキーボードで操作に加われる。Lunaのプロセスとは独立した systemd のサービス群で、Linux（Ubuntu 24.04）のホストに `install.sh` を root で実行して入れる。Lunaのコードはデスクトップを参照せず、エージェントはワークスペースのskill `luna-desktop` を通じてだけ使う。
 
-neko のパスワードを知る者は、ルナのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
+neko のパスワードを知る者は、エージェントのログイン済みの Chrome を含むデスクトップを見て操作できる。neko はLANへ待ち受ける。
 
 ## サービス
 
@@ -23,8 +23,8 @@ neko のパスワードを知る者は、ルナのログイン済みの Chrome �
 neko の設定は `/opt/luna-desktop/etc/neko.yaml` と、ホストごとの値を持つ `/etc/luna-desktop/neko.env`（root のみ読める）に分ける。`neko.env` には WebRTC で広告するホストのLANのIP（`NEKO_WEBRTC_NAT1TO1`）、閲覧・操作用と管理者用のパスワードを書く。`install.sh` は `neko.env` がなければ、ホストの最初のIPと乱数のパスワードで作る。
 
 - 認証: neko の multiuser。どちらかのパスワードと任意の表示名でログインする
-- 操作権: 操作した人がそのまま操作権を得る（`implicit_hosting`）。ルナの操作（CDP・AT-SPI・xdotool）は neko の操作権を経由せず、人の操作と排他にしない
-- 配信: 誰かが見ている間だけ映像をエンコードする。ポインタを映像に描き込み、ルナが動かしたポインタも見える
+- 操作権: 操作した人がそのまま操作権を得る（`implicit_hosting`）。エージェントの操作（CDP・AT-SPI・xdotool）は neko の操作権を経由せず、人の操作と排他にしない
+- 配信: 誰かが見ている間だけ映像をエンコードする。ポインタを映像に描き込み、エージェントが動かしたポインタも見える
 
 ## skill `luna-desktop`
 

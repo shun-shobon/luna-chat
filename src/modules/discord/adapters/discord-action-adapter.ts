@@ -84,7 +84,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 			case "remove_reaction": {
 				const message = await this.#fetchMessage(action.channelId, action.messageId);
 				const reaction = message.reactions.resolve(reactionCacheKey(action.emoji));
-				if (reaction == null) throw new Error("Luna reaction was not found");
+				if (reaction == null) throw new Error("The bot's reaction was not found");
 				await reaction.users.remove();
 				return success(action.kind, { channelId: action.channelId, messageId: action.messageId });
 			}
@@ -133,7 +133,7 @@ export class DiscordActionAdapter implements DiscordActionPort {
 	async #fetchOwnMessage(channelId: string, messageId: string): Promise<MessageHandle> {
 		const message = await this.#fetchMessage(channelId, messageId);
 		if (message.author.id !== this.client.user?.id) {
-			throw new Error(`Discord message is not Luna's own: ${messageId}`);
+			throw new Error(`Discord message is not the bot's own: ${messageId}`);
 		}
 		return message;
 	}

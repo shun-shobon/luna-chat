@@ -4,7 +4,7 @@
 
 ## ハートビート
 
-ルナの定期確認と自由時間である。前回のハートビート完了後、`min_interval_ms` から `max_interval_ms` の間でランダムに決定された間隔を経て次回が実行される。
+エージェントの定期確認と自由時間である。前回のハートビート完了後、`min_interval_ms` から `max_interval_ms` の間でランダムに決定された間隔を経て次回が実行される。
 
 実行時は `HEARTBEAT.md` と `AGENDA.md` を読み込み、`system.heartbeat.fired.v1`（`data` は `{ checklist, agenda }`）として実行する。どちらかが読めない場合はその回を実行せずエラーログを記録し、次回を予約する。
 

@@ -14,15 +14,15 @@ const QUESTION = "turn";
 const VerdictSchema = z.enum(["interruption", "backchannel", "not_to_luna"]);
 
 const INSTRUCTIONS =
-	"Luna, an AI, is speaking aloud in a voice chat. While she was saying luna_is_saying, a person said heard (a speech-to-text transcript that can contain recognition errors, usually Japanese). Decide whether Luna should stop talking and listen to them now.";
+	"An AI is speaking aloud in a voice chat. While it was saying luna_is_saying, a person said heard (a speech-to-text transcript that can contain recognition errors, usually Japanese). Decide whether the AI should stop talking and listen to them now.";
 
 const CRITERIA: Readonly<Record<InterruptVerdict, string>> = {
 	interruption:
-		"They want Luna to stop and listen: they ask or tell her something, correct her, disagree, change the subject, or answer a question she asked with more than a short acknowledgement.",
+		"They want the AI to stop and listen: they ask or tell it something, correct it, disagree, change the subject, or answer a question it asked with more than a short acknowledgement.",
 	backchannel:
-		"A short listener response that shows they follow and want her to go on, such as うん, へえ, なるほど, そうなんだ, or laughing.",
+		"A short listener response that shows they follow and want it to go on, such as うん, へえ, なるほど, そうなんだ, or laughing.",
 	not_to_luna:
-		"Speech not meant for Luna: talking to someone else in the call, to themselves, or to someone off the call.",
+		"Speech not meant for the AI: talking to someone else in the call, to themselves, or to someone off the call.",
 };
 
 // 判定は pi-ai の classify に任せ、提供元（OpenAI の Decisions API、TypeSafe の Jev）は設定で選ぶ。
@@ -65,7 +65,7 @@ export class PiInterruptClassifier implements InterruptClassifierPort {
 			{
 				signal,
 				timeoutMs: this.options.timeoutMs,
-				// 判定を待つ間もルナは話し続けるので、やり直して遅れるより失敗として扱う。
+				// 判定を待つ間もエージェントは話し続けるので、やり直して遅れるより失敗として扱う。
 				maxRetries: 0,
 				fetch: this.options.fetch,
 			},

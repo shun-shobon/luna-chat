@@ -145,7 +145,7 @@ describe("DiscordGatewayAdapter", () => {
 			emoji: { kind: "custom", id: "500", name: "luna", animated: false },
 			messageId: "100",
 			scope: { kind: "guild_channel", guildId: "200", channelId: "300" },
-			user: { id: "401", username: "shun", displayName: "Shun" },
+			user: { id: "401", username: "alice", displayName: "Alice" },
 		});
 	});
 });
@@ -197,7 +197,7 @@ function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
 		guildId: "200",
 		channel: createChannel(),
 		author: createUser(),
-		member: { displayName: "Shun" },
+		member: { displayName: "Alice" },
 		webhookId: null,
 		content: "hello",
 		attachments: new Map(),
@@ -227,8 +227,8 @@ function createChannel() {
 function createUser(overrides: Readonly<Record<string, unknown>> = {}) {
 	return {
 		id: "400",
-		username: "shun",
-		globalName: "Shun",
+		username: "alice",
+		globalName: "Alice",
 		bot: false,
 		system: false,
 		...overrides,

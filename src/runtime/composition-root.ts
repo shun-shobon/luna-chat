@@ -167,7 +167,7 @@ const USAGE_POLL_INTERVAL_MS = 600_000;
 const VOICE_EMPTY_JOIN_WAIT_MS = 60_000;
 // 声の返事は待てないので、会話のリクエストより短く打ち切る。
 const VOICE_FRONT_TIMEOUT_MS = 30_000;
-// 判定を待つ間もルナは小さな声で話し続ける。これを超えたら割り込みとして扱う。
+// 判定を待つ間もエージェントは小さな声で話し続ける。これを超えたら割り込みとして扱う。
 const VOICE_INTERRUPT_TIMEOUT_MS = 3_000;
 // 1文の合成。別のホストのTTSが落ちている時に、返事を長く止めないため。
 const VOICE_TTS_TIMEOUT_MS = 15_000;

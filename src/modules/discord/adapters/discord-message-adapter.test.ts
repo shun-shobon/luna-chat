@@ -18,7 +18,7 @@ describe("discord message adapter", () => {
 		expect(event.message).toMatchObject({
 			id: "100",
 			kind: "reply",
-			author: { id: "400", kind: "human", displayName: "Shun" },
+			author: { id: "400", kind: "human", displayName: "Alice" },
 			attachments: [{ id: "500", size: 42 }],
 			replyTo: { kind: "guild", guildId: "200", channelId: "300", messageId: "99" },
 		});
@@ -199,7 +199,7 @@ function createMessage(overrides: Readonly<Record<string, unknown>> = {}) {
 		guild: { id: "200", name: "Luna Lab" },
 		channel: createChannel(),
 		author: createUser(),
-		member: { displayName: "Shun" },
+		member: { displayName: "Alice" },
 		webhookId: null,
 		content: "hello",
 		attachments: collection([ATTACHMENT]),
@@ -261,8 +261,8 @@ function createChannel(
 function createUser(overrides: Readonly<Record<string, unknown>> = {}) {
 	return {
 		id: "400",
-		username: "shun",
-		globalName: "Shun Global",
+		username: "alice",
+		globalName: "Alice Global",
 		bot: false,
 		system: false,
 		...overrides,
