@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ubuntu 24.04 のホストへルナのデスクトップを入れる。root で実行し、何度実行してもよい。
+# Ubuntu 24.04 のホストへエージェント専用のデスクトップを入れる。root で実行し、何度実行してもよい。
 set -euo pipefail
 
 LUNA_USER=luna
