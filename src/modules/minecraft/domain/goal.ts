@@ -20,7 +20,7 @@ export function targetsMet(
 
 export type GoalAnswer = Readonly<{ status: GoalStatus; probability: number }>;
 
-// SPEC §25.4 のしきい値。確率がこれ以上の答えを、続けて数える。
+// docs/minecraft.md の「1手の判断」のしきい値。確率がこれ以上の答えを、続けて数える。
 const CONFIDENT_PROBABILITY = 0.8;
 const DONE_STREAK = 2;
 const STUCK_STREAK = 3;
@@ -68,7 +68,7 @@ export class GoalTracker {
 	}
 }
 
-// 推論の前後の観測を比べ、答えを捨てるべき変化（SPEC §25.4 の手順3）があったかを返す。
+// 推論の前後の観測を比べ、答えを捨てるべき変化（docs/minecraft.md の「1手の判断」の手順4）があったかを返す。
 export function changedDuringInference(
 	before: Readonly<{ position: Vec3; health: number; hostileIds: readonly number[] }>,
 	after: Readonly<{ position: Vec3; health: number; hostileIds: readonly number[] }>,

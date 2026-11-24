@@ -23,7 +23,7 @@ export const SIGHT_DISTANCE = 32;
 export const REACH_DISTANCE = 4;
 
 // ワーカースレッドが読んだ、その時点のワールドの素材。観測と行動の候補はここから作る。
-// 見えるものだけを入れる（SPEC §25.3）。並びは近い順。
+// 見えるものだけを入れる（docs/minecraft.md の「観測」）。並びは近い順。
 export const worldSnapshotSchema = z.strictObject({
 	self: z.strictObject({
 		position: vec3Schema,
@@ -116,7 +116,7 @@ export function isOreBlock(blockName: string): boolean {
 	return blockName.endsWith("_ore") || blockName === "ancient_debris";
 }
 
-// 観測の visible_blocks に載せるブロック（SPEC §25.3）。目標の targets を落とすブロックは別に足す。
+// 観測の visible_blocks に載せるブロック（docs/minecraft.md の「観測」）。目標の targets を落とすブロックは別に足す。
 export function isInterestingBlock(blockName: string): boolean {
 	return (
 		blockName.endsWith("_log") ||

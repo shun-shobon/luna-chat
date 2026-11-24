@@ -12,7 +12,7 @@ export type MinecraftEventType =
 
 const URGENT_TYPES: ReadonlySet<MinecraftEventType> = new Set(["reflex", "death", "disconnected"]);
 
-// 計画役のセッションへ渡す出来事（SPEC §25.7 の MinecraftEvent）。
+// 計画役のセッションへ渡す出来事（docs/minecraft.md の「出来事」の MinecraftEvent）。
 export type MinecraftEvent = Readonly<{
 	type: MinecraftEventType;
 	urgent: boolean;

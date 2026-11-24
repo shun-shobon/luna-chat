@@ -16,7 +16,7 @@ export type ActionOutcome = Readonly<{
 	chest: Readonly<{ position: Vec3; items: Readonly<Record<string, number>> }> | null;
 }>;
 
-// ルナが足した行動の状態（SPEC §25.10）。
+// ルナが足した行動の状態（docs/minecraft.md の「ルナが足す行動」）。
 export type CustomActionsReport = Readonly<{
 	loaded: readonly string[];
 	candidates: readonly CustomCandidate[];

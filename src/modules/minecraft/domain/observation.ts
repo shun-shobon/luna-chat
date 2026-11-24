@@ -18,7 +18,7 @@ export type ActionRecord = Readonly<{
 
 export type ReflexRecord = Readonly<{ trigger: string; at: string }>;
 
-// 決定モデルと計画役に渡す観測（SPEC §25.3 の MinecraftObservation）。
+// 決定モデルと計画役に渡す観測（docs/minecraft.md の「観測」の MinecraftObservation）。
 export function buildObservation(
 	input: Readonly<{
 		snapshot: WorldSnapshot;

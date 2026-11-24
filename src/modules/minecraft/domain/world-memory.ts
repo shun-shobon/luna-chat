@@ -65,7 +65,7 @@ export const EMPTY_WORLD_MEMORY: WorldMemory = {
 };
 
 // 観測を受けて記憶を更新する。見えた作業台・鉱石などを足し、記憶した位置が見えて別のものに
-// 変わっていたら消す（SPEC §25.8）。名付けた場所は、ブロックとは関係なく残す。
+// 変わっていたら消す（docs/minecraft.md の「ワールドの記憶」）。名付けた場所は、ブロックとは関係なく残す。
 export function rememberSnapshot(
 	memory: WorldMemory,
 	snapshot: WorldSnapshot,

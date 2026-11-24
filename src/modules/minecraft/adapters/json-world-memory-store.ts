@@ -6,7 +6,7 @@ import { EMPTY_WORLD_MEMORY, worldMemorySchema } from "../domain/world-memory";
 import type { WorldMemory } from "../domain/world-memory";
 import type { WorldMemoryStorePort } from "../ports/world-memory-store-port";
 
-// LUNA_HOME/minecraft/<world>/memory.json に、ワールドごとの記憶を置く（SPEC §25.8）。
+// LUNA_HOME/minecraft/<world>/memory.json に、ワールドごとの記憶を置く（docs/minecraft.md の「ワールドの記憶」）。
 export class JsonWorldMemoryStore implements WorldMemoryStorePort {
 	constructor(private readonly path: string) {}
 

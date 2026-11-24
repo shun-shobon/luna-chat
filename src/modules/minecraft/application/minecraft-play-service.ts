@@ -91,7 +91,7 @@ class MinecraftError extends Error {
 	}
 }
 
-// Minecraftのプレイを1つだけ持ち、計画役のツール・1手の判断・出来事をつなぐ（SPEC §25）。
+// Minecraftのプレイを1つだけ持ち、計画役のツール・1手の判断・出来事をつなぐ（docs/minecraft.md）。
 export class MinecraftPlayService {
 	readonly #saves = new SerialQueue();
 	#play: Play | undefined;
@@ -330,7 +330,7 @@ export class MinecraftPlayService {
 			} catch (error: unknown) {
 				if (isEnded(play)) return;
 				this.#logger(play).warn("minecraft.step_failed", { error });
-				// 切断で失敗した手は数えない。切断中は判断を止め、再接続してから続ける（SPEC §25.2）。
+				// 切断で失敗した手は数えない。切断中は判断を止め、再接続してから続ける（docs/minecraft.md の「接続とプレイの期間」）。
 				if (play.connection === connection) this.#judge(play, goal, play.tracker.acted(false));
 				await this.#delay(play, FAILURE_BACKOFF_MS);
 			}

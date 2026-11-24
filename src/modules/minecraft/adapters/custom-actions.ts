@@ -10,7 +10,7 @@ import { BUILTIN_ACTION_TYPES } from "../domain/action";
 import type { CustomCandidate } from "../domain/action";
 import type { CustomActionsReport } from "../ports/minecraft-connection-port";
 
-// ルナがワークスペースに書いた行動（SPEC §25.10）を読み、候補の列挙と実行を受け持つ。ワーカースレッドで動く。
+// ルナがワークスペースに書いた行動（docs/minecraft.md の「ルナが足す行動」）を読み、候補の列挙と実行を受け持つ。ワーカースレッドで動く。
 
 const NAME_PATTERN = /^[a-z0-9_]{1,40}$/u;
 const EXTENSION = ".mjs";

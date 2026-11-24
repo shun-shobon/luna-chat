@@ -80,5 +80,5 @@ export function isBuildingBlock(item: string): boolean {
 	return BUILDING_BLOCKS.has(item) || item.endsWith("_planks");
 }
 
-// 経路探索が足場に使ってよいブロック（SPEC §25.4）。
+// 経路探索が足場に使ってよいブロック（docs/minecraft.md の「1手の判断」）。
 export const SCAFFOLDING_BLOCKS: readonly string[] = ["dirt", "cobblestone"];

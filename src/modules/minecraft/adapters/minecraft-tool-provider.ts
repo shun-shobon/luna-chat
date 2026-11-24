@@ -26,7 +26,7 @@ const namePlaceInputSchema = z.strictObject({
 	position: integerVec3Schema.optional(),
 });
 
-// minecraft の作業エージェントだけに渡す計画役のツール（SPEC §25.6）。
+// minecraft の作業エージェントだけに渡す計画役のツール（docs/minecraft.md の「計画役のツール」）。
 export function createMinecraftToolProvider(play: MinecraftPlay): ToolProvider {
 	return Object.freeze({
 		definitions: Object.freeze([

@@ -50,7 +50,7 @@ type Item = ReturnType<Bot["inventory"]["items"]>[number];
 
 const SPAWN_TIMEOUT_MS = 30_000;
 const QUIT_TIMEOUT_MS = 5_000;
-// 経路探索で使う、落ちてよい高さ（SPEC §25.4）。
+// 経路探索で使う、落ちてよい高さ（docs/minecraft.md の「1手の判断」）。
 const MAX_DROP = 3;
 const COMMON_BLOCKS: ReadonlySet<string> = new Set(["stone", "water", "sand", "gravel", "lava"]);
 const waterloggedSchema = z.looseObject({ waterlogged: z.literal(true) });
@@ -490,7 +490,7 @@ export class MineflayerPlayer {
 		}
 	}
 
-	// ルナが書いた行動のコードに渡すもの（SPEC §25.10）。
+	// ルナが書いた行動のコードに渡すもの（docs/minecraft.md の「ルナが足す行動」）。
 	#customContext() {
 		return {
 			bot: this.#bot,
@@ -714,7 +714,7 @@ export class MineflayerPlayer {
 		}
 	}
 
-	// 足元・頭上・隣のブロックへの操作のうち、今できるもの（SPEC §25.4）。
+	// 足元・頭上・隣のブロックへの操作のうち、今できるもの（docs/minecraft.md の「1手の判断」）。
 	#surroundings(items: readonly Item[]): WorldSnapshot["surroundings"] {
 		const feet = this.#feet();
 		const inWater = entityPhysicsSchema.parse(this.#bot.entity).isInWater ?? false;
@@ -935,7 +935,7 @@ export class MineflayerPlayer {
 		return visible;
 	}
 
-	// 目の位置からブロックが遮られずに見えるか（SPEC §25.3）。Mineflayer の canSeeBlock（中心への光線）を使う。
+	// 目の位置からブロックが遮られずに見えるか（docs/minecraft.md の「観測」）。Mineflayer の canSeeBlock（中心への光線）を使う。
 	// world.raycast を matcher なしで呼ぶと、遮るブロックがあっても null を返すことがあったため自前では引かない。
 	#canSee(block: Block): boolean {
 		const eye = this.#eye();

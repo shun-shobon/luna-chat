@@ -16,7 +16,7 @@ import {
 import type { Direction, Vec3, WorldSnapshot } from "./world";
 import type { WorldMemory } from "./world-memory";
 
-// 決定モデルが選ぶ1手（SPEC §25.4）。経路と照準はワーカーのMineflayerに任せる。
+// 決定モデルが選ぶ1手（docs/minecraft.md の「1手の判断」）。経路と照準はワーカーのMineflayerに任せる。
 export const minecraftActionSchema = z.discriminatedUnion("type", [
 	z.strictObject({ type: z.literal("move_to"), target: vec3Schema, label: z.string() }),
 	z.strictObject({ type: z.literal("explore"), direction: directionSchema, target: vec3Schema }),
@@ -60,7 +60,7 @@ export const minecraftActionSchema = z.discriminatedUnion("type", [
 	z.strictObject({ type: z.literal("attack"), entityId: z.number().int() }),
 	z.strictObject({ type: z.literal("retreat"), from: vec3Schema }),
 	z.strictObject({ type: z.literal("wait") }),
-	// ルナがワークスペースに書いた行動（SPEC §25.10）。上限時間は行動のファイルが決める。
+	// ルナがワークスペースに書いた行動（docs/minecraft.md の「ルナが足す行動」）。上限時間は行動のファイルが決める。
 	z.strictObject({
 		type: z.literal("custom"),
 		name: z.string(),
