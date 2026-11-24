@@ -31,7 +31,7 @@ Lunaは、Discordの利用者やローカルHTTP APIの呼び出し元をホス�
 - **Home Assistant**：家の機器の状態を読み、操作します。見ておきたい機器の変化（玄関が開いた、洗濯機が終わったなど）をLuna自身が `home-assistant.toml` に書き、変化があると起きて動きます。HAのAssistの会話エージェントとしても選べ、音声で話しかけられます。
 - **ダッシュボード**：会話・タスク・発火予定・使用枠などの現在の状態をブラウザで確認できます（閲覧のみ）。
 - **ボイスチャンネル**：Discordのボイスチャンネルにエージェントが自分で入り、人の発話をローカルの音声認識（sherpa-onnx）で聞き取って会話します。返事は文字で返すモードと、声で返すモードがあります。声のモードでは速いモデルがエージェントとして喋り、調べ物や操作はいつものエージェントに頼みます。読み上げはVOICEVOX互換のTTSエンジン（AivisSpeech Engine など）か speech.cpp（Irodori-TTS など）で行い、読み上げ中に話しかけると、相づちなら話し続け、割り込みなら止めて聞きます。使うには `config.toml` の `[voice]` で音声認識・VADのモデルとTTSエンジンを指定し、割り込みの判定に使う `OPENAI_API_KEY`（OpenAIのDecisions API）を設定します（[voice.md](./docs/voice.md)）。
-- **Minecraft**：ルナがMinecraft Java Editionのサーバーにプレイヤーとして入って遊びます。作業エージェントが目標を立て、速い決定モデル（OpenAIのDecisions API か TypeSafe の Jev）が見えているものから1手ずつ行動を選び、命の危険にはコードが即座に反応します。足りない行動（扉、畑、建築など）は、ルナがワークスペースにコードで書いて足せます。使うには `config.toml` に `[minecraft]` と `[models.minecraft]` を書き、決定モデルの鍵を設定します（[minecraft.md](./docs/minecraft.md)）。
+- **Minecraft**：エージェントがMinecraft Java Editionのサーバーにプレイヤーとして入って遊びます。作業エージェントが目標を立て、速い決定モデル（OpenAIのDecisions API か TypeSafe の Jev）が見えているものから1手ずつ行動を選び、命の危険にはコードが即座に反応します。足りない行動（扉、畑、建築など）は、エージェントがワークスペースにコードで書いて足せます。使うには `config.toml` に `[minecraft]` と `[models.minecraft]` を書き、決定モデルの鍵を設定します（[minecraft.md](./docs/minecraft.md)）。
 - **デスクトップ**：エージェント専用のデスクトップとChromeを常駐させます。エージェントがログインの要るサイトやアプリを画面で操作し、人はその画面をブラウザから見て手伝えます（Linuxのホストのみ）。
 
 ## 動作要件

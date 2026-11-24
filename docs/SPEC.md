@@ -200,7 +200,7 @@ thinking = "off"
 [models.minecraft]
 model = "claude-code/claude-sonnet-5-5"
 thinking = "low"
-description = "Playing Minecraft as Luna: set goals for the in-game controller and replan on game events."
+description = "Playing Minecraft: set goals for the in-game controller and replan on game events."
 
 [tasks]
 max_concurrent = 2
