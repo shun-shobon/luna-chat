@@ -12,9 +12,9 @@ const GOAL_QUESTION = "goal";
 const GoalStatusSchema = z.enum(["done", "in_progress", "stuck"]);
 
 const ACTION_INSTRUCTIONS =
-	"The state is Luna's view of Minecraft: what she can see from her eyes and what she remembers, with her current goal from her planner. Choose the one action that best advances goal.objective right now. Prefer gathering what goal.targets asks for, avoid repeating actions that just failed in recent_actions, and keep her alive.";
+	"The state is a Minecraft player's view: what the player can see from its eyes and what it remembers, with its current goal from its planner. Choose the one action that best advances goal.objective right now. Prefer gathering what goal.targets asks for, avoid repeating actions that just failed in recent_actions, and keep the player alive.";
 const GOAL_INSTRUCTIONS =
-	"Judge how goal.objective stands in the state. Count only what the state shows, such as the inventory, her position, and recent_actions.";
+	"Judge how goal.objective stands in the state. Count only what the state shows, such as the inventory, the player's position, and recent_actions.";
 const GOAL_CRITERIA: Readonly<Record<GoalStatus, string>> = {
 	done: "The objective is already achieved in the state.",
 	in_progress:

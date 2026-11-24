@@ -490,7 +490,7 @@ export class MineflayerPlayer {
 		}
 	}
 
-	// ルナが書いた行動のコードに渡すもの（docs/minecraft.md の「ルナが足す行動」）。
+	// エージェントが書いた行動のコードに渡すもの（docs/minecraft.md の「エージェントが足す行動」）。
 	#customContext() {
 		return {
 			bot: this.#bot,
@@ -554,7 +554,7 @@ export class MineflayerPlayer {
 				const item = bot.inventory.items().find((entry) => entry.name === action.item);
 				if (item === undefined) throw new Error(`no ${action.item} in the inventory`);
 				const reference = this.#placementReference();
-				if (reference === undefined) throw new Error("no free spot next to Luna");
+				if (reference === undefined) throw new Error("no free spot next to the player");
 				await bot.equip(item, "hand");
 				await bot.placeBlock(reference, new Vec3(0, 1, 0));
 				return done(`placed ${action.item}`);
@@ -593,7 +593,7 @@ export class MineflayerPlayer {
 				const feet = this.#feet();
 				if (action.where === "below") {
 					await this.#pillarUp(feet, signal);
-					return done(`placed ${action.item} under her feet`);
+					return done(`placed ${action.item} under the player's feet`);
 				}
 				const target =
 					action.where === "above"
@@ -603,7 +603,7 @@ export class MineflayerPlayer {
 				if (reference === undefined) throw new Error("nothing to place the block against");
 				await bot.placeBlock(reference.block, reference.face);
 				return done(
-					`placed ${action.item} ${action.where === "above" ? "above her head" : `to the ${action.where}`}`,
+					`placed ${action.item} ${action.where === "above" ? "above the player's head" : `to the ${action.where}`}`,
 				);
 			}
 			case "smelt": {
@@ -685,7 +685,7 @@ export class MineflayerPlayer {
 				await sleep(WAIT_MS);
 				return done("waited");
 			case "custom": {
-				// ルナのコードが signal を見ずに続けても、中断と上限時間で返せるよう、止まるのを待たない。
+				// エージェントのコードが signal を見ずに続けても、中断と上限時間で返せるよう、止まるのを待たない。
 				const aborted = Promise.withResolvers<never>();
 				const onAbort = (): void => {
 					aborted.reject(new ActionInterrupted("aborted"));
@@ -698,7 +698,7 @@ export class MineflayerPlayer {
 					this.#customContext(),
 					signal,
 				);
-				// 中断で先に返した後にルナのコードが例外で終わると、拾い手のない reject でワーカーが落ちるため。
+				// 中断で先に返した後にエージェントのコードが例外で終わると、拾い手のない reject でワーカーが落ちるため。
 				running.catch(() => {});
 				try {
 					const detail = await Promise.race([running, aborted.promise]);
@@ -856,7 +856,7 @@ export class MineflayerPlayer {
 		const message =
 			recent !== undefined && Date.now() - recent.at <= DEATH_MESSAGE_WINDOW_MS
 				? recent.text
-				: "Luna died";
+				: "The player died";
 		this.#action?.abort(new ActionInterrupted("died"));
 		// 死んだら逃げる理由もなくなるため、走っている反射も止める。
 		this.#reflexAbort?.abort();

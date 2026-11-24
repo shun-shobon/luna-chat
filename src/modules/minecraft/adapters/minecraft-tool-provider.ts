@@ -33,7 +33,7 @@ export function createMinecraftToolProvider(play: MinecraftPlay): ToolProvider {
 			defineTool({
 				name: "minecraft_goal",
 				description:
-					'Set the goal that Luna\'s in-game controller pursues one action at a time, replacing the current one. Returns at once; the controller keeps playing while you think. objective is a short instruction in English, such as "Collect 3 oak logs". targets optionally lists item ids and counts; once the inventory holds all of them, the goal counts as done. waypoint optionally gives a block position or a place name you set with minecraft_name_place. The first Minecraft tool call of your task connects to the server.',
+					'Set the goal that your in-game controller pursues one action at a time, replacing the current one. Returns at once; the controller keeps playing while you think. objective is a short instruction in English, such as "Collect 3 oak logs". targets optionally lists item ids and counts; once the inventory holds all of them, the goal counts as done. waypoint optionally gives a block position or a place name you set with minecraft_name_place. The first Minecraft tool call of your task connects to the server.',
 				inputSchema: goalInputSchema,
 				parseInput: (input) => ({
 					objective: input.objective,
@@ -46,7 +46,7 @@ export function createMinecraftToolProvider(play: MinecraftPlay): ToolProvider {
 			defineTool({
 				name: "minecraft_observe",
 				description:
-					"Look at the game now: what Luna sees and remembers, her inventory and health, the goal and how the controller judges it, and recent events.",
+					"Look at the game now: what you see and remember, your inventory and health, the goal and how the controller judges it, and recent events.",
 				inputSchema: observeInputSchema,
 				parseInput: (input) => input,
 				execute: async (_input, execution) => await play.observe(execution),
@@ -55,7 +55,7 @@ export function createMinecraftToolProvider(play: MinecraftPlay): ToolProvider {
 			defineTool({
 				name: "minecraft_name_place",
 				description:
-					"Remember a place by name, such as base or mine entrance, so you can use the name as a waypoint later. position defaults to where Luna stands. A name you reuse is moved.",
+					"Remember a place by name, such as base or mine entrance, so you can use the name as a waypoint later. position defaults to where you stand. A name you reuse is moved.",
 				inputSchema: namePlaceInputSchema,
 				parseInput: (input) => ({ name: input.name, position: input.position ?? null }),
 				execute: async (input, execution) => await play.namePlace(execution, input),

@@ -15,7 +15,7 @@ import type { WorkerRequest } from "./mineflayer-protocol";
 const CONNECT_TIMEOUT_MS = 30_000;
 // ワーカーの close は bot.quit の後 'end' を最大5秒待つため、それより長く待つ。
 const CLOSE_TIMEOUT_MS = 8_000;
-// 観測・アイテム名の確認・ルナの行動の候補の列挙に待つ上限。固まったワーカーで判断のループを止めないため。
+// 観測・アイテム名の確認・エージェントの行動の候補の列挙に待つ上限。固まったワーカーで判断のループを止めないため。
 const QUERY_TIMEOUT_MS = 10_000;
 // 行動を中断してから、ワーカーが入力を離して interrupted を返すまで待つ上限。
 const ABORT_GRACE_MS = 5_000;
