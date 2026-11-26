@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import * as http from "node:http";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { fauxAssistantMessage, isRetryableAssistantError } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -657,7 +658,7 @@ describe("getClaudeStatus", () => {
 });
 
 const STREAMING_FAKE = `import readline from "node:readline";
-import {appendFileSync, readFileSync} from "node:fs";
+import {appendFileSync, existsSync, readFileSync, writeFileSync} from "node:fs";
 if ("ANTHROPIC_API_KEY" in process.env) throw new Error("API key leaked to Claude child");
 ${AUTH_STATUS_OK}
 if (process.argv.includes("--system-prompt-file")) {
@@ -685,7 +686,20 @@ const strayResult = {type: "result", subtype: "error_during_execution", is_error
 console.log(JSON.stringify({type: "system", subtype: "init"}));
 for await (const line of input) {
   const frame = JSON.parse(line);
+  if (process.env.FRAME_LOG) {
+    const kind = [frame.type, frame.shouldQuery === false ? "replay" : "", frame.message?.content?.[0]?.type].filter(Boolean).join(":");
+    appendFileSync(process.env.FRAME_LOG, \`\${process.pid} \${kind}\\n\`);
+  }
   if (frame.shouldQuery === false) {
+    // FIRST_REPLAY=<reject|hang>:<印のファイル> で、全プロセスを通じて最初の再生だけを失敗させる。
+    const [mode, marker] = (process.env.FIRST_REPLAY ?? "").split(":");
+    if (marker && !existsSync(marker)) {
+      writeFileSync(marker, "");
+      if (mode === "hang") continue;
+      console.log(JSON.stringify({type: "result", num_turns: 1, is_error: true, ...echoUuid(frame)}));
+      continue;
+    }
+    if (process.env.SLOW_REPLAY) await new Promise(resolve => setTimeout(resolve, Number(process.env.SLOW_REPLAY)));
     console.log(JSON.stringify({type: "result", num_turns: 0, ...echoUuid(frame)}));
     continue;
   }
@@ -806,14 +820,20 @@ describe("runClaudeRequest", () => {
 			expect(branched.message.id).toBe("m_fake");
 			expect(await processCount()).toBe(2);
 
-			// 残すワーカーは2つまで。新しいセッションが来たら一番古い空きを追い出す。
-			for (const sessionId of ["second-session", "third-session"]) {
+			// 残すワーカーは4つまで。新しいセッションが来たら一番古い空きを追い出す。
+			for (const sessionId of [
+				"second-session",
+				"third-session",
+				"fourth-session",
+				"fifth-session",
+			]) {
 				await runClaudeRequest({ ...common, sessionId, frames: [userFrame(sessionId)] });
 			}
-			expect(cachedClaudeProcessCount()).toBe(2);
-			expect(await processCount()).toBe(4);
+			expect(cachedClaudeProcessCount()).toBe(4);
+			expect(await processCount()).toBe(6);
 
-			// ツール呼び出しの後は inert MCP の拒否が隠れた履歴に残るため、プロセスを残さず次は作り直す。
+			// ツール呼び出しの後は inert MCP の拒否が隠れた履歴に残るため、そのプロセスは捨て、ツールの実行中に次のプロセスへ履歴を流しておく。
+			const frameLog = join(fake.root, "frames.log");
 			const toolCommon = {
 				...common,
 				manifest: [
@@ -832,6 +852,7 @@ describe("runClaudeRequest", () => {
 						},
 					],
 				},
+				env: { ...common.env, FRAME_LOG: frameLog },
 			};
 			const toolCall = await runClaudeRequest({
 				...toolCommon,
@@ -839,7 +860,9 @@ describe("runClaudeRequest", () => {
 				frames: [userFrame("call-tool")],
 			});
 			expect(toolCall.message.stop_reason).toBe("tool_use");
-			expect(cachedClaudeProcessCount()).toBe(1);
+			await vi.waitFor(async () => {
+				expect(await processCount()).toBe(8);
+			});
 			const afterTool = await runClaudeRequest({
 				...toolCommon,
 				sessionId: "tool-session",
@@ -856,7 +879,15 @@ describe("runClaudeRequest", () => {
 				],
 			});
 			expect(afterTool.message.id).toBe("m_fake");
-			expect(await processCount()).toBe(6);
+			expect(await processCount()).toBe(8);
+			const framesByProcess = Map.groupBy(
+				(await readFile(frameLog, "utf8")).trim().split("\n"),
+				(line) => line.split(" ")[0],
+			);
+			expect(
+				[...framesByProcess.values()].map((lines) => lines.map((line) => line.split(" ")[1])),
+			).toEqual([["user:text"], ["user:replay:text", "assistant:tool_use", "user:tool_result"]]);
+			expect(cachedClaudeProcessCount()).toBe(4);
 			expect(process.env["ANTHROPIC_API_KEY"]).toBe("test-dummy");
 
 			const warmTurns = async (sessionId: string, extra: Record<string, string>) => {
@@ -874,12 +905,12 @@ describe("runClaudeRequest", () => {
 			// 他の user メッセージ宛ての遅れた result で次のターンを終わらせない。
 			const foreign = await warmTurns("foreign-session", { STALE_RESULT: "foreign" });
 			expect(foreign.message.id).toBe("m_fake_2");
-			expect(await processCount()).toBe(7);
+			expect(await processCount()).toBe(9);
 
 			// uuid の無い迷子の result は出力前に温まったターンを失敗させるので、新しいプロセスで一度やり直す。
 			const bare = await warmTurns("bare-session", { STALE_RESULT: "bare" });
 			expect(bare.message.id).toBe("m_fake");
-			expect(await processCount()).toBe(9);
+			expect(await processCount()).toBe(11);
 
 			// エラーの assistant は不完全な応答ではなく、その本文を報告する。
 			await expect(
@@ -1007,6 +1038,110 @@ describe("runClaudeRequest", () => {
 			"Claude Code is installed but not logged in. Run `claude auth login` and try again.",
 		);
 	});
+});
+
+describe("ツール呼び出しの後の先読み", () => {
+	async function toolTurn(extraEnv: Record<string, string>, closeDuringToolCall = false) {
+		const fake = await fakeClaude(STREAMING_FAKE);
+		const processLog = join(fake.root, "processes.log");
+		const common = {
+			model: "claude-sonnet-5-5",
+			cwd: fake.root,
+			systemPrompt: "system",
+			manifest: [],
+			extraBody: { tools: [] },
+			env: {
+				...fake.env,
+				EXPECTED_CWD: fake.root,
+				EXPECTED_SYSTEM_PROMPT: "system",
+				PROCESS_LOG: processLog,
+				...Object.fromEntries(
+					Object.entries(extraEnv).map(([key, value]) => [key, value.replace("{root}", fake.root)]),
+				),
+			},
+			timeoutMs: 1000,
+			sessionId: "prepared-session",
+		};
+		const pending = runClaudeRequest({ ...common, frames: [userFrame("call-tool")] });
+		if (closeDuringToolCall) await closeClaudeProcesses(common.sessionId);
+		const toolCall = await pending;
+		const nextFrames: NativeFrame[] = [
+			{ ...userFrame("call-tool"), shouldQuery: false },
+			{ type: "assistant", message: { role: "assistant", content: toolCall.message.content } },
+			{
+				type: "user",
+				message: {
+					role: "user",
+					content: [{ type: "tool_result", tool_use_id: "tool_fake", content: "echoed" }],
+				},
+			},
+		];
+		return {
+			common,
+			nextFrames,
+			processCount: async () => (await readFile(processLog, "utf8")).trim().split("\n").length,
+		};
+	}
+
+	it.each([
+		["拒んだ", "reject"],
+		["時間内に返さなかった", "hang"],
+	])(
+		"Claude Code が先読みの再生を%sら、次の要求は新しいプロセスで履歴を流して受ける",
+		async (_label, mode) => {
+			const { common, nextFrames, processCount } = await toolTurn({
+				FIRST_REPLAY: `${mode}:{root}/first-replay`,
+			});
+			const next = await runClaudeRequest({ ...common, frames: nextFrames });
+			expect(next.message.id).toBe("m_fake");
+			expect(await processCount()).toBe(3);
+			expect(cachedClaudeProcessCount()).toBe(1);
+		},
+		10_000,
+	);
+
+	it("先読みを待つ間に要求が中断されたら中断として失敗し、用意したプロセスは次の要求で使う", async () => {
+		const { common, nextFrames, processCount } = await toolTurn({ SLOW_REPLAY: "600" });
+		const started = Date.now();
+		await expect(
+			runClaudeRequest({ ...common, frames: nextFrames, signal: AbortSignal.timeout(50) }),
+		).rejects.toThrow(/aborted|timed? ?out/iu);
+		expect(Date.now() - started).toBeLessThan(400);
+		const next = await runClaudeRequest({ ...common, frames: nextFrames });
+		expect(next.message.id).toBe("m_fake");
+		expect(await processCount()).toBe(2);
+	}, 10_000);
+
+	it("先読みの途中でセッションを閉じたら、再生の終わりを待たずに用意したプロセスを閉じる", async () => {
+		const { common, nextFrames, processCount } = await toolTurn({ SLOW_REPLAY: "800" });
+		await vi.waitFor(async () => {
+			expect(await processCount()).toBe(2);
+		});
+		const started = Date.now();
+		await closeClaudeProcesses(common.sessionId);
+		expect(Date.now() - started).toBeLessThan(400);
+		expect(cachedClaudeProcessCount()).toBe(0);
+		const next = await runClaudeRequest({ ...common, frames: nextFrames, timeoutMs: 2000 });
+		expect(next.message.id).toBe("m_fake");
+		expect(await processCount()).toBe(3);
+	}, 10_000);
+
+	it("要求の途中でセッションが閉じられたら、応答がツール呼び出しでも先読みしない", async () => {
+		const { processCount } = await toolTurn({}, true);
+		await delay(300);
+		expect(await processCount()).toBe(1);
+		expect(cachedClaudeProcessCount()).toBe(0);
+	}, 10_000);
+
+	it("履歴が先読みと違えば、用意したプロセスを捨てて新しいプロセスで受ける", async () => {
+		const { common, nextFrames, processCount } = await toolTurn({});
+		const branched = await runClaudeRequest({
+			...common,
+			frames: [{ ...userFrame("other"), shouldQuery: false }, ...nextFrames.slice(1)],
+		});
+		expect(branched.message.id).toBe("m_fake");
+		expect(await processCount()).toBe(3);
+	}, 10_000);
 });
 
 // 本物と同じく、中継された応答を読んでから一度だけ自前で再試行する偽の Claude Code で1ターンを流す。

@@ -765,7 +765,7 @@ export function rewriteInitialRequest(
 }
 
 const CLAUDE_PROCESS_MAX_AGE_MS = 5 * 60 * 1000;
-const MAX_CACHED_CLAUDE_PROCESSES = 2;
+const MAX_CACHED_CLAUDE_PROCESSES = 4;
 
 type ClaudeLaunchPlan = {
 	env: Record<string, string>;
@@ -790,6 +790,10 @@ function digest(value: unknown): string {
 
 function frameHistoryHash(frames: NativeFrame[]): string {
 	return digest(frames.map((frame) => ({ type: frame.type, message: frame.message })));
+}
+
+function assistantFrame(message: NativeMessage): NativeFrame {
+	return { type: "assistant", message: { role: "assistant", content: message.content } };
 }
 
 function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
@@ -984,11 +988,22 @@ class ClaudeProcess {
 			this.tipHash = undefined;
 			return false;
 		}
-		this.tipHash = frameHistoryHash([
-			...input.frames,
-			{ type: "assistant", message: { role: "assistant", content: message.content } },
-		]);
+		this.tipHash = frameHistoryHash([...input.frames, assistantFrame(message)]);
 		return true;
+	}
+
+	// ツール呼び出しで終わった応答までの履歴を流しておき、次の要求をツール結果の書き込みだけにする。
+	async prepare(input: RunClaudeInput, message: NativeMessage): Promise<void> {
+		// 再生の途中で Claude Code が生成を頼んでも、書き換えずに上流へ流さない。
+		this.relay.finishTurn();
+		const history: NativeFrame[] = [
+			...input.frames.map((frame): NativeFrame =>
+				frame.type === "user" ? { ...frame, shouldQuery: false } : frame,
+			),
+			assistantFrame(message),
+		];
+		await this.writeHistory(history, undefined);
+		this.tipHash = frameHistoryHash(history);
 	}
 
 	get startedOutput(): boolean {
@@ -1030,26 +1045,10 @@ class ClaudeProcess {
 		let rateLimit: RateLimitInfo | undefined;
 
 		try {
-			const frames = continuation ? input.frames.slice(-1) : input.frames;
-			for (const frame of frames) {
-				const uuid = await writeFrame(this.child, frame);
-				if (!(frame.shouldQuery ?? true)) {
-					while (true) {
-						const event = await this.queue.next(input.signal, this.timeoutMs);
-						if (!event) {
-							throw await this.exitError("Claude Code exited before acknowledging history replay");
-						}
-						if (event.type === "result") {
-							if (event.num_turns !== 0 || (event.is_error ?? false)) {
-								throw new Error("Claude Code rejected zero-turn history replay");
-							}
-							break;
-						}
-					}
-				} else {
-					turnUuid = uuid;
-				}
-			}
+			turnUuid = await this.writeHistory(
+				continuation ? input.frames.slice(-1) : input.frames,
+				input.signal,
+			);
 
 			while (true) {
 				const event = await this.queue.next(input.signal, this.timeoutMs);
@@ -1135,6 +1134,33 @@ class ClaudeProcess {
 		}
 	}
 
+	private async writeHistory(
+		frames: NativeFrame[],
+		signal: AbortSignal | undefined,
+	): Promise<string | undefined> {
+		let turnUuid: string | undefined;
+		for (const frame of frames) {
+			const uuid = await writeFrame(this.child, frame);
+			if (frame.shouldQuery ?? true) {
+				turnUuid = uuid;
+				continue;
+			}
+			while (true) {
+				const event = await this.queue.next(signal, this.timeoutMs);
+				if (!event) {
+					throw await this.exitError("Claude Code exited before acknowledging history replay");
+				}
+				if (event.type === "result") {
+					if (event.num_turns !== 0 || (event.is_error ?? false)) {
+						throw new Error("Claude Code rejected zero-turn history replay");
+					}
+					break;
+				}
+			}
+		}
+		return turnUuid;
+	}
+
 	// 再試行は luna の分類だけが頼りなので、一時的な失敗はそれと分かる言い回しにする。
 	private relayedMessage(): NativeMessage {
 		const relay = this.relay;
@@ -1214,8 +1240,10 @@ async function expireProcess(sessionId: string, worker: ClaudeProcess): Promise<
 	if (expired) await worker.close();
 }
 
-async function discardProcess(acquired: AcquiredProcess): Promise<void> {
-	const { sessionId, worker } = acquired;
+async function discardProcess({
+	sessionId,
+	worker,
+}: Pick<AcquiredProcess, "sessionId" | "worker">): Promise<void> {
 	if (sessionId !== undefined && processCache.get(sessionId) === worker) {
 		await withManagerLock(() => {
 			if (processCache.get(sessionId) === worker) processCache.delete(sessionId);
@@ -1247,28 +1275,116 @@ async function acquireProcess(
 		}
 
 		// 同時に来た要求にキャッシュの会話を触らせない。セッション ID の無い要求と同じく使い捨てのプロセスにする。
-		const retain = sessionId !== undefined && !(cached?.busy ?? false);
-		if (retain) {
-			while (processCache.size >= MAX_CACHED_CLAUDE_PROCESSES) {
-				const victim = [...processCache.entries()]
-					.filter(([, worker]) => !worker.busy)
-					.toSorted((left, right) => left[1].lastUsed - right[1].lastUsed)[0];
-				if (!victim) break;
-				processCache.delete(victim[0]);
-				await victim[1].close();
-			}
-		}
-
+		const retained = sessionId !== undefined && !(cached?.busy ?? false) && (await makeCacheRoom());
 		const worker = await ClaudeProcess.create(input, plan);
 		worker.busy = true;
-		const retained = retain && processCache.size < MAX_CACHED_CLAUDE_PROCESSES;
 		if (retained) processCache.set(sessionId, worker);
 		return { worker, retained, continuation: false, sessionId };
 	});
 }
 
+// 管理のロックの中で呼ぶ。すべて使用中なら空けられない。
+async function makeCacheRoom(): Promise<boolean> {
+	while (processCache.size >= MAX_CACHED_CLAUDE_PROCESSES) {
+		const victim = [...processCache.entries()]
+			.filter(([, worker]) => !worker.busy)
+			.toSorted((left, right) => left[1].lastUsed - right[1].lastUsed)[0];
+		if (!victim) return false;
+		processCache.delete(victim[0]);
+		await victim[1].close();
+	}
+	return true;
+}
+
+// 要求の途中でセッションが閉じられたかの印。閉じた後に先読みのプロセスを作って取り残さないために使う。
+type SessionLease = { closed: boolean };
+
+const sessionLeases = new Map<string, Set<SessionLease>>();
+
+function openLease(sessionId: string): SessionLease {
+	const lease: SessionLease = { closed: false };
+	const leases = sessionLeases.get(sessionId) ?? new Set();
+	leases.add(lease);
+	sessionLeases.set(sessionId, leases);
+	return lease;
+}
+
+function releaseLease(sessionId: string, lease: SessionLease): void {
+	const leases = sessionLeases.get(sessionId);
+	leases?.delete(lease);
+	if (leases?.size === 0) sessionLeases.delete(sessionId);
+}
+
+const preparations = new Map<string, Promise<void>>();
+
+// luna がツールを実行している間に、次の要求を受けるプロセスを起動して履歴を流しておく。
+// 失敗は報告しない。次の要求が自分で起動し直し、同じ失敗をその要求の失敗として返す。
+function prepareNextProcess(
+	input: RunClaudeInput,
+	plan: ClaudeLaunchPlan,
+	message: NativeMessage,
+	sessionId: string,
+	lease: SessionLease,
+): void {
+	const { signal: _signal, onEvent: _onEvent, ...prepareInput } = input;
+	const task = (async () => {
+		const worker = await withManagerLock(async () => {
+			if (lease.closed || processCache.has(sessionId) || !(await makeCacheRoom())) {
+				return undefined;
+			}
+			const created = await ClaudeProcess.create(prepareInput, plan);
+			created.busy = true;
+			processCache.set(sessionId, created);
+			return created;
+		});
+		if (worker === undefined) return;
+		try {
+			await worker.prepare(prepareInput, message);
+		} catch {
+			await discardProcess({ sessionId, worker });
+			return;
+		}
+		worker.busy = false;
+		worker.armExpiryTimer(() => {
+			void expireProcess(sessionId, worker);
+		});
+	})()
+		.catch(() => undefined)
+		.finally(() => {
+			releaseLease(sessionId, lease);
+			if (preparations.get(sessionId) === task) preparations.delete(sessionId);
+		});
+	preparations.set(sessionId, task);
+}
+
+async function waitForPreparation(sessionId: string, signal?: AbortSignal): Promise<void> {
+	const preparation = preparations.get(sessionId);
+	if (preparation === undefined) return;
+	if (signal === undefined) {
+		await preparation;
+		return;
+	}
+	signal.throwIfAborted();
+	const { promise: aborted, reject } = Promise.withResolvers<never>();
+	const onAbort = () => {
+		reject(abortReason(signal));
+	};
+	signal.addEventListener("abort", onAbort, { once: true });
+	try {
+		await Promise.race([preparation, aborted]);
+	} finally {
+		signal.removeEventListener("abort", onAbort);
+	}
+}
+
 // 1つのセッション、または全セッションの温まったプロセスを閉じる。
+// 用意の途中のプロセスもキャッシュにあるので閉じる。まだ作っていない用意は印を見て作らない。
 export async function closeClaudeProcesses(sessionId?: string): Promise<void> {
+	for (const [id, leases] of sessionLeases) {
+		if (sessionId !== undefined && id !== sessionId) continue;
+		for (const lease of leases) lease.closed = true;
+		sessionLeases.delete(id);
+	}
 	const workers = await withManagerLock(() => {
 		if (sessionId !== undefined) {
 			const worker = processCache.get(sessionId);
@@ -1377,35 +1493,48 @@ export async function runClaudeRequest(input: RunClaudeInput): Promise<RunClaude
 	if (input.sessionId !== undefined && spareState !== undefined) {
 		return await runWithSpare(input, plan, input.sessionId, spareState);
 	}
-	const acquired = await acquireProcess(input, plan);
+	const lease = input.sessionId === undefined ? undefined : openLease(input.sessionId);
+	let leaseHandedOff = false;
 	try {
-		const output = await acquired.worker.run(input, acquired.continuation);
-		const stable = acquired.worker.commit(input, output.message);
-		const { sessionId } = acquired;
-		if (
-			stable &&
-			acquired.retained &&
-			sessionId !== undefined &&
-			processCache.get(sessionId) === acquired.worker
-		) {
-			acquired.worker.busy = false;
-			acquired.worker.armExpiryTimer(() => {
-				void expireProcess(sessionId, acquired.worker);
-			});
-		} else {
+		if (input.sessionId !== undefined) await waitForPreparation(input.sessionId, input.signal);
+		const acquired = await acquireProcess(input, plan);
+		try {
+			const output = await acquired.worker.run(input, acquired.continuation);
+			const stable = acquired.worker.commit(input, output.message);
+			const { sessionId } = acquired;
+			if (
+				stable &&
+				acquired.retained &&
+				sessionId !== undefined &&
+				processCache.get(sessionId) === acquired.worker
+			) {
+				acquired.worker.busy = false;
+				acquired.worker.armExpiryTimer(() => {
+					void expireProcess(sessionId, acquired.worker);
+				});
+			} else {
+				await discardProcess(acquired);
+				if (!stable && acquired.retained && sessionId !== undefined && lease !== undefined) {
+					prepareNextProcess(input, plan, output.message, sessionId, lease);
+					leaseHandedOff = true;
+				}
+			}
+			return output;
+		} catch (error) {
 			await discardProcess(acquired);
+			// 温まったプロセスは古い隠れた状態を持ち得る。出力も API への到達も無ければ見せても課金してもいないので、新しいプロセスで一度だけやり直す。
+			if (
+				acquired.continuation &&
+				!acquired.worker.startedOutput &&
+				!(input.signal?.aborted ?? false)
+			) {
+				return await runClaudeRequest(input);
+			}
+			throw error;
 		}
-		return output;
-	} catch (error) {
-		await discardProcess(acquired);
-		// 温まったプロセスは古い隠れた状態を持ち得る。出力も API への到達も無ければ見せても課金してもいないので、新しいプロセスで一度だけやり直す。
-		if (
-			acquired.continuation &&
-			!acquired.worker.startedOutput &&
-			!(input.signal?.aborted ?? false)
-		) {
-			return await runClaudeRequest(input);
+	} finally {
+		if (lease !== undefined && input.sessionId !== undefined && !leaseHandedOff) {
+			releaseLease(input.sessionId, lease);
 		}
-		throw error;
 	}
 }
